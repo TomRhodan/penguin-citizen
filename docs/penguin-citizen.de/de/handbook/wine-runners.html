@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wine Runners - Penguin Citizen Handbuch</title>
+    <meta name="description" content="Wine/Proton Runner, DXVK-Versionen und Prefix-Tools in Penguin Citizen verwalten." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Startseite</a></li>
+          <li><a href="index.html">Handbuch</a></li>
+          <li>
+            <a href="../../en/handbook/wine-runners.html" class="lang-switch" title="English">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              EN
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbuch</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Inhaltsverzeichnis
+          </button>
+
+          <header>
+            <h1>Wine Runners</h1>
+            <p>Wine/Proton Runner herunterladen und verwalten, DXVK-Versionen und Wine-Prefix-Tools.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/wine-runners.png" alt="Penguin Citizen Wine Runners" />
+            <figcaption>Die Wine Runners Seite mit installierten Runnern, verfuegbaren Downloads, DXVK-Verwaltung und Prefix-Tools.</figcaption>
+          </figure>
+
+          <h2>Installierte Runner</h2>
+          <p>Der obere Bereich listet alle aktuell auf deinem System installierten Wine/Proton Runner auf. Jeder Runner zeigt:</p>
+          <ul>
+            <li>Runner-Name und Version</li>
+            <li>Installationspfad</li>
+            <li>Ob er der aktuell ausgewaehlte (aktive) Runner ist</li>
+          </ul>
+          <p>Verwende den <strong>Aktivieren</strong>-Button, um einen Runner als Standard zum Starten von Star Citizen festzulegen. Der <strong>Loeschen</strong>-Button entfernt einen Runner von deinem System.</p>
+
+          <h2>Verfuegbare Runner</h2>
+          <p>Durchsuche und lade Runner aus mehreren Community-Quellen herunter:</p>
+          <ul>
+            <li><strong>LUG Helper</strong> - Von der Star Citizen Linux Users Group kuratierte Runner. Dies ist die primaere und empfohlene Quelle.</li>
+            <li><strong>Kron4ek</strong> - Wine-GE Builds fuer allgemeine Kompatibilitaet.</li>
+            <li><strong>RawFox</strong> - Spezialisierte Wine Builds.</li>
+            <li><strong>Mactan</strong> - Community-gepflegte Runner-Builds.</li>
+          </ul>
+          <p>Jeder verfuegbare Runner zeigt seinen Namen, Version und Veroeffentlichungsdatum. Klicke auf <strong>Installieren</strong>, um ihn herunterzuladen und zu entpacken. Ein Fortschrittsbalken zeigt den Download-Status. Bereits installierte Runner sind entsprechend markiert.</p>
+          <p>Verwende den <strong>Aktualisieren</strong>-Button, um die neuesten Runner-Listen von GitHub abzurufen. Runner-Listen werden eine Stunde lang zwischengespeichert, um uebermassige API-Aufrufe zu vermeiden.</p>
+
+          <div class="handbook-tip">
+            Wenn du einen GitHub-Token in den <a href="settings.html">Einstellungen</a> hinterlegst, erhaeltst du hoehere API-Rate-Limits beim Durchsuchen verfuegbarer Runner. Das ist nuetzlich, wenn du haeufig nach Updates suchst.
+          </div>
+
+          <h2>DXVK-Verwaltung</h2>
+          <p>DXVK uebersetzt DirectX-Aufrufe in Vulkan, was fuer den Betrieb von Star Citizen unter Linux unerlasslich ist. Dieser Bereich zeigt:</p>
+          <ul>
+            <li>Die aktuell installierte DXVK-Version</li>
+            <li>Verfuegbare Versionen von GitHub Releases</li>
+            <li>Einen <strong>Installieren/Aktualisieren</strong>-Button zum Herunterladen und Bereitstellen der neuesten Version</li>
+          </ul>
+          <p>DXVK-DLLs werden waehrend der Installation automatisch an den richtigen Stellen im Wine-Prefix platziert.</p>
+
+          <h2>Prefix-Tools</h2>
+          <p>Schnellzugriff auf gaengige Wine-Prefix-Werkzeuge:</p>
+          <ul>
+            <li><strong>Winecfg</strong> - Oeffnet den Wine-Konfigurationsdialog. Nuetzlich zum Anpassen der DPI-Skalierung, Windows-Version und anderer Wine-Einstellungen.</li>
+            <li><strong>Wine Shell</strong> - Oeffnet eine Terminal-Sitzung innerhalb des Wine-Prefix. Hilfreich fuer Debugging und manuelle Konfiguration.</li>
+            <li><strong>PowerShell</strong> - Installiert PowerShell Core im Wine-Prefix ueber winetricks. Einige Tools und Skripte benoetigen dies. Zeigt Download-Fortschritt und Installationslogs.</li>
+          </ul>
+
+          <div class="handbook-note">
+            Runner-Quellen werden automatisch verwaltet. Penguin Citizen importiert und aktualisiert die LUG Helper-Quellenliste bei jedem Seitenaufruf, um sicherzustellen, dass du immer die neuesten empfohlenen Runner siehst.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="installation.html" class="nav-prev">
+              <span class="nav-label">Vorherige</span>
+              <span class="nav-title">Installation</span>
+            </a>
+            <a href="profiles.html" class="nav-next">
+              <span class="nav-label">Naechste</span>
+              <span class="nav-title">Profile</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Impressum</a>
+          <a href="../privacy.html">Datenschutz</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

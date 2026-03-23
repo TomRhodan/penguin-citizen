@@ -1,5 +1,5 @@
 {
-  "name": "star-control",
+  "name": "penguin-citizen",
   "private": true,
   "version": "0.4.2",
   "description": "A Linux management tool for Star Citizen - install, configure, and launch with Wine/Proton",
@@ -7,7 +7,7 @@
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TomRhodan/star-control.git"
+    "url": "git+https://github.com/TomRhodan/penguin-citizen.git"
   },
   "type": "module",
   "scripts": {
@@ -33,7 +33,7 @@
   },
   "keywords": [],
   "bugs": {
-    "url": "https://github.com/TomRhodan/star-control/issues"
+    "url": "https://github.com/TomRhodan/penguin-citizen/issues"
   },
-  "homepage": "https://github.com/TomRhodan/star-control#readme"
+  "homepage": "https://github.com/TomRhodan/penguin-citizen#readme"
 }

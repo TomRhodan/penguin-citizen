@@ -1,5 +1,5 @@
 /*
- * Star Control - Star Citizen Linux Manager
+ * Penguin Citizen - Star Citizen Linux Manager
  * Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,7 @@
  */
 
 /**
- * Star Control - Settings Page
+ * Penguin Citizen - Settings Page
  *
  * This module manages the application settings:
  * - Base directory path for the Star Citizen installation

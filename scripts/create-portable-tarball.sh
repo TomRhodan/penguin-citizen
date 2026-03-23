@@ -5,8 +5,8 @@ set -e
 
 VERSION="${1:-$(jq -r '.version' src-tauri/tauri.conf.json)}"
 BUNDLE_DIR="src-tauri/target/release/bundle"
-APPDIR="$BUNDLE_DIR/appimage/Star Control.AppDir"
-TARBALL_NAME="star-control_${VERSION}_amd64_portable"
+APPDIR="$BUNDLE_DIR/appimage/Penguin Citizen.AppDir"
+TARBALL_NAME="penguin-citizen_${VERSION}_amd64_portable"
 STAGING_DIR="$BUNDLE_DIR/$TARBALL_NAME"
 
 if [ ! -d "$APPDIR/usr" ]; then
@@ -43,7 +43,7 @@ export GIO_EXTRA_MODULES="$HERE/usr/lib/gio/modules"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DISPLAY="${DISPLAY:-:0}"
 cd "$HERE/usr"
-exec "$HERE/usr/bin/star-control" "$@"
+exec "$HERE/usr/bin/penguin-citizen" "$@"
 SCRIPT_EOF
 
 chmod +x "$STAGING_DIR/start.sh"

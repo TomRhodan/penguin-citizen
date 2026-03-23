@@ -1,9 +1,9 @@
 {
-  "title": "Willkommen bei Star Control",
+  "title": "Willkommen bei Penguin Citizen",
   "subtitle": "Linux-Launcher fuer Star Citizen",
 
-  "desc.intro": "Star Control ist eine Community-Oberflaeche fuer das Star Citizen Linux-Oekosystem. Diese App wurde mit KI-Unterstuetzung entwickelt und waere ohne die folgenden Projekte nicht moeglich:",
-  "desc.interfaceOnly": "Star Control bietet nur eine grafische Oberflaeche fuer diese Werkzeuge. Die eigentliche Magie passiert in den oben genannten Projekten.",
+  "desc.intro": "Penguin Citizen ist eine Community-Oberflaeche fuer das Star Citizen Linux-Oekosystem. Diese App wurde mit KI-Unterstuetzung entwickelt und waere ohne die folgenden Projekte nicht moeglich:",
+  "desc.interfaceOnly": "Penguin Citizen bietet nur eine grafische Oberflaeche fuer diese Werkzeuge. Die eigentliche Magie passiert in den oben genannten Projekten.",
   "desc.chooseDir": "Waehle, wo Star Citizen installiert werden soll. Dieses Verzeichnis enthaelt den Wine-Prefix, Runner und Spieldateien. Du brauchst mindestens <strong>100 GB</strong> freien Speicherplatz.",
 
   "project.lugWiki": "LUG Wiki",

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profiles - Penguin Citizen Handbook</title>
+    <meta name="description" content="Backup, restore, and manage Star Citizen profiles with Penguin Citizen." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/profiles.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>Profiles</h1>
+            <p>Backup and restore your Star Citizen configuration profiles.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/environments.png" alt="Penguin Citizen Profiles" />
+            <figcaption>The Profiles tab showing the environment selector, profile management, and binding overview.</figcaption>
+          </figure>
+
+          <h2>Environment Selection</h2>
+          <p>At the top, select which Star Citizen version (environment) to manage. Available options depend on what is installed - typically LIVE, PTU, or EPTU. The selected environment determines which configuration files are used for all profile operations.</p>
+
+          <h2>Profile Backup</h2>
+          <p>Profiles capture your Star Citizen configuration at a point in time, including:</p>
+          <ul>
+            <li><strong>actionmaps.xml</strong> - Your keybinding configuration</li>
+            <li><strong>attributes.xml</strong> - Character and game attributes</li>
+            <li><strong>USER.cfg</strong> - Graphics and performance settings</li>
+          </ul>
+
+          <h3>Creating a Backup</h3>
+          <p>Click <strong>Save Profile</strong> to create a snapshot of your current configuration. Give it a descriptive name - this helps identify profiles later, especially if you maintain different setups for different play styles.</p>
+
+          <h3>Restoring a Backup</h3>
+          <p>Select a saved profile from the list and click <strong>Load Profile</strong> to restore it. This overwrites the current configuration files with the saved versions.</p>
+
+          <div class="handbook-warning">
+            Restoring a profile replaces your current keybindings, attributes, and USER.cfg. Make sure to save your current profile first if you want to preserve it.
+          </div>
+
+          <h2>Profile Actions</h2>
+          <ul>
+            <li><strong>Compare</strong> - View the differences between your active configuration and a saved profile. Useful for tracking what changed since your last backup.</li>
+            <li><strong>Transfer</strong> - Copy a profile from one SC version to another (e.g., from LIVE to PTU). This ensures consistent settings across environments.</li>
+          </ul>
+
+          <h2>Profile Status</h2>
+          <p>An indicator shows whether your active configuration matches a saved profile. The changes panel provides a detailed view of what has changed since the last save, helping you decide when to create a new backup.</p>
+
+          <div class="handbook-tip">
+            Create a profile backup before every major Star Citizen patch. Patches can reset keybindings, and having a backup lets you quickly restore your preferred setup.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="wine-runners.html" class="nav-prev">
+              <span class="nav-label">Previous</span>
+              <span class="nav-title">Wine Runners</span>
+            </a>
+            <a href="keybindings.html" class="nav-next">
+              <span class="nav-label">Next</span>
+              <span class="nav-title">Keybindings</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

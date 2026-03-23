@@ -1,5 +1,5 @@
 /*
- * Star Control - Star Citizen Linux Manager
+ * Penguin Citizen - Star Citizen Linux Manager
  * Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -22,7 +22,7 @@ import { setActiveProfileTab, renderEnvironments } from '../pages/environments.j
 import { confirm } from './dialogs.js';
 
 /**
- * Star Control - Integrated Screenshot Bot
+ * Penguin Citizen - Integrated Screenshot Bot
  * 
  * Automatically navigates the app and triggers system-level screenshots.
  */
@@ -144,7 +144,7 @@ async function runCaptureSequence(btn) {
   await confirm(
     'Screenshot capture complete!\n\n' +
     'All images have been saved to:\n' +
-    'docs/star-control.de/assets/screenshots/',
+    'docs/penguin-citizen.de/assets/screenshots/',
     { title: 'Success', okLabel: 'Done', cancelLabel: '', kind: 'info' }
   );
 }

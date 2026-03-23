@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>User Handbook - Penguin Citizen</title>
+    <meta name="description" content="Complete user handbook for Penguin Citizen - the Linux management tool for Star Citizen." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/index.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>User Handbook</h1>
+            <p>Your complete guide to Penguin Citizen - installing, configuring, and launching Star Citizen on Linux.</p>
+          </header>
+
+          <p>Welcome to the Penguin Citizen User Handbook. This guide covers every feature of the application, from first launch to advanced configuration. Select a chapter below or use the sidebar to navigate.</p>
+
+          <div class="handbook-toc">
+            <a href="getting-started.html" class="handbook-toc-card">
+              <h3>Getting Started</h3>
+              <p>Download options, first launch, and the Setup Wizard walkthrough.</p>
+            </a>
+            <a href="dashboard.html" class="handbook-toc-card">
+              <h3>Dashboard</h3>
+              <p>RSI news feed, server status, and community funding statistics.</p>
+            </a>
+            <a href="launching.html" class="handbook-toc-card">
+              <h3>Launching the Game</h3>
+              <p>Launch page, ESync/FSync, DXVK, HDR, FSR, MangoHUD, Wayland, and custom environment variables.</p>
+            </a>
+            <a href="installation.html" class="handbook-toc-card">
+              <h3>Installation</h3>
+              <p>Three-step installation: system check, configuration, and progress tracking.</p>
+            </a>
+            <a href="wine-runners.html" class="handbook-toc-card">
+              <h3>Wine Runners</h3>
+              <p>Runner management from LUG, Kron4ek, RawFox, and Mactan sources, plus DXVK and prefix tools.</p>
+            </a>
+            <a href="profiles.html" class="handbook-toc-card">
+              <h3>Profiles</h3>
+              <p>Backup and restore Star Citizen profiles, import and export configurations.</p>
+            </a>
+            <a href="keybindings.html" class="handbook-toc-card">
+              <h3>Keybindings</h3>
+              <p>Controller management, binding editor, and joystick tuning (deadzone, curves, sensitivity).</p>
+            </a>
+            <a href="usercfg.html" class="handbook-toc-card">
+              <h3>Graphics Settings</h3>
+              <p>USER.cfg editor with categorized graphics and performance settings.</p>
+            </a>
+            <a href="localization.html" class="handbook-toc-card">
+              <h3>Localization</h3>
+              <p>Install and update community language packs for Star Citizen.</p>
+            </a>
+            <a href="storage.html" class="handbook-toc-card">
+              <h3>Storage</h3>
+              <p>Version management for LIVE, PTU, and EPTU channels, copy vs symlink Data.p4k.</p>
+            </a>
+            <a href="settings.html" class="handbook-toc-card">
+              <h3>Settings</h3>
+              <p>Application paths, log level, UI scale, language, GitHub token, and reset options.</p>
+            </a>
+            <a href="troubleshooting.html" class="handbook-toc-card">
+              <h3>Troubleshooting &amp; FAQ</h3>
+              <p>Common problems, log file locations, and known limitations.</p>
+            </a>
+          </div>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@ use crate::config::AppConfig;
 
 /// Loads the GitHub token from the configuration file to increase the API rate limit.
 fn load_github_token() -> Option<String> {
-    let config_path = dirs::config_dir()?.join("star-control").join("config.json");
+    let config_path = dirs::config_dir()?.join("penguin-citizen").join("config.json");
     let contents = std::fs::read_to_string(config_path).ok()?;
     let config: AppConfig = serde_json::from_str(&contents).ok()?;
     config.github_token
@@ -112,7 +112,7 @@ pub async fn fetch_dxvk_releases() -> Result<Vec<DxvkRelease>, String> {
 
     let client = reqwest::Client
         ::builder()
-        .user_agent("star-control/0.4.2")
+        .user_agent("penguin-citizen/0.4.2")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -253,7 +253,7 @@ pub async fn install_dxvk(
     // --- Download phase ---
     let client = reqwest::Client
         ::builder()
-        .user_agent("star-control/0.4.2")
+        .user_agent("penguin-citizen/0.4.2")
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());

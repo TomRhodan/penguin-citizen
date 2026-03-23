@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Configuration module for Star Control.
+//! Configuration module for Penguin Citizen.
 //!
 //! This module manages all application configuration:
 //! - Performance settings (esync, fsync, DXVK, etc.)
@@ -22,8 +22,8 @@
 //! - Installation settings (path, mode)
 //! - Caching of runner and DXVK data
 //!
-//! Configuration is stored in `~/.config/star-control/config.json`.
-//! The cache is stored in `~/.config/star-control/cache.json`.
+//! Configuration is stored in `~/.config/penguin-citizen/config.json`.
+//! The cache is stored in `~/.config/penguin-citizen/cache.json`.
 
 use serde::{ Deserialize, Serialize };
 use std::fs;
@@ -126,7 +126,7 @@ impl Default for RunnerSourceConfig {
 /// Main application configuration.
 ///
 /// Contains all settings needed to run Star Citizen.
-/// Persisted as JSON in `~/.config/star-control/config.json`.
+/// Persisted as JSON in `~/.config/penguin-citizen/config.json`.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AppConfig {
@@ -201,7 +201,7 @@ pub fn get_system_locale() -> String {
 // --- Cached data structures (Cache) ---
 // The cache stores runner and DXVK data locally so that the GitHub API
 // does not need to be queried on every start. The cache is stored in
-// `~/.config/star-control/cache.json`.
+// `~/.config/penguin-citizen/cache.json`.
 
 /// Cached information about an available runner.
 ///
@@ -269,11 +269,11 @@ pub struct AppCache {
     pub dxvk: DxvkCache,
 }
 
-/// Returns the path to the cache file (`~/.config/star-control/cache.json`).
+/// Returns the path to the cache file (`~/.config/penguin-citizen/cache.json`).
 /// Returns `None` if the configuration directory cannot be determined.
 fn cache_file_path() -> Option<String> {
     dirs::config_dir().map(|p| {
-        p.join("star-control").join("cache.json").to_string_lossy().into_owned()
+        p.join("penguin-citizen").join("cache.json").to_string_lossy().into_owned()
     })
 }
 
@@ -407,11 +407,11 @@ fn is_writable(path: &str) -> bool {
     }
 }
 
-/// Returns the path to the configuration file (`~/.config/star-control/config.json`).
+/// Returns the path to the configuration file (`~/.config/penguin-citizen/config.json`).
 /// Returns `None` if the configuration directory cannot be determined.
 fn config_file_path() -> Option<String> {
     dirs::config_dir().map(|p| {
-        p.join("star-control").join("config.json").to_string_lossy().into_owned()
+        p.join("penguin-citizen").join("config.json").to_string_lossy().into_owned()
     })
 }
 

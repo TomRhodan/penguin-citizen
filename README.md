@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/star-control.de/assets/logo-hero.png" alt="Star Control" width="400">
+  <img src="docs/penguin-citizen.de/assets/logo-hero.png" alt="Penguin Citizen" width="400">
 </p>
 
-<h1 align="center">Star Control</h1>
+<h1 align="center">Penguin Citizen</h1>
 
 <p align="center">
   A Linux management tool for Star Citizen.<br>
@@ -20,7 +20,7 @@
 ## Screenshots
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/dashboard.png" alt="Command Center" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/dashboard.png" alt="Command Center" width="720"><br>
   <em>Command Center - RSI news, server status, and community stats at a glance</em>
 </p>
 
@@ -30,42 +30,42 @@
 <br>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/launch.png" alt="Launch" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/launch.png" alt="Launch" width="720"><br>
   <em>Launch - One-click start with performance options and experimental Wayland support</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/environments.png" alt="Environments" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/environments.png" alt="Environments" width="720"><br>
   <em>Environments - Manage bindings, profiles, and Star Citizen versions (LIVE, PTU, etc.)</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/usercfg-editor.png" alt="USER.cfg Editor" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/usercfg-editor.png" alt="USER.cfg Editor" width="720"><br>
   <em>USER.cfg Editor - Visual editor for graphics and performance settings</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/wine-runners.png" alt="Wine Runners" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/wine-runners.png" alt="Wine Runners" width="720"><br>
   <em>Wine Runners - Download runners, manage DXVK, and access prefix tools</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/localization.png" alt="Localization" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/localization.png" alt="Localization" width="720"><br>
   <em>Localization - Install community translations with one click</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/installation.png" alt="Installation" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/installation.png" alt="Installation" width="720"><br>
   <em>Installation - Guided Wine prefix setup and RSI Launcher download</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/settings.png" alt="Settings" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/settings.png" alt="Settings" width="720"><br>
   <em>Settings - Configure application paths, log levels, and GitHub tokens</em>
 </p>
 
 <p align="center">
-  <img src="docs/star-control.de/assets/screenshots/about.png" alt="About" width="720"><br>
+  <img src="docs/penguin-citizen.de/assets/screenshots/about.png" alt="About" width="720"><br>
   <em>About - Version info, links, and community credits</em>
 </p>
 
@@ -88,13 +88,13 @@
 
 ### Download from Releases
 
-Pre-built packages are available on the [GitHub Releases](https://github.com/TomRhodan/star-control/releases) page. Download the package that matches your distribution.
+Pre-built packages are available on the [GitHub Releases](https://github.com/TomRhodan/penguin-citizen/releases) page. Download the package that matches your distribution.
 
 #### Debian / Ubuntu / Linux Mint (.deb)
 
 ```bash
 # Download the .deb file from the latest release, then install it:
-sudo dpkg -i star-control_*.deb
+sudo dpkg -i penguin-citizen_*.deb
 
 # If there are missing dependencies, fix them with:
 sudo apt install -f
@@ -106,17 +106,17 @@ The AppImage is a portable executable that works on any Linux distribution witho
 
 ```bash
 # Download the .AppImage file from the latest release, then make it executable:
-chmod +x Star-Control_*.AppImage
+chmod +x Penguin-Citizen_*.AppImage
 
 # Run it:
-./Star-Control_*.AppImage
+./Penguin-Citizen_*.AppImage
 ```
 
 ## Usage
 
 ### First Run
 
-1. Launch Star Control.
+1. Launch Penguin Citizen.
 2. The setup wizard will guide you through choosing an installation directory.
 3. Use the **Installation** page to run a system check and set up the RSI Launcher.
 
@@ -154,7 +154,7 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 - [luftwerft.com](https://luftwerft.com) - SC Launcher Configurator
 - [Star Citizen LUG Wiki](https://wiki.starcitizen-lug.org/) - Community knowledge base
 
-Star Citizen is a registered trademark of Cloud Imperium Games Corporation. Star Control is not affiliated with or endorsed by Cloud Imperium Games.
+Star Citizen is a registered trademark of Cloud Imperium Games Corporation. Penguin Citizen is not affiliated with or endorsed by Cloud Imperium Games.
 
 ## License
 

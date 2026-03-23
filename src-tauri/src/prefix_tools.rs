@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -304,7 +304,7 @@ pub async fn install_powershell(
 
     let client = reqwest::Client
         ::builder()
-        .user_agent("star-control/0.4.2")
+        .user_agent("penguin-citizen/0.4.2")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
         .build()

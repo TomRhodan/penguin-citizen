@@ -18,7 +18,7 @@
   "label.languageTooltip": "Anzeigesprache der Anwendung",
   "label.languageAuto": "Auto (System)",
   "label.githubToken": "GitHub-Token",
-  "label.githubTokenTooltip": "Star Control laedt Wine Runner und DXVK von GitHub herunter. Ohne Token erlaubt GitHub 60 Anfragen/Stunde pro IP. Das reicht fuer normale Nutzung - ein Token ist nur noetig bei Rate-Limits, z.B. bei der Entwicklung oder wenn viele Nutzer eine IP teilen.",
+  "label.githubTokenTooltip": "Penguin Citizen laedt Wine Runner und DXVK von GitHub herunter. Ohne Token erlaubt GitHub 60 Anfragen/Stunde pro IP. Das reicht fuer normale Nutzung - ein Token ist nur noetig bei Rate-Limits, z.B. bei der Entwicklung oder wenn viele Nutzer eine IP teilen.",
   "label.githubTokenHint": "Optional. Nur noetig, wenn du GitHubs 60 Anfragen/Stunde-Limit ueberschreitest.",
   "label.selectDirDialog": "Star Citizen Basisverzeichnis auswaehlen",
 
@@ -37,10 +37,10 @@
   "token.cancel": "Abbrechen",
   "token.placeholder": "ghp_xxxxxxxxxxxx",
 
-  "reset.description": "Dies loescht permanent die gesamte Star Citizen Installation, einschliesslich Wine-Prefix, Runner und aller Spieldateien. Die App-Konfiguration und der Cache werden entfernt. Star Control startet neu und kehrt zur Ersteinrichtung zurueck.",
+  "reset.description": "Dies loescht permanent die gesamte Star Citizen Installation, einschliesslich Wine-Prefix, Runner und aller Spieldateien. Die App-Konfiguration und der Cache werden entfernt. Penguin Citizen startet neu und kehrt zur Ersteinrichtung zurueck.",
   "reset.deleteInstall": "Installationsverzeichnis loeschen",
   "reset.removeConfig": "App-Konfiguration und Cache entfernen",
-  "reset.restartApp": "Star Control neustarten (Einrichtungsassistent)",
+  "reset.restartApp": "Penguin Citizen neustarten (Einrichtungsassistent)",
   "reset.keepToken": "GitHub-Token wird beibehalten",
   "reset.confirmMsg": "Bist du sicher? Dies loescht die gesamte Installation, Wine-Prefix und Spieldateien. Dies kann nicht rueckgaengig gemacht werden.",
   "reset.confirmTitle": "Anwendung zuruecksetzen",

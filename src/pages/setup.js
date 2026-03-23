@@ -1,5 +1,5 @@
 /*
- * Star Control - Star Citizen Linux Manager
+ * Penguin Citizen - Star Citizen Linux Manager
  * Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,7 @@
  */
 
 /**
- * Star Control - Setup Wizard Page
+ * Penguin Citizen - Setup Wizard Page
  *
  * This module implements the initial setup wizard:
  * - Step 1: Welcome/disclaimer page with community credits
@@ -71,7 +71,7 @@ export function renderSetup(container, { defaultPath: defPath, onComplete }) {
 /**
  * Renders the welcome/disclaimer step (Step 1).
  * Shows the community logo, a description of the app, and links to the
- * projects that make Star Control possible (LUG Wiki, LUG Helper, SC Launcher Configurator).
+ * projects that make Penguin Citizen possible (LUG Wiki, LUG Helper, SC Launcher Configurator).
  *
  * @param {HTMLElement} container - The container element
  * @param {Object} options - Options with onComplete callback
@@ -81,7 +81,7 @@ function renderDisclaimerStep(container, { onComplete }) {
     <div class="setup-wizard">
       <div class="setup-card">
         <div class="setup-header">
-          <img src="${madeByCommunityUrl}" alt="Star Control" class="setup-logo" />
+          <img src="${madeByCommunityUrl}" alt="Penguin Citizen" class="setup-logo" />
           <h1 class="setup-title">${t('setup:title')}</h1>
           <p class="setup-subtitle">${t('setup:subtitle')}</p>
         </div>
@@ -140,7 +140,7 @@ function renderDirectoryStep(container, { onComplete }) {
     <div class="setup-wizard">
       <div class="setup-card">
         <div class="setup-header">
-          <img src="${madeByCommunityUrl}" alt="Star Control" class="setup-logo" />
+          <img src="${madeByCommunityUrl}" alt="Penguin Citizen" class="setup-logo" />
           <h1 class="setup-title">${t('setup:title')}</h1>
           <p class="setup-subtitle">${t('setup:subtitle')}</p>
         </div>

@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@ pub async fn capture_app_window(window: Window, filename: String) -> Result<(), 
     }
     
     let target_path = project_root
-        .join("docs/star-control.de/assets/screenshots")
+        .join("docs/penguin-citizen.de/assets/screenshots")
         .join(&filename);
 
     log::info!("Capturing window to: {:?}", target_path);
@@ -84,7 +84,7 @@ pub async fn save_screenshot(base64_data: String, filename: String) -> Result<()
     let mut project_root = std::env::current_dir().map_err(|e| e.to_string())?;
     if project_root.ends_with("src-tauri") { project_root.pop(); }
     
-    let target_path = project_root.join("docs/star-control.de/assets/screenshots").join(&filename);
+    let target_path = project_root.join("docs/penguin-citizen.de/assets/screenshots").join(&filename);
     let data = base64_data.split(',').next_back().ok_or("Invalid image data")?;
     let decoded = general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
     
@@ -206,7 +206,7 @@ pub fn open_browser(url: String) -> Result<(), String> {
             "org.freedesktop.portal.OpenURI.OpenURI",
             "string:",
             &format!("string:{}", dbus_uri),
-            "array:dict:string:variant:handle_token,string:starcontrol"
+            "array:dict:string:variant:handle_token,string:penguincitizen"
         ]);
 
         command.env_clear();

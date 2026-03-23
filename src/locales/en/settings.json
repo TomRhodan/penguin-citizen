@@ -18,7 +18,7 @@
   "label.languageTooltip": "Application display language",
   "label.languageAuto": "Auto (System)",
   "label.githubToken": "GitHub Token",
-  "label.githubTokenTooltip": "Star Control downloads Wine runners and DXVK from GitHub. Without a token, GitHub allows 60 requests/hour per IP. This is enough for normal use - you only need a token if you hit rate limits, e.g. during development or when many users share one IP.",
+  "label.githubTokenTooltip": "Penguin Citizen downloads Wine runners and DXVK from GitHub. Without a token, GitHub allows 60 requests/hour per IP. This is enough for normal use - you only need a token if you hit rate limits, e.g. during development or when many users share one IP.",
   "label.githubTokenHint": "Optional. Only needed if you exceed GitHub's 60 requests/hour limit.",
   "label.selectDirDialog": "Select Star Citizen Base Directory",
 
@@ -37,10 +37,10 @@
   "token.cancel": "Cancel",
   "token.placeholder": "ghp_xxxxxxxxxxxx",
 
-  "reset.description": "This will permanently delete the entire Star Citizen installation, including the Wine prefix, runners, and all game files. The app configuration and cache will be removed. Star Control will restart and return to the initial setup.",
+  "reset.description": "This will permanently delete the entire Star Citizen installation, including the Wine prefix, runners, and all game files. The app configuration and cache will be removed. Penguin Citizen will restart and return to the initial setup.",
   "reset.deleteInstall": "Delete installation directory",
   "reset.removeConfig": "Remove app config and cache",
-  "reset.restartApp": "Restart Star Control (setup wizard)",
+  "reset.restartApp": "Restart Penguin Citizen (setup wizard)",
   "reset.keepToken": "GitHub token will be preserved",
   "reset.confirmMsg": "Are you sure? This will delete the entire installation, Wine prefix, and game files. This cannot be undone.",
   "reset.confirmTitle": "Reset Application",

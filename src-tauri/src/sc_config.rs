@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -305,13 +305,13 @@ fn sc_p4k_path(gp: &str, v: &str) -> Result<PathBuf, String> {
     }
 }
 /// Path to the cache file for master bindings of an SC version.
-/// Located at ~/.config/star-control/cache/master_bindings_{version}.json
+/// Located at ~/.config/penguin-citizen/cache/master_bindings_{version}.json
 fn master_bindings_cache_path(v: &str) -> Result<PathBuf, String> {
     Ok(
         dirs
             ::config_dir()
             .ok_or("No config dir")?
-            .join("star-control/cache")
+            .join("penguin-citizen/cache")
             .join(format!("master_bindings_{}.json", v))
     )
 }
@@ -322,7 +322,7 @@ fn localization_cache_path(v: &str) -> Result<PathBuf, String> {
         dirs
             ::config_dir()
             .ok_or("No config dir")?
-            .join("star-control/cache")
+            .join("penguin-citizen/cache")
             .join(format!("localization_{}.json", v))
     )
 }
@@ -330,7 +330,7 @@ fn localization_cache_path(v: &str) -> Result<PathBuf, String> {
 /// Path to the backup folder for a specific SC version.
 /// All profile backups for this version are stored here as subfolders.
 fn backup_version_dir(v: &str) -> Result<PathBuf, String> {
-    Ok(dirs::config_dir().ok_or("No config dir")?.join("star-control/backups").join(v))
+    Ok(dirs::config_dir().ok_or("No config dir")?.join("penguin-citizen/backups").join(v))
 }
 /// Validates a backup ID to prevent path traversal attacks.
 /// Blocks empty IDs as well as characters like `/`, `\` and `..`.
@@ -2231,9 +2231,9 @@ pub async fn set_profile_device_alias(
 #[tauri::command]
 pub async fn migrate_binding_database() -> Result<bool, String> {
     let config_dir = dirs::config_dir().ok_or("No config dir")?;
-    let db_path = config_dir.join("star-control/bindings/binding_database.json");
+    let db_path = config_dir.join("penguin-citizen/bindings/binding_database.json");
     if db_path.exists() {
-        let bak_path = config_dir.join("star-control/bindings/binding_database.json.bak");
+        let bak_path = config_dir.join("penguin-citizen/bindings/binding_database.json.bak");
         fs::rename(&db_path, &bak_path).map_err(|e| e.to_string())?;
         log::info!("Migrated binding_database.json → .bak");
         Ok(true)
@@ -3057,7 +3057,7 @@ pub async fn get_file_diff(file: String, gp: String, v: String, bid: String) -> 
 
 /// Path to active_profiles.json - stores which profile is active per SC version.
 fn active_profiles_path() -> Result<std::path::PathBuf, String> {
-    Ok(dirs::config_dir().ok_or("No config dir")?.join("star-control/active_profiles.json"))
+    Ok(dirs::config_dir().ok_or("No config dir")?.join("penguin-citizen/active_profiles.json"))
 }
 
 /// Loads the mapping of active profiles (version -> backup ID).

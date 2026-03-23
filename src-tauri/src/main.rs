@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Star Control -- Main entry point of the Tauri application.
+//! Penguin Citizen -- Main entry point of the Tauri application.
 //!
-//! This is the binary entry point for the Star Control application.
+//! This is the binary entry point for the Penguin Citizen application.
 //! In release builds on Windows, the console window is hidden via
 //! `windows_subsystem`.
 //!
-//! The actual application logic resides in the `star_control_lib` crate (lib.rs).
+//! The actual application logic resides in the `penguin_citizen_lib` crate (lib.rs).
 
 // Suppress the Windows console window in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -28,5 +28,5 @@
 /// Entry point of the application.
 /// Delegates all initialization and execution to the library.
 fn main() {
-    star_control_lib::run()
+    penguin_citizen_lib::run()
 }

@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! Star Control Library – Main library of the Tauri application.
+//! Penguin Citizen Library – Main library of the Tauri application.
 //!
-//! This is the central library crate of Star Control, a desktop application
+//! This is the central library crate of Penguin Citizen, a desktop application
 //! for managing Star Citizen on Linux with Wine/Proton.
 //!
 //! ## Modules
@@ -65,13 +65,13 @@ mod sc_config;
 mod system_check;
 mod action_definitions;
 
-// simplelog is used for file-based logging (writes to ~/.config/star-control/logs/debug.log)
+// simplelog is used for file-based logging (writes to ~/.config/penguin-citizen/logs/debug.log)
 use simplelog::{ CombinedLogger, WriteLogger, LevelFilter, Config };
 use std::fs::File;
 
 /// Initializes the logging system with file output.
 ///
-/// Logs are written to `~/.config/star-control/logs/debug.log`.
+/// Logs are written to `~/.config/penguin-citizen/logs/debug.log`.
 /// This function is called once at app startup, before other
 /// components are initialized. The frontend can also log to this file
 /// via the `app_log` command.
@@ -80,7 +80,7 @@ fn init_logging() {
     let log_dir = dirs
         ::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("star-control")
+        .join("penguin-citizen")
         .join("logs");
 
     // Create directory if it does not exist yet
@@ -138,7 +138,7 @@ fn app_log(level: String, category: String, message: String) {
 fn get_log_file_path() -> String {
     dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("star-control")
+        .join("penguin-citizen")
         .join("logs")
         .join("debug.log")
         .to_string_lossy()
@@ -199,16 +199,16 @@ fn get_display_info(window: tauri::WebviewWindow) -> serde_json::Value {
 /// Can be used to test the IPC connection between frontend and backend.
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to Star Control.", name)
+    format!("Hello, {}! Welcome to Penguin Citizen.", name)
 }
 
 // ── Window State ──
 // The window state is saved on close and restored on start,
 // so the window always appears at the same position and size.
 
-/// Returns the path to the window state file (`~/.config/star-control/window-state.json`).
+/// Returns the path to the window state file (`~/.config/penguin-citizen/window-state.json`).
 fn window_state_path() -> Option<std::path::PathBuf> {
-    dirs::config_dir().map(|p| p.join("star-control").join("window-state.json"))
+    dirs::config_dir().map(|p| p.join("penguin-citizen").join("window-state.json"))
 }
 
 /// Represents the saved window state.
@@ -431,7 +431,7 @@ pub fn run() {
     }
 
     // Check for screenshot mode via environment variable
-    if std::env::var("STAR_CONTROL_SCREENSHOTS").map(|v| v == "1").unwrap_or(false) {
+    if std::env::var("PENGUIN_CITIZEN_SCREENSHOTS").map(|v| v == "1").unwrap_or(false) {
         IS_SCREENSHOT_MODE.store(true, Ordering::Relaxed);
         log::info!("Screenshot mode enabled via environment variable");
     }

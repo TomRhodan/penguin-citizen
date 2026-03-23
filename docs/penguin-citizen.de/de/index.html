@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Penguin Citizen - Linux-Verwaltung für Star Citizen</title>
+    <meta
+      name="description"
+      content="Ein Linux-Verwaltungstool für Star Citizen. Star Citizen mit Wine/Proton installieren, konfigurieren und starten - kein Terminal erforderlich."
+    />
+
+    <!-- Favicon -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="../assets/logo.png"
+    />
+
+    <!-- Local Fonts -->
+    <link
+      rel="stylesheet"
+      href="../css/fonts.css"
+    />
+
+    <!-- Styles -->
+    <link
+      rel="stylesheet"
+      href="../css/styles.css"
+    />
+  </head>
+  <body>
+    <!-- Animated Starfield -->
+    <div
+      class="starfield"
+      id="starfield"
+    ></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <!-- Navigation -->
+      <nav>
+        <a
+          href="#"
+          class="logo"
+        >
+          <img
+            src="../assets/logo.png"
+            alt="Penguin Citizen"
+            class="logo-img"
+          />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#screenshots">Screenshots</a></li>
+          <li><a href="#download">Download</a></li>
+          <li><a href="#links">Links</a></li>
+          <li><a href="handbook/index.html">Handbuch</a></li>
+          <li>
+            <a href="../en/" class="lang-switch" title="English">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              EN
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Hero Section -->
+      <section class="hero">
+        <div class="hero-content">
+          <div class="hero-logo-wrapper">
+            <img
+              src="../assets/logo-hero.png"
+              alt="Penguin Citizen Logo"
+              class="hero-logo"
+            />
+          </div>
+          <span class="hero-badge">Open Source - Linux</span>
+          <p class="hero-description">Star Citizen mit Wine/Proton installieren, konfigurieren und starten - kein Terminal erforderlich. Entwickelt mit Tauri 2 und Vanilla JavaScript. Erstellt mit KI-gestützter Entwicklung - basierend auf über 30 Jahren Software-Engineering-Erfahrung zur Steuerung und Überwachung von KI-generiertem Code.</p>
+          <div class="hero-cta">
+            <a
+              href="#download"
+              class="btn btn-primary"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line
+                  x1="12"
+                  y1="15"
+                  x2="12"
+                  y2="3"
+                ></line>
+              </svg>
+              Jetzt herunterladen
+            </a>
+            <a
+              href="#features"
+              class="btn btn-secondary"
+            >Mehr erfahren</a
+            >
+          </div>
+          <div class="dev-banner">
+            <strong>Frühe Entwicklungsphase</strong> - Penguin Citizen steht noch am Anfang. Dein Feedback hilft, das Projekt zu verbessern!
+            <a
+              href="https://github.com/TomRhodan/penguin-citizen/issues"
+              class="dev-banner-link"
+              target="_blank"
+              rel="noopener"
+            >Feedback auf GitHub teilen &rarr;</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Story Section -->
+      <section
+        id="story"
+        class="story"
+      >
+        <div class="story-container">
+          <div class="story-badge">
+            <span>&#10022;</span>
+            <span>Die Entstehungsgeschichte</span>
+          </div>
+          <div class="story-content">
+            <p class="story-text">
+              Ich bin ein riesiger Fan von <em>Star Citizen</em> und glaube fest an dieses ambitionierte Projekt. Seit Jahren spiele ich es unter Linux und nutze den <em>LUG-Helper</em>, seit er verfügbar ist. Das <em>LUG Wiki</em> war immer meine erste Anlaufstelle, wenn etwas nicht ganz richtig lief.
+            </p>
+            <p class="story-text">
+              Dann entdeckte ich den <em>SC Launch Configurator</em> von <em>luftwerft.com</em> unter Windows - und war neidisch. Jeder Versuch, etwas Vergleichbares zuverlässig unter Linux zum Laufen zu bringen, blieb hinter den Erwartungen zurück.
+            </p>
+            <p class="story-text">
+              Da kam mir die Idee: All diese Erkenntnisse und Ideen in einer einzigen Linux-Anwendung vereinen. <em>Penguin Citizen</em> wurde aus dieser Vision geboren.
+            </p>
+            <div class="story-mentions">
+              <a
+                href="https://github.com/starcitizen-lug/lug-helper"
+                class="story-mention"
+                target="_blank"
+                rel="noopener"
+              >
+                <span class="story-mention-icon">&#128295;</span>
+                <span>LUG-Helper</span>
+              </a>
+              <a
+                href="https://wiki.starcitizen-lug.org/"
+                class="story-mention"
+                target="_blank"
+                rel="noopener"
+              >
+                <span class="story-mention-icon">&#128218;</span>
+                <span>LUG Wiki</span>
+              </a>
+              <a
+                href="https://luftwerft.com"
+                class="story-mention"
+                target="_blank"
+                rel="noopener"
+              >
+                <span class="story-mention-icon">&#9881;&#65039;</span>
+                <span>luftwerft.com</span>
+              </a>
+            </div>
+          </div>
+          <div class="story-conclusion">
+            <p>Danke an alle in der Community, die dieses Projekt inspiriert haben. Ich hoffe, <span class="highlight">Penguin Citizen</span> hilft euch, mehr Zeit mit Spielen und weniger mit Konfigurieren zu verbringen.</p>
+            <div class="story-divider"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features Section -->
+      <section
+        id="features"
+        class="features"
+      >
+        <div class="section-header">
+          <h2>Leistungsstarke Features</h2>
+          <p>Alles, was du brauchst, um Star Citizen unter Linux problemlos zu spielen.</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128202;</div>
+            <h3>Command Center</h3>
+            <p>Live-Dashboard mit RSI-News, Serverstatus und Community-Finanzierungsstatistiken auf einen Blick.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128640;</div>
+            <h3>Launch Manager</h3>
+            <p>Ein-Klick-Start mit konfigurierbaren Performance-Optionen: ESync, FSync, DXVK Async, Wayland, HDR, FSR, MangoHUD.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128736;&#65039;</div>
+            <h3>Wine Runner Verwaltung</h3>
+            <p>Wine/Proton-Runner aus verschiedenen Community-Quellen herunterladen und verwalten (LUG, Kron4ek, RawFox, Mactan).</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#127918;</div>
+            <h3>Controller-Konfiguration</h3>
+            <p>Angeschlossene Geräte anzeigen, Tastenbelegungen einsehen, Joystick-Instanzen umsortieren und Binding-Profile verwalten.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128221;</div>
+            <h3>USER.cfg Editor</h3>
+            <p>Visueller Editor für alle Star Citizen Grafik-, Performance- und Qualitätseinstellungen.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#127757;</div>
+            <h3>Lokalisierung</h3>
+            <p>Community-Übersetzungen mit einem Klick installieren, mit automatischer Update-Erkennung.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128190;</div>
+            <h3>Profilverwaltung</h3>
+            <p>Star Citizen-Profile sichern und wiederherstellen (actionmaps.xml, attributes.xml, USER.cfg).</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128230;</div>
+            <h3>Multi-Version Unterstützung</h3>
+            <p>LIVE, PTU, EPTU und andere Star Citizen-Kanäle über eine einzige Oberfläche verwalten.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#9889;</div>
+            <h3>DXVK-Verwaltung</h3>
+            <p>DXVK-Versionen installieren und aktualisieren mit automatischem DLL-Deployment.</p>
+          </div>
+          <div class="feature-card animate-on-scroll">
+            <div class="feature-icon">&#128295;</div>
+            <h3>Prefix-Tools</h3>
+            <p>Winecfg, DPI-Skalierung, PowerShell-Installation über Winetricks - alles an einem Ort.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Screenshots Section -->
+      <section
+        id="screenshots"
+        class="screenshots"
+      >
+        <div class="section-header">
+          <h2>In Aktion erleben</h2>
+          <p>Eine moderne, intuitive Oberfläche für Linux-Gamer.</p>
+        </div>
+        <div class="screenshots-grid">
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/dashboard.png"
+              alt="Command Center Dashboard"
+            />
+            <div class="screenshot-overlay">
+              <h4>Command Center</h4>
+              <p>RSI-News, Serverstatus und Community-Statistiken auf einen Blick</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/launch.png"
+              alt="Launch Manager"
+            />
+            <div class="screenshot-overlay">
+              <h4>Launch Manager</h4>
+              <p>Ein-Klick-Start mit konfigurierbaren Performance-Optionen</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/wine-runners.png"
+              alt="Wine Runners"
+            />
+            <div class="screenshot-overlay">
+              <h4>Wine Runners</h4>
+              <p>Runner herunterladen, DXVK verwalten und Prefix-Tools nutzen</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/environments.png"
+              alt="Environments & Bindings"
+            />
+            <div class="screenshot-overlay">
+              <h4>Environments</h4>
+              <p>Tastenbelegungen einsehen, Joysticks sortieren und Versionen verwalten</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/usercfg-editor.png"
+              alt="USER.cfg Editor"
+            />
+            <div class="screenshot-overlay">
+              <h4>USER.cfg Editor</h4>
+              <p>Visueller Editor für Grafik- und Performance-Einstellungen</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/installation.png"
+              alt="Installation"
+            />
+            <div class="screenshot-overlay">
+              <h4>Installation</h4>
+              <p>Automatische Wine-Prefix-Einrichtung und RSI Launcher-Download</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/localization.png"
+              alt="Lokalisierung"
+            />
+            <div class="screenshot-overlay">
+              <h4>Lokalisierung</h4>
+              <p>Community-Übersetzungen mit einem Klick installieren</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/settings.png"
+              alt="Einstellungen"
+            />
+            <div class="screenshot-overlay">
+              <h4>Einstellungen</h4>
+              <p>Anwendungspfade, Log-Level und GitHub-Token verwalten</p>
+            </div>
+          </div>
+          <div class="screenshot-card">
+            <img
+              src="../assets/screenshots/about.png"
+              alt="Über"
+            />
+            <div class="screenshot-overlay">
+              <h4>Über</h4>
+              <p>Versionsinfos, Danksagungen und nützliche Links</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Download Section -->
+      <section
+        id="download"
+        class="download"
+      >
+        <div class="section-header">
+          <h2>Jetzt starten</h2>
+          <p>Lade Penguin Citizen herunter und spiele Star Citizen noch heute unter Linux.</p>
+        </div>
+        <div class="download-options">
+          <div class="download-card">
+            <div class="download-icon">&#128230;</div>
+            <h3>DEB-Paket</h3>
+            <p>Für Debian, Ubuntu, Linux Mint und Derivate</p>
+            <code>sudo dpkg -i penguin-citizen_*.deb</code>
+          </div>
+          <div class="download-card">
+            <div class="download-icon">&#9889;</div>
+            <h3>AppImage</h3>
+            <p>Portabel - funktioniert auf jeder Linux-Distribution</p>
+            <code>chmod +x Penguin-Citizen_*.AppImage</code>
+          </div>
+          <div class="download-card">
+            <div class="download-icon">&#128187;</div>
+            <h3>Portable ZIP</h3>
+            <p>Entpacken und starten - funktioniert auf jeder Linux-Distribution</p>
+            <code>unzip penguin-citizen_*.zip</code>
+          </div>
+        </div>
+        <a
+          href="https://github.com/TomRhodan/penguin-citizen/releases"
+          class="btn btn-primary download-main-btn"
+          target="_blank"
+          rel="noopener"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line
+              x1="12"
+              y1="15"
+              x2="12"
+              y2="3"
+            ></line>
+          </svg>
+          Download von GitHub Releases
+        </a>
+      </section>
+
+      <!-- Links Section -->
+      <section
+        id="links"
+        class="links"
+      >
+        <div class="section-header">
+          <h2>Inspiriert von</h2>
+          <p>Projekte und Ressourcen, die Penguin Citizen möglich gemacht haben.</p>
+        </div>
+        <div class="links-grid">
+          <a
+            href="https://github.com/starcitizen-lug/lug-helper"
+            class="link-card"
+            target="_blank"
+            rel="noopener"
+          >
+            <div class="link-icon">&#128295;</div>
+            <div class="link-content">
+              <h4>LUG Helper</h4>
+              <p>Star Citizen LUG Helper Skript</p>
+            </div>
+          </a>
+          <a
+            href="https://luftwerft.com"
+            class="link-card"
+            target="_blank"
+            rel="noopener"
+          >
+            <div class="link-icon">&#9881;&#65039;</div>
+            <div class="link-content">
+              <h4>luftwerft.com</h4>
+              <p>SC Launcher Configurator</p>
+            </div>
+          </a>
+          <a
+            href="https://wiki.starcitizen-lug.org/"
+            class="link-card"
+            target="_blank"
+            rel="noopener"
+          >
+            <div class="link-icon">&#128218;</div>
+            <div class="link-content">
+              <h4>Star Citizen LUG Wiki</h4>
+              <p>Community-Wissensdatenbank</p>
+            </div>
+          </a>
+          <a
+            href="https://github.com/TomRhodan/penguin-citizen"
+            class="link-card"
+            target="_blank"
+            rel="noopener"
+          >
+            <div class="link-icon">&#11088;</div>
+            <div class="link-content">
+              <h4>GitHub Repository</h4>
+              <p>Quellcode und Issue Tracker</p>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer>
+        <div class="footer-content">
+          <div class="footer-logo">&#9733; Penguin Citizen</div>
+          <div class="footer-links">
+            <a href="https://github.com/TomRhodan/penguin-citizen">GitHub</a>
+            <a href="https://github.com/TomRhodan/penguin-citizen/releases">Releases</a>
+            <a href="https://github.com/TomRhodan/penguin-citizen/issues">Issues</a>
+            <a href="imprint.html">Impressum</a>
+            <a href="privacy.html">Datenschutz</a>
+          </div>
+          <p class="footer-disclaimer">
+            Star Citizen ist eine eingetragene Marke der Cloud Imperium Games Corporation.<br />
+            Penguin Citizen steht in keiner Verbindung zu Cloud Imperium Games und wird nicht von ihnen unterstützt.<br />
+            Lizenziert unter der GNU General Public License v3.0.
+          </p>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="../js/main.js"></script>
+  </body>
+</html>

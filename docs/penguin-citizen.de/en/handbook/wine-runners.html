@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wine Runners - Penguin Citizen Handbook</title>
+    <meta name="description" content="Manage Wine/Proton runners, DXVK versions, and prefix tools in Penguin Citizen." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/wine-runners.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>Wine Runners</h1>
+            <p>Download and manage Wine/Proton runners, DXVK versions, and Wine prefix tools.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/wine-runners.png" alt="Penguin Citizen Wine Runners" />
+            <figcaption>The Wine Runners page with installed runners, available downloads, DXVK management, and prefix tools.</figcaption>
+          </figure>
+
+          <h2>Installed Runners</h2>
+          <p>The top section lists all Wine/Proton runners currently installed on your system. Each runner shows:</p>
+          <ul>
+            <li>Runner name and version</li>
+            <li>Installation path</li>
+            <li>Whether it is the currently selected (active) runner</li>
+          </ul>
+          <p>Use the <strong>Activate</strong> button to set a runner as the default for launching Star Citizen. The <strong>Delete</strong> button removes a runner from your system.</p>
+
+          <h2>Available Runners</h2>
+          <p>Browse and download runners from multiple community sources:</p>
+          <ul>
+            <li><strong>LUG Helper</strong> - Runners curated by the Star Citizen Linux Users Group. This is the primary and recommended source.</li>
+            <li><strong>Kron4ek</strong> - Wine-GE builds for general compatibility.</li>
+            <li><strong>RawFox</strong> - Specialized Wine builds.</li>
+            <li><strong>Mactan</strong> - Community-maintained runner builds.</li>
+          </ul>
+          <p>Each available runner shows its name, version, and release date. Click <strong>Install</strong> to download and extract it. A progress bar shows the download status. Runners that are already installed are marked accordingly.</p>
+          <p>Use the <strong>Refresh</strong> button to re-fetch the latest runner lists from GitHub. Runner lists are cached for one hour to avoid excessive API calls.</p>
+
+          <div class="handbook-tip">
+            If you set a GitHub token in <a href="settings.html">Settings</a>, you get higher API rate limits when browsing available runners. This is useful if you frequently check for updates.
+          </div>
+
+          <h2>DXVK Management</h2>
+          <p>DXVK translates DirectX calls to Vulkan, which is essential for running Star Citizen on Linux. This section shows:</p>
+          <ul>
+            <li>The currently installed DXVK version</li>
+            <li>Available versions from GitHub releases</li>
+            <li>An <strong>Install/Update</strong> button to download and deploy the latest version</li>
+          </ul>
+          <p>DXVK DLLs are automatically placed in the correct Wine prefix locations during installation.</p>
+
+          <h2>Prefix Tools</h2>
+          <p>Quick access to common Wine prefix utilities:</p>
+          <ul>
+            <li><strong>Winecfg</strong> - Opens the Wine configuration dialog. Useful for adjusting DPI scaling, Windows version, and other Wine settings.</li>
+            <li><strong>Wine Shell</strong> - Opens a terminal session inside the Wine prefix. Helpful for debugging and manual configuration.</li>
+            <li><strong>PowerShell</strong> - Installs PowerShell Core into the Wine prefix via winetricks. Some tools and scripts may require this. Shows download progress and installation logs.</li>
+          </ul>
+
+          <div class="handbook-note">
+            Runner sources are managed automatically. Penguin Citizen imports and updates the LUG Helper source list on each page load to ensure you always see the latest recommended runners.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="installation.html" class="nav-prev">
+              <span class="nav-label">Previous</span>
+              <span class="nav-title">Installation</span>
+            </a>
+            <a href="profiles.html" class="nav-next">
+              <span class="nav-label">Next</span>
+              <span class="nav-title">Profiles</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

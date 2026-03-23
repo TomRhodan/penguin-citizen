@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Einstellungen - Penguin Citizen Handbuch</title>
+    <meta name="description" content="Penguin Citizen Anwendungseinstellungen konfigurieren - Pfade, Log-Level, UI-Skalierung, Sprache und GitHub-Token." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Startseite</a></li>
+          <li><a href="index.html">Handbuch</a></li>
+          <li>
+            <a href="../../en/handbook/settings.html" class="lang-switch" title="English">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              EN
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbuch</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Inhaltsverzeichnis
+          </button>
+
+          <header>
+            <h1>Einstellungen</h1>
+            <p>Anwendungspfade, Erscheinungsbild konfigurieren und GitHub-API-Token verwalten.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/settings.png" alt="Penguin Citizen Einstellungen" />
+            <figcaption>Die Einstellungsseite mit Pfadkonfiguration, Anwendungseinstellungen und dem Gefahrenbereich.</figcaption>
+          </figure>
+
+          <h2>Pfade</h2>
+          <ul>
+            <li><strong>Basisverzeichnis</strong> - Das Stammverzeichnis, in dem Star Citizen installiert ist. Verwende den Durchsuchen-Button zur Auswahl. Penguin Citizen prueft den Pfad auf Existenz, Schreibrechte und verfuegbaren Speicherplatz.</li>
+            <li><strong>Star Citizen Pfad</strong> - Automatisch vom Basisverzeichnis abgeleitet. Dieses schreibgeschuetzte Feld zeigt, wo sich die Spieldateien innerhalb des Wine-Prefix befinden.</li>
+          </ul>
+
+          <h2>Anwendung</h2>
+
+          <h3>Log-Level</h3>
+          <p>Steuert die Ausfuehrlichkeit der Penguin Citizen Logausgabe:</p>
+          <ul>
+            <li><strong>Debug</strong> - Am ausfuehrlichsten, enthaelt detaillierte Diagnoseinformationen</li>
+            <li><strong>Info</strong> - Standard-Logging (Voreinstellung)</li>
+            <li><strong>Warn</strong> - Nur Warnungen und Fehler</li>
+            <li><strong>Error</strong> - Nur Fehler</li>
+          </ul>
+
+          <h3>UI-Skalierung</h3>
+          <p>Passe die Oberflaechen-Skalierung der Anwendung von 50% bis 200% an. Der Regler zeigt den aktuellen Prozentwert in Echtzeit. Besonders nuetzlich fuer hochaufloesende Displays oder wenn du groesseren Text und Bedienelemente bevorzugst.</p>
+
+          <h3>Sprache</h3>
+          <p>Wechsle die Oberflaechensprache von Penguin Citizen:</p>
+          <ul>
+            <li><strong>Automatisch erkennen</strong> - Verwendet deine Systemsprache (Englisch oder Deutsch)</li>
+            <li><strong>Englisch</strong></li>
+            <li><strong>Deutsch</strong></li>
+          </ul>
+          <p>Die Sprache wechselt sofort, ohne dass ein Neustart erforderlich ist.</p>
+
+          <h3>GitHub-Token</h3>
+          <p>Ein optionaler GitHub Personal Access Token erhoeht das API-Rate-Limit von 60 auf 5.000 Anfragen pro Stunde. Das ist nuetzlich, wenn du haeufig verfuegbare Wine Runner durchsuchst oder nach Updates pruefst.</p>
+          <ul>
+            <li>Wenn kein Token gesetzt ist, wird ein Passwort-Eingabefeld mit Speichern-Button angezeigt</li>
+            <li>Wenn ein Token gesetzt ist, wird er verschleiert angezeigt (erste 4 und letzte 4 Zeichen sichtbar) mit Bearbeiten- und Loeschen-Buttons</li>
+          </ul>
+
+          <div class="handbook-tip">
+            Du brauchst nur dann einen GitHub-Token, wenn du auf Rate-Limits stoesst. Fuer normale Nutzung reichen die standardmaessigen 60 Anfragen pro Stunde in der Regel aus.
+          </div>
+
+          <h2>Gefahrenbereich: App zuruecksetzen</h2>
+          <p>Die Reset-Funktion unten entfernt alle Penguin Citizen Konfigurations- und Installationsdaten. Vor der Ausfuehrung zeigt eine Checkliste, was geloescht wird:</p>
+          <ul>
+            <li>Installationsverzeichnis (mit dem vollstaendigen Pfad angezeigt)</li>
+            <li>Konfigurationsdateien</li>
+            <li>Die Anwendung erfordert nach dem Reset einen Neustart</li>
+            <li>Dein GitHub-Token bleibt erhalten (wird nicht geloescht)</li>
+          </ul>
+          <p>Ein Bestaetigungsdialog stellt sicher, dass du nicht versehentlich zuruecksetzt. Die Anwendung startet nach dem Reset automatisch neu.</p>
+
+          <div class="handbook-warning">
+            Das Zuruecksetzen der App entfernt dein Wine-Prefix, installierte Runner und alle von Penguin Citizen verwalteten Star Citizen Daten. Dies kann nicht rueckgaengig gemacht werden. Dein GitHub-Token ist die einzige Einstellung, die einen Reset ueberlebt.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="storage.html" class="nav-prev">
+              <span class="nav-label">Vorherige</span>
+              <span class="nav-title">Speicherverwaltung</span>
+            </a>
+            <a href="troubleshooting.html" class="nav-next">
+              <span class="nav-label">Naechste</span>
+              <span class="nav-title">Fehlerbehebung</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Impressum</a>
+          <a href="../privacy.html">Datenschutz</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

@@ -1,4 +1,4 @@
-// Star Control - Star Citizen Linux Manager
+// Penguin Citizen - Star Citizen Linux Manager
 // Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
@@ -105,7 +105,7 @@ pub struct LocalizationInstallResult {
 
 /// Metadata of an installed localization (stored locally on disk).
 ///
-/// This data is saved as JSON in ~/.config/star-control/localization/{version}.json
+/// This data is saved as JSON in ~/.config/penguin-citizen/localization/{version}.json
 /// and allows tracking the installation status and update checks
 /// even after an application restart.
 #[derive(Serialize, Deserialize, Clone)]
@@ -224,16 +224,16 @@ fn sc_localization_dir(game_path: &str, version: &str, language_code: &str) -> P
 
 /// Returns the directory where localization metadata is stored.
 ///
-/// Default: `~/.config/star-control/localization/`
+/// Default: `~/.config/penguin-citizen/localization/`
 fn meta_dir() -> Result<PathBuf, String> {
     dirs::config_dir()
-        .map(|p| p.join("star-control").join("localization"))
+        .map(|p| p.join("penguin-citizen").join("localization"))
         .ok_or_else(|| "Could not determine config directory".to_string())
 }
 
 /// Returns the path to the metadata file for a specific game version.
 ///
-/// e.g., `~/.config/star-control/localization/LIVE.json`
+/// e.g., `~/.config/penguin-citizen/localization/LIVE.json`
 fn meta_path(version: &str) -> Result<PathBuf, String> {
     Ok(meta_dir()?.join(format!("{}.json", version)))
 }
@@ -486,7 +486,7 @@ async fn fetch_github_commit_info(
 
     let resp = client
         .get(&url)
-        .header("User-Agent", "star-control")
+        .header("User-Agent", "penguin-citizen")
         .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await
@@ -512,7 +512,7 @@ async fn fetch_github_commit_info(
 
 /// Returns the path to the remote cache file.
 ///
-/// Stored at: `~/.config/star-control/localization/remote_cache.json`
+/// Stored at: `~/.config/penguin-citizen/localization/remote_cache.json`
 fn remote_cache_path() -> Result<PathBuf, String> {
     Ok(meta_dir()?.join("remote_cache.json"))
 }
@@ -737,7 +737,7 @@ pub async fn get_localization_status(
         (None, None)
     };
 
-    // Primary check: metadata present -> translation was installed via Star Control
+    // Primary check: metadata present -> translation was installed via Penguin Citizen
     if let Some(meta) = load_meta(&version) {
         let ini_path = sc_localization_dir(&expanded, &version, &meta.language_code).join(
             "global.ini"

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grafikeinstellungen - Penguin Citizen Handbuch</title>
+    <meta name="description" content="Star Citizen USER.cfg Grafik- und Leistungseinstellungen mit Penguin Citizens visuellem Editor bearbeiten." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Startseite</a></li>
+          <li><a href="index.html">Handbuch</a></li>
+          <li>
+            <a href="../../en/handbook/usercfg.html" class="lang-switch" title="English">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              EN
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbuch</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Inhaltsverzeichnis
+          </button>
+
+          <header>
+            <h1>Grafikeinstellungen</h1>
+            <p>Visueller Editor fuer Star Citizens USER.cfg-Datei mit kategorisierten Einstellungen und Beschreibungen.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/usercfg-editor.png" alt="Penguin Citizen USER.cfg Editor" />
+            <figcaption>Der USER.cfg-Editor mit einklappbaren Kategorien, Reglern, Schaltern und Dropdown-Selektoren.</figcaption>
+          </figure>
+
+          <h2>Uebersicht</h2>
+          <p>Die USER.cfg-Datei steuert Star Citizens Grafik-, Leistungs- und Eingabeeinstellungen. Anstatt diese Textdatei manuell zu bearbeiten, bietet Penguin Citizen einen visuellen Editor mit kategorisierten Einstellungen, Wertebereichen und Beschreibungen.</p>
+
+          <h2>Einstellungskategorien</h2>
+          <p>Einstellungen sind in einklappbaren Gruppen organisiert:</p>
+          <ul>
+            <li><strong>Grundlegend</strong> (immer sichtbar) - Aufloesung, Fenstermodus, Grafik-Renderer (Vulkan/DX11), VSync, Max FPS, TSR, Debug HUD</li>
+            <li><strong>Qualitaet</strong> - Gesamtvoreinstellung, Objektdetails, Partikel, Physik, Schattierung, Schatten, Texturen, Wasser</li>
+            <li><strong>Shader</strong> - FX, Allgemein, Nachbearbeitung, Schatten, Glas, Partikel-Shader-Qualitaet</li>
+            <li><strong>Texturen</strong> - Textur-Streaming und Pooling-Einstellungen</li>
+            <li><strong>Effekte</strong> - Nachbearbeitung, Bloom, Farbkorrektur</li>
+            <li><strong>Schaerfe</strong> - Anti-Aliasing und temporale Anpassungen</li>
+            <li><strong>LOD</strong> - Detailstufen-Entfernungen</li>
+            <li><strong>Eingabe</strong> - Maus- und Controller-Empfindlichkeit, Deadzones</li>
+            <li><strong>Erweitert</strong> - Speicher, Debug und experimentelle Einstellungen</li>
+          </ul>
+
+          <h2>Steuerungstypen</h2>
+          <p>Jede Einstellung verwendet die passende Steuerung fuer ihren Werttyp:</p>
+          <ul>
+            <li><strong>Regler</strong> - Fuer numerische Bereiche (z.B. Max FPS: 0-300 in 5er-Schritten)</li>
+            <li><strong>Schalter</strong> - Fuer Ein/Aus-Einstellungen (z.B. VSync)</li>
+            <li><strong>Dropdown</strong> - Fuer Voreinstellungsauswahlen (z.B. Niedrig / Mittel / Hoch / Sehr Hoch)</li>
+            <li><strong>Texteingabe</strong> - Fuer Freitext-Werte (z.B. Aufloesung im Format BREITExHOEHE)</li>
+          </ul>
+          <p>Jede Einstellung zeigt ihren aktuellen Wert, den erlaubten Bereich und eine Beschreibung, was sie bewirkt.</p>
+
+          <h2>Aenderungen speichern</h2>
+          <p>Aenderungen werden gegen den zuletzt gespeicherten Zustand nachverfolgt. Verwende die Buttons oben zur Verwaltung deiner Einstellungen:</p>
+          <ul>
+            <li><strong>Speichern</strong> - Schreibt alle Aenderungen in die USER.cfg-Datei</li>
+            <li><strong>Verwerfen</strong> - Verwirft ungespeicherte Aenderungen und stellt den letzten gespeicherten Zustand wieder her</li>
+          </ul>
+
+          <div class="handbook-warning">
+            Wenn die USER.cfg-Datei ausserhalb von Penguin Citizen geaendert wird (z.B. durch das Spiel selbst), erscheint eine Warnung. Du kannst waehlen, die externen Aenderungen zu uebernehmen oder deine aktuellen Werte zu behalten.
+          </div>
+
+          <div class="handbook-tip">
+            Beginne mit der Kategorie Grundlegend. Den Grafik-Renderer auf Vulkan zu setzen und Max FPS zu konfigurieren kann dein Erlebnis deutlich verbessern. Die Qualitaetseinstellungen erlauben dir die Feinabstimmung zwischen visueller Qualitaet und Leistung.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="keybindings.html" class="nav-prev">
+              <span class="nav-label">Vorherige</span>
+              <span class="nav-title">Tastenbelegung</span>
+            </a>
+            <a href="localization.html" class="nav-next">
+              <span class="nav-label">Naechste</span>
+              <span class="nav-title">Lokalisierung</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Impressum</a>
+          <a href="../privacy.html">Datenschutz</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

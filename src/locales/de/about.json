@@ -1,5 +1,5 @@
 {
-  "title": "Star Control",
+  "title": "Penguin Citizen",
   "tagline": "Star Citizen Linux Manager",
 
   "section.appInfo": "App-Info",
@@ -21,6 +21,6 @@
   "desc.lugHelper": "Star Citizen LUG Helper Skript",
   "desc.luftwerft": "SC Launcher Konfigurator",
   "desc.lugWiki": "Community-Wissensbasis fuer Linux-Gaming",
-  "desc.disclaimer": "Star Citizen ist eine eingetragene Marke der Cloud Imperium Games Corporation. Star Control ist nicht mit Cloud Imperium Games verbunden oder von ihnen unterstuetzt.",
+  "desc.disclaimer": "Star Citizen ist eine eingetragene Marke der Cloud Imperium Games Corporation. Penguin Citizen ist nicht mit Cloud Imperium Games verbunden oder von ihnen unterstuetzt.",
   "desc.gpl": "GNU General Public License v3.0"
 }

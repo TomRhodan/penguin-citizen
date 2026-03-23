@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Getting Started - Penguin Citizen Handbook</title>
+    <meta name="description" content="Getting started with Penguin Citizen - download, first launch, and setup wizard walkthrough." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/getting-started.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>Getting Started</h1>
+            <p>Download Penguin Citizen, launch it for the first time, and walk through the Setup Wizard.</p>
+          </header>
+
+          <h2>Download Options</h2>
+          <p>Penguin Citizen is available in three formats from the <a href="https://github.com/TomRhodan/penguin-citizen/releases" target="_blank" rel="noopener">GitHub Releases</a> page:</p>
+          <ul>
+            <li><strong>DEB Package</strong> - For Debian, Ubuntu, Linux Mint, and derivatives. Install with <code>sudo dpkg -i penguin-citizen_*.deb</code>.</li>
+            <li><strong>AppImage</strong> - Portable, works on any Linux distribution. Make executable with <code>chmod +x Penguin-Citizen_*.AppImage</code> and run.</li>
+            <li><strong>Portable ZIP</strong> - Extract and run directly. No installation needed.</li>
+          </ul>
+
+          <h2>First Launch</h2>
+          <p>When you start Penguin Citizen for the first time, the application will:</p>
+          <ol class="handbook-steps">
+            <li>Create its configuration directory at <code>~/.config/penguin-citizen/</code></li>
+            <li>Detect your system language and set the UI accordingly (English or German)</li>
+            <li>Open the Dashboard as your starting point</li>
+          </ol>
+
+          <div class="handbook-tip">
+            If you have previously used LUG-Helper or installed Star Citizen manually, Penguin Citizen can detect existing installations. Check the Settings page to verify your base path is correctly configured.
+          </div>
+
+          <h2>The Setup Wizard</h2>
+          <p>The recommended way to set up Star Citizen with Penguin Citizen is through the Installation page, which guides you through the complete process in three steps.</p>
+
+          <h3>Step 1: System Compatibility Check</h3>
+          <p>Penguin Citizen verifies your system meets the requirements for Star Citizen on Linux:</p>
+          <ul>
+            <li><strong>Memory (RAM)</strong> - Checks available system memory</li>
+            <li><strong>AVX Support</strong> - Verifies CPU supports AVX instructions</li>
+            <li><strong>Inotify Mapcount</strong> - Checks the kernel parameter <code>vm.max_map_count</code></li>
+            <li><strong>File Descriptor Limit</strong> - Verifies the open file limit is sufficient</li>
+            <li><strong>Vulkan Support</strong> - Confirms Vulkan graphics API is available</li>
+            <li><strong>Disk Space</strong> - Checks available storage</li>
+          </ul>
+          <p>Click <strong>Run Check</strong> to execute all tests. Each check shows a pass or fail result with details. You can proceed to the next step once all checks pass.</p>
+
+          <div class="handbook-warning">
+            If the inotify mapcount check fails, you may need to increase the value. The LUG Wiki has instructions for your distribution. Penguin Citizen cannot change kernel parameters for you.
+          </div>
+
+          <h3>Step 2: Configuration</h3>
+          <p>Configure your installation paths and download a Wine runner:</p>
+          <ul>
+            <li><strong>Install Directory</strong> - Choose where Star Citizen will be installed. The Wine prefix and game files will live here.</li>
+            <li><strong>Wine Runner</strong> - Select and download a Wine/Proton runner from community sources (LUG, Kron4ek, RawFox, or Mactan).</li>
+            <li><strong>Performance Options</strong> - Optionally configure ESync, FSync, DXVK Async, and other launch options.</li>
+          </ul>
+
+          <h3>Step 3: Installation</h3>
+          <p>The automated installation runs through these phases:</p>
+          <ol class="handbook-steps">
+            <li><strong>Prepare</strong> - Creates the directory structure and Wine prefix</li>
+            <li><strong>Winetricks</strong> - Installs required Windows dependencies</li>
+            <li><strong>DXVK</strong> - Sets up GPU driver compatibility layer</li>
+            <li><strong>Registry</strong> - Applies required Windows registry settings</li>
+            <li><strong>Download</strong> - Downloads the RSI Launcher</li>
+            <li><strong>Install</strong> - Installs the RSI Launcher into the Wine prefix</li>
+            <li><strong>Launch</strong> - Performs an initial launch to complete setup</li>
+          </ol>
+
+          <p>A real-time log shows the progress of each phase. Once complete, you can navigate to the Launch page to start Star Citizen.</p>
+
+          <div class="handbook-note">
+            The full installation process may take several minutes depending on your internet connection and system speed. The RSI Launcher will need to download the game files separately after this setup is complete.
+          </div>
+
+          <h2>What's Next?</h2>
+          <p>After installation, explore the other sections of Penguin Citizen:</p>
+          <ul>
+            <li>The <a href="dashboard.html">Dashboard</a> shows live news and server status</li>
+            <li>The <a href="launching.html">Launch page</a> lets you configure performance options and start the game</li>
+            <li>The <a href="keybindings.html">Keybindings</a> page helps manage your controller setup</li>
+          </ul>
+
+          <nav class="handbook-nav-bottom">
+            <a href="index.html" class="nav-prev">
+              <span class="nav-label">Previous</span>
+              <span class="nav-title">Overview</span>
+            </a>
+            <a href="dashboard.html" class="nav-next">
+              <span class="nav-label">Next</span>
+              <span class="nav-title">Dashboard</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

@@ -1,5 +1,5 @@
 /*
- * Star Control - Star Citizen Linux Manager
+ * Penguin Citizen - Star Citizen Linux Manager
  * Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,9 +17,9 @@
  */
 
 /**
- * Star Control - Main Entry Point
+ * Penguin Citizen - Main Entry Point
  *
- * This is the central JavaScript entry point of the Star Control application.
+ * This is the central JavaScript entry point of the Penguin Citizen application.
  * It sets up window management, router initialization, and global UI components
  * (e.g. tooltips, title bar buttons).
  *

@@ -1,5 +1,5 @@
 /**
- * Star Control - About Page
+ * Penguin Citizen - About Page
  *
  * This module renders the about page, which displays the following information:
  * - Application version and description
@@ -16,7 +16,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { t } from '../i18n.js';
 // Static image assets for logo and community badge
-import logoUrl from '../assets/logos/StarControl-Transparent-Logo-Image.png';
+import logoUrl from '../assets/logos/PenguinCitizen-Transparent-Logo-Image.png';
 import madeByCommunityUrl from '../assets/logos/MadeByTheCommunity_White.png';
 
 /**
@@ -34,7 +34,7 @@ export async function renderAbout(container) {
     <div class="about-hero">
       <div class="about-hero-glow"></div>
       <div class="about-hero-icon">
-        <img src="${logoUrl}" alt="Star Control Logo" />
+        <img src="${logoUrl}" alt="Penguin Citizen Logo" />
       </div>
       <h1 class="about-hero-title">${t('about:title')}</h1>
       <p class="about-hero-version">v${appVersion}</p>
@@ -47,7 +47,7 @@ export async function renderAbout(container) {
         <h3>${t('about:section.appInfo')}</h3>
         <div class="about-info-row">
           <span class="about-info-label">${t('about:label.name')}</span>
-          <span class="about-info-value">Star Control</span>
+          <span class="about-info-value">Penguin Citizen</span>
         </div>
         <div class="about-info-row">
           <span class="about-info-label">${t('about:label.version')}</span>
@@ -60,7 +60,7 @@ export async function renderAbout(container) {
         <div class="about-info-row">
           <span class="about-info-label">${t('about:label.source')}</span>
           <span class="about-info-value">
-            <a href="#" class="about-link" data-url="https://github.com/TomRhodan/star-control">github.com/TomRhodan/star-control</a>
+            <a href="#" class="about-link" data-url="https://github.com/TomRhodan/penguin-citizen">github.com/TomRhodan/penguin-citizen</a>
           </span>
         </div>
       </div>
@@ -88,7 +88,7 @@ export async function renderAbout(container) {
           <div class="about-community-badge">
             <img src="${madeByCommunityUrl}" alt="Made by the Community" />
           </div>
-          <!-- Links to the projects that inspired Star Control -->
+          <!-- Links to the projects that inspired Penguin Citizen -->
           <div class="about-credits-links">
             <div class="about-credit-item">
               <a href="#" class="about-link" data-url="https://github.com/starcitizen-lug/lug-helper">LUG Helper</a>
@@ -104,7 +104,7 @@ export async function renderAbout(container) {
             </div>
           </div>
         </div>
-        <!-- Legal disclaimer: Star Control is not affiliated with CIG -->
+        <!-- Legal disclaimer: Penguin Citizen is not affiliated with CIG -->
         <div class="about-disclaimer">
           ${t('about:desc.disclaimer')}
         </div>

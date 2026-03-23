@@ -6,7 +6,7 @@
   "hint.profilesIntro": "Profiles snapshot your Star Citizen settings (keybindings, graphics, controllers). Load a profile to edit it, then use <strong>Apply to SC</strong> to push changes to the game.",
   "hint.applyExplain": "This will copy the profile's files to your Star Citizen directory, overwriting the current settings.",
   "hint.bindingsIntro": "Changes you make here are saved to this profile only - your game files stay untouched until you click <strong>Apply to SC</strong> above.",
-  "hint.devicesIntro": "These are the joysticks stored in this profile. Drag to reorder their instance numbers. Star Control matches them to your connected hardware by name.",
+  "hint.devicesIntro": "These are the joysticks stored in this profile. Drag to reorder their instance numbers. Penguin Citizen matches them to your connected hardware by name.",
 
   "version.label": "Version",
   "version.noVersionsTitle": "No SC Versions Found",
@@ -178,7 +178,7 @@
   "cfg.renderer.vulkan": "Vulkan",
   "cfg.renderer.dx11": "DX11",
 
-  "cfg.externalChangeDetected": "USER.cfg has been modified outside of Star Control. Overwrite anyway?",
+  "cfg.externalChangeDetected": "USER.cfg has been modified outside of Penguin Citizen. Overwrite anyway?",
   "cfg.externalChangeTitle": "External changes detected",
   "cfg.resetConfirm": "Reset all settings to defaults?",
   "cfg.resetTitle": "Reset USER.cfg",

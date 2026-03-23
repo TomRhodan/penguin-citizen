@@ -1,14 +1,14 @@
 [package]
-name = "star-control"
+name = "penguin-citizen"
 version = "0.4.2"
 description = "A Linux management tool for Star Citizen - install, configure, and launch with Wine/Proton"
 authors = ["TomRhodan <tomrhodan@gmail.com>"]
 license = "GPL-3.0-or-later"
-repository = "https://github.com/TomRhodan/star-control"
+repository = "https://github.com/TomRhodan/penguin-citizen"
 edition = "2021"
 
 [lib]
-name = "star_control_lib"
+name = "penguin_citizen_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -49,5 +49,5 @@ devtools = ["tauri/devtools"]
 default = ["devtools"]
 
 [[bin]]
-name = "star-control"
+name = "penguin-citizen"
 path = "src/main.rs"

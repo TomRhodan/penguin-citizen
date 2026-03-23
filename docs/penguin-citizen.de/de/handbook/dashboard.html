@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - Penguin Citizen Handbuch</title>
+    <meta name="description" content="Penguin Citizen Dashboard - RSI-News, Serverstatus und Community-Statistiken." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Startseite</a></li>
+          <li><a href="index.html">Handbuch</a></li>
+          <li>
+            <a href="../../en/handbook/dashboard.html" class="lang-switch" title="English">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              EN
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbuch</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Inhaltsverzeichnis
+          </button>
+
+          <header>
+            <h1>Dashboard</h1>
+            <p>Deine Kommandozentrale mit aktuellen Star Citizen News, Serverstatus und Community-Statistiken.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/dashboard.png" alt="Penguin Citizen Dashboard" />
+            <figcaption>Das Dashboard zeigt deinen Installationsstatus, aktuelle RSI-News, den Serverstatus und Community-Statistiken auf einen Blick.</figcaption>
+          </figure>
+
+          <h2>Statuskarten</h2>
+          <p>Die obere Reihe zeigt drei Statuskarten fuer einen schnellen Ueberblick:</p>
+          <ul>
+            <li><strong>Star Citizen Installation</strong> - Zeigt deinen Installationspfad und die erkannte Sprache. Ein gelber Indikator bedeutet, dass ein Uebersetzungsupdate verfuegbar ist; gruen bedeutet, alles ist aktuell. Mit "Ordner oeffnen" gelangst du schnell zum Installationsverzeichnis.</li>
+            <li><strong>Wine Runner</strong> - Zeigt den aktuell ausgewaehlten Wine/Proton Runner und seinen Status (bereit, nicht konfiguriert oder fehlend).</li>
+            <li><strong>Start</strong> - Ein prominenter Button zum direkten Starten von Star Citizen vom Dashboard aus. Deaktiviert, wenn das Spiel nicht vollstaendig installiert ist.</li>
+          </ul>
+
+          <h2>RSI-News</h2>
+          <p>Das News-Panel ruft aktuelle Artikel von der Roberts Space Industries Website ab. Jeder Artikel zeigt Titel, Kategorie, Zeitstempel und eine kurze Zusammenfassung. Klicke auf einen Artikel, um ihn im Browser zu oeffnen.</p>
+          <p>Wenn der News-Feed nicht geladen werden kann (z.B. keine Internetverbindung), erscheint ein Wiederholen-Button.</p>
+
+          <h2>Serverstatus</h2>
+          <p>Das Serverstatus-Panel ueberwacht die Star Citizen Infrastruktur und zeigt den Betriebsstatus wichtiger Komponenten. Statusindikatoren sind farbcodiert:</p>
+          <ul>
+            <li><strong>Gruen</strong> - Betriebsbereit</li>
+            <li><strong>Gelb</strong> - Eingeschraenkte Leistung</li>
+            <li><strong>Rot</strong> - Schwerer Ausfall</li>
+            <li><strong>Grau</strong> - Unbekannt</li>
+          </ul>
+
+          <h2>Community-Statistiken</h2>
+          <p>Dieses Panel zeigt Echtzeit-Community-Metriken:</p>
+          <ul>
+            <li><strong>Gesamtfinanzierung</strong> - Der Gesamtbetrag, den die Community beigetragen hat</li>
+            <li><strong>Star Citizens</strong> - Gesamtzahl der registrierten Spieler</li>
+            <li><strong>Fahrzeuge</strong> - Anzahl der Fahrzeuge im Spiel</li>
+          </ul>
+          <p>Unterhalb der aktuellen Zahlen zeigen Sparkline-Diagramme historische Trends ueber 7-Tage- und 30-Tage-Zeitraeume. Verwende die Zeitraum-Umschalter, um zwischen den Ansichten zu wechseln. Der Delta-Prozentsatz zeigt, wie stark sich jede Metrik veraendert hat.</p>
+
+          <div class="handbook-tip">
+            Alle Dashboard-Daten werden parallel geladen fuer einen schnellen Start. Wenn ein Panel nicht geladen werden kann, zeigt es einen Fehlerstatus mit Wiederholen-Button - die anderen Panels bleiben davon unbeeinflusst.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="getting-started.html" class="nav-prev">
+              <span class="nav-label">Vorherige</span>
+              <span class="nav-title">Erste Schritte</span>
+            </a>
+            <a href="launching.html" class="nav-next">
+              <span class="nav-label">Naechste</span>
+              <span class="nav-title">Spiel starten</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Impressum</a>
+          <a href="../privacy.html">Datenschutz</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

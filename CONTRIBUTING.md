@@ -1,6 +1,6 @@
-# Contributing to Star Control
+# Contributing to Penguin Citizen
 
-Thank you for your interest in contributing to Star Control, a Linux desktop application for managing Star Citizen installations. This guide will help you get started.
+Thank you for your interest in contributing to Penguin Citizen, a Linux desktop application for managing Star Citizen installations. This guide will help you get started.
 
 ## Prerequisites
 
@@ -26,8 +26,8 @@ sudo pacman -S webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/TomRhodan/star-control.git
-   cd star-control
+   git clone https://github.com/TomRhodan/penguin-citizen.git
+   cd penguin-citizen
    ```
 
 2. Install frontend dependencies:
@@ -47,7 +47,7 @@ sudo pacman -S webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf
 ## Project Structure
 
 ```
-star-control/
+penguin-citizen/
   src/                    # Frontend (JS/HTML)
     pages/                # Page-specific JavaScript
     styles/               # CSS stylesheets
@@ -98,7 +98,7 @@ Example: `feat: add Wine version selection dropdown`
 
 ## Reporting Issues
 
-Please use our [GitHub Issue Templates](https://github.com/TomRhodan/star-control/issues/new/choose) for bug reports and feature requests. The templates guide you through providing the information we need to investigate.
+Please use our [GitHub Issue Templates](https://github.com/TomRhodan/penguin-citizen/issues/new/choose) for bug reports and feature requests. The templates guide you through providing the information we need to investigate.
 
 ## Pull Request Process
 
@@ -130,4 +130,4 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ## License
 
-By contributing to Star Control, you agree that your contributions will be licensed under the [GPL-3.0-or-later](LICENSE) license.
+By contributing to Penguin Citizen, you agree that your contributions will be licensed under the [GPL-3.0-or-later](LICENSE) license.

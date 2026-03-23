@@ -2754,6 +2754,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
+name = "penguin-citizen"
+version = "0.4.2"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "dirs 5.0.1",
+ "encoding_rs",
+ "flate2",
+ "futures-util",
+ "gilrs",
+ "libc",
+ "libloading 0.8.9",
+ "log",
+ "memmap2",
+ "once_cell",
+ "quick-xml 0.37.5",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "similar",
+ "simplelog",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tokio",
+ "uuid",
+ "xz2",
+ "zip",
+ "zstd",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3999,41 +4034,6 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
-
-[[package]]
-name = "star-control"
-version = "0.4.2"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "dirs 5.0.1",
- "encoding_rs",
- "flate2",
- "futures-util",
- "gilrs",
- "libc",
- "libloading 0.8.9",
- "log",
- "memmap2",
- "once_cell",
- "quick-xml 0.37.5",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "similar",
- "simplelog",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tokio",
- "uuid",
- "xz2",
- "zip",
- "zstd",
-]
 
 [[package]]
 name = "string_cache"

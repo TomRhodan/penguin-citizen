@@ -1,7 +1,7 @@
 {
-  "productName": "Star Control",
+  "productName": "Penguin Citizen",
   "version": "0.4.2",
-  "identifier": "com.starcontrol.launcher",
+  "identifier": "com.penguincitizen.launcher",
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage"],
@@ -24,7 +24,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Star Control",
+        "title": "Penguin Citizen",
         "width": 1280,
         "height": 900,
         "minWidth": 900,

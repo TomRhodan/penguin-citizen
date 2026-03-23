@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Graphics Settings - Penguin Citizen Handbook</title>
+    <meta name="description" content="Edit Star Citizen USER.cfg graphics and performance settings with Penguin Citizen's visual editor." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/usercfg.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>Graphics Settings</h1>
+            <p>Visual editor for Star Citizen's USER.cfg file with categorized settings and descriptions.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/usercfg-editor.png" alt="Penguin Citizen USER.cfg Editor" />
+            <figcaption>The USER.cfg editor with collapsible categories, sliders, toggles, and dropdown selectors.</figcaption>
+          </figure>
+
+          <h2>Overview</h2>
+          <p>The USER.cfg file controls Star Citizen's graphics, performance, and input settings. Instead of editing this text file manually, Penguin Citizen provides a visual editor with categorized settings, value ranges, and descriptions.</p>
+
+          <h2>Setting Categories</h2>
+          <p>Settings are organized in collapsible groups:</p>
+          <ul>
+            <li><strong>Essential</strong> (always visible) - Resolution, Window Mode, Graphics Renderer (Vulkan/DX11), VSync, Max FPS, TSR, Debug HUD</li>
+            <li><strong>Quality</strong> - Overall preset, Object Detail, Particles, Physics, Shading, Shadows, Textures, Water</li>
+            <li><strong>Shaders</strong> - FX, General, Post Process, Shadow, Glass, Particle shader quality</li>
+            <li><strong>Textures</strong> - Texture streaming and pooling settings</li>
+            <li><strong>Effects</strong> - Post-processing, bloom, color correction</li>
+            <li><strong>Clarity</strong> - Anti-aliasing and temporal adjustments</li>
+            <li><strong>LOD</strong> - Level of detail distances</li>
+            <li><strong>Input</strong> - Mouse and controller sensitivity, dead zones</li>
+            <li><strong>Advanced</strong> - Memory, debug, and experimental settings</li>
+          </ul>
+
+          <h2>Control Types</h2>
+          <p>Each setting uses the appropriate control for its value type:</p>
+          <ul>
+            <li><strong>Slider</strong> - For numeric ranges (e.g., Max FPS: 0-300 with 5-step increments)</li>
+            <li><strong>Toggle</strong> - For on/off settings (e.g., VSync)</li>
+            <li><strong>Dropdown</strong> - For preset choices (e.g., Low / Medium / High / Very High)</li>
+            <li><strong>Text Input</strong> - For free-form values (e.g., resolution in WIDTHxHEIGHT format)</li>
+          </ul>
+          <p>Each setting displays its current value, allowed range, and a description explaining what it does.</p>
+
+          <h2>Saving Changes</h2>
+          <p>Changes are tracked against the last saved state. Use the buttons at the top to manage your settings:</p>
+          <ul>
+            <li><strong>Save</strong> - Writes all changes to the USER.cfg file</li>
+            <li><strong>Revert</strong> - Discards unsaved changes and restores the last saved state</li>
+          </ul>
+
+          <div class="handbook-warning">
+            If the USER.cfg file is modified outside of Penguin Citizen (e.g., by the game itself), a warning appears. You can choose to reload the external changes or keep your current values.
+          </div>
+
+          <div class="handbook-tip">
+            Start with the Essential category. Setting the Graphics Renderer to Vulkan and configuring Max FPS can significantly improve your experience. The Quality settings let you fine-tune the balance between visual fidelity and performance.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="keybindings.html" class="nav-prev">
+              <span class="nav-label">Previous</span>
+              <span class="nav-title">Keybindings</span>
+            </a>
+            <a href="localization.html" class="nav-next">
+              <span class="nav-label">Next</span>
+              <span class="nav-title">Localization</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

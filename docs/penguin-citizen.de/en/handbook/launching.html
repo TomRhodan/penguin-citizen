@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Launching the Game - Penguin Citizen Handbook</title>
+    <meta name="description" content="Configure and launch Star Citizen with Penguin Citizen - performance options, Wayland, and custom environment variables." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/launching.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>Launching the Game</h1>
+            <p>Configure performance options and start Star Citizen with a single click.</p>
+          </header>
+
+          <figure class="handbook-screenshot">
+            <img src="../../assets/screenshots/launch.png" alt="Penguin Citizen Launch Page" />
+            <figcaption>The Launch page with performance options, Wayland settings, and the real-time log output.</figcaption>
+          </figure>
+
+          <h2>Launch Control</h2>
+          <p>The large launch button at the top starts Star Citizen. While the game is running, the button changes to a stop button that lets you terminate the process. An info card below shows the currently active Wine runner and prefix path.</p>
+
+          <h2>Performance Options</h2>
+          <p>Toggle these options to optimize Star Citizen's performance on your system:</p>
+
+          <h3>ESync</h3>
+          <p>Eventfd-based synchronization for Wine. Reduces CPU overhead for synchronization primitives. Recommended to keep enabled for better performance.</p>
+
+          <h3>FSync</h3>
+          <p>Futex-based synchronization (requires kernel 5.16+). More efficient than ESync when supported. If your kernel supports it, enable both ESync and FSync.</p>
+
+          <h3>DXVK Async</h3>
+          <p>Enables asynchronous shader compilation in DXVK. Reduces stuttering caused by shader compilation during gameplay. Highly recommended.</p>
+
+          <h3>HDR</h3>
+          <p>Enables High Dynamic Range output. Requires a HDR-capable monitor and compositor support (e.g., KDE Plasma 6 with HDR enabled).</p>
+
+          <h3>FSR (FidelityFX Super Resolution)</h3>
+          <p>AMD's upscaling technology. Renders the game at a lower resolution and upscales for better performance while maintaining visual quality.</p>
+
+          <h3>MangoHUD</h3>
+          <p>Displays a performance monitoring overlay showing FPS, CPU/GPU usage, temperatures, and frame times. Useful for troubleshooting performance issues.</p>
+
+          <h3>DXVK HUD</h3>
+          <p>Shows DXVK debug information overlay. Useful for developers and advanced users to diagnose rendering issues.</p>
+
+          <h2>Wayland Support</h2>
+          <p>Penguin Citizen includes experimental Wayland support for native Wayland compositors.</p>
+          <ul>
+            <li><strong>Enable Wayland</strong> - Toggle to use Wayland instead of XWayland. Automatically disabled if fractional scaling is detected (which is currently incompatible).</li>
+            <li><strong>Primary Monitor</strong> - Select which monitor to use for the game. Penguin Citizen auto-detects connected monitors with their resolutions.</li>
+          </ul>
+
+          <div class="handbook-warning">
+            Wayland support is experimental. If you experience issues, disable it to fall back to XWayland. Fractional scaling (e.g., 125%, 150%) is not compatible with native Wayland mode.
+          </div>
+
+          <h2>Custom Environment Variables</h2>
+          <p>For advanced users, you can define custom environment variables that will be set when launching Star Citizen. Each variable has:</p>
+          <ul>
+            <li>An <strong>enable/disable toggle</strong> to quickly activate or deactivate without deleting</li>
+            <li>A <strong>KEY</strong> field (automatically converted to uppercase, only A-Z, 0-9, and underscore allowed)</li>
+            <li>A <strong>VALUE</strong> field</li>
+          </ul>
+          <p>A conflict warning badge appears if a custom variable would override one of the built-in options (like ESync or FSync).</p>
+
+          <h2>Log Output</h2>
+          <p>The log panel at the bottom shows real-time output from the game launch process. It streams log lines as they arrive and auto-scrolls to the latest entry. This is helpful for diagnosing launch failures or monitoring the startup sequence.</p>
+
+          <div class="handbook-tip">
+            All launch options are disabled while the game is running to prevent configuration changes during gameplay. They become editable again once the game exits.
+          </div>
+
+          <nav class="handbook-nav-bottom">
+            <a href="dashboard.html" class="nav-prev">
+              <span class="nav-label">Previous</span>
+              <span class="nav-title">Dashboard</span>
+            </a>
+            <a href="installation.html" class="nav-next">
+              <span class="nav-label">Next</span>
+              <span class="nav-title">Installation</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

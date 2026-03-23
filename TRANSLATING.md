@@ -1,6 +1,6 @@
-# Translating Star Control
+# Translating Penguin Citizen
 
-Star Control uses [i18next](https://www.i18next.com/) for internationalization. Translations are stored as JSON files and bundled at build time.
+Penguin Citizen uses [i18next](https://www.i18next.com/) for internationalization. Translations are stored as JSON files and bundled at build time.
 
 ## File Structure
 
@@ -83,7 +83,7 @@ Each JSON file is a namespace. In code, keys are referenced as `namespace:key`:
 - Keep translations concise - UI space is limited
 - Preserve `{{variable}}` placeholders exactly as they appear
 - Do not translate technical terms (e.g. "Wine", "DXVK", "ESync", "FSync", "MangoHUD")
-- Do not translate brand names (e.g. "Star Citizen", "RSI Launcher", "Star Control")
+- Do not translate brand names (e.g. "Star Citizen", "RSI Launcher", "Penguin Citizen")
 - HTML tags like `<strong>` in values must be preserved
 - Test your translations in the app to check for text overflow
 - Some strings use `data-i18n` attributes in `src/index.html` (sidebar navigation, window buttons) - these are translated at startup
@@ -92,7 +92,7 @@ Each JSON file is a namespace. In code, keys are referenced as `namespace:key`:
 
 ## Language Detection
 
-Star Control detects the language in this order:
+Penguin Citizen detects the language in this order:
 1. Manual override in Settings (stored in `config.json` as `language`)
 2. System locale (via `LANGUAGE`, `LC_MESSAGES`, or `LANG` environment variables)
 3. English fallback
@@ -108,4 +108,4 @@ The JSON format is compatible with [Weblate](https://weblate.org/) JSON format. 
 3. Test with `npm run tauri dev`
 4. Submit a Pull Request
 
-Thank you for helping make Star Control accessible to more people!
+Thank you for helping make Penguin Citizen accessible to more people!

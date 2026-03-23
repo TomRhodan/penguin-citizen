@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Penguin Citizen</title>
+    <link rel="icon" type="image/png" href="assets/logo.png" />
+  </head>
+  <body>
+    <script>
+      var lang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+      if (lang.indexOf('de') === 0) {
+        window.location.replace('de/');
+      } else {
+        window.location.replace('en/');
+      }
+    </script>
+    <noscript>
+      <p>
+        <a href="en/">English</a> |
+        <a href="de/">Deutsch</a>
+      </p>
+    </noscript>
+  </body>
+</html>

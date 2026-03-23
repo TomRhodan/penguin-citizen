@@ -1,5 +1,5 @@
 /*
- * Star Control - Star Citizen Linux Manager
+ * Penguin Citizen - Star Citizen Linux Manager
  * Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,7 @@
  */
 
 /**
- * Star Control - Custom Dialog Helper Functions
+ * Penguin Citizen - Custom Dialog Helper Functions
  *
  * Provides visually integrated replacement dialogs for native browser/Tauri dialogs.
  * All dialogs use a consistent modal design with overlay, animation,

@@ -1,5 +1,5 @@
 /*
- * Star Control - Star Citizen Linux Manager
+ * Penguin Citizen - Star Citizen Linux Manager
  * Copyright (C) 2024-2026 TomRhodan <tomrhodan@gmail.com>
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,7 @@
  */
 
 /**
- * Star Control - Internationalization (i18n) Module
+ * Penguin Citizen - Internationalization (i18n) Module
  *
  * Provides translation support using i18next:
  * - Auto-detects system locale via Rust backend
