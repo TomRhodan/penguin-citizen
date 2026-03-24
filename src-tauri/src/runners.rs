@@ -235,7 +235,7 @@ pub async fn fetch_available_runners(base_path: String) -> FetchRunnersResult {
     // Create HTTP client with User-Agent (GitHub requires a User-Agent)
     let client = reqwest::Client
         ::builder()
-        .user_agent("penguin-citizen/0.4.2")
+        .user_agent("penguin-citizen/0.4.4")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -391,7 +391,7 @@ pub async fn install_runner(
 
     let client = reqwest::Client
         ::builder()
-        .user_agent("penguin-citizen/0.4.2")
+        .user_agent("penguin-citizen/0.4.4")
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
