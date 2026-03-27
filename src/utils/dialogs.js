@@ -324,3 +324,27 @@ export function showDiff(title, lines) {
     window.addEventListener('keydown', handleEscape);
   });
 }
+
+/**
+ * Shows a temporary notification at the bottom of the screen.
+ * The notification is automatically hidden and removed after 3 seconds.
+ *
+ * @param {string} message - The message to display
+ * @param {string} type - The notification type ('info', 'success', 'error')
+ */
+export function showNotification(message, type = 'info') {
+  // Remove existing notification to avoid overlap
+  const existing = document.querySelector('.settings-notification');
+  if (existing) existing.remove();
+  const notification = document.createElement('div');
+  notification.className = `settings-notification notification-${type}`;
+  notification.textContent = message;
+  document.body.appendChild(notification);
+  // Short delay for CSS transition (fade-in animation)
+  setTimeout(() => notification.classList.add('show'), 10);
+  // Fade out after 3 seconds and remove DOM element
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}

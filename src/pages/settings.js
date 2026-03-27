@@ -30,7 +30,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { confirm } from '../utils/dialogs.js';
+import { confirm, showNotification } from '../utils/dialogs.js';
 import { escapeHtml } from '../utils.js';
 import { t, changeLanguage, getCurrentLanguage, SUPPORTED_LANGUAGES, translateStaticHtml } from '../i18n.js';
 
@@ -451,19 +451,7 @@ function updateDerivedPaths(basePath) {
  * @param {string} message - The message to display
  * @param {string} type - The notification type ('info', 'success', 'error')
  */
-function showNotification(message, type = 'info') {
-  // Remove existing notification to avoid overlap
-  const existing = document.querySelector('.settings-notification');
-  if (existing) existing.remove();
-  const notification = document.createElement('div');
-  notification.className = `settings-notification notification-${type}`;
-  notification.textContent = message;
-  document.body.appendChild(notification);
-  // Short delay for CSS transition (fade-in animation)
-  setTimeout(() => notification.classList.add('show'), 10);
-  // Fade out after 3 seconds and remove DOM element
-  setTimeout(() => { notification.classList.remove('show'); setTimeout(() => notification.remove(), 300); }, 3000);
-}
+
 
 /**
  * Applies UI scale to the application.
