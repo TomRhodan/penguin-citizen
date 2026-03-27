@@ -38,7 +38,7 @@ use std::path::{ Path, PathBuf };
 use chrono::Local;
 use serde::{ Deserialize, Serialize };
 use quick_xml::Reader;
-use quick_xml::events::{ Event, BytesStart, BytesEnd, BytesDecl };
+use quick_xml::events::{ Event, BytesStart };
 use tokio::sync::Mutex;
 use tauri::Emitter;
 use once_cell::sync::Lazy;
@@ -102,13 +102,14 @@ pub struct ScDevice {
     pub tuning: Vec<ScOptionsTuning>,
 }
 
-/// A single key binding: links an action to an input string.
+/// A single key binding: links an action to one or more input strings.
+/// SC allows multiple <rebind> tags per action (e.g. keyboard and joystick).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ScBinding {
     /// Name of the action (e.g. "v_attack1")
     pub action_name: String,
-    /// Input string in SC format (e.g. "js1_button5", "kb1_f")
-    pub input: String,
+    /// List of input strings in SC format (e.g. "js1_button5", "kb1_f")
+    pub inputs: Vec<String>,
 }
 
 /// An action within an action map with an optional localization label.
@@ -141,9 +142,12 @@ pub struct ScActionProfile {
     pub devices: Vec<ScDevice>,
     /// Device-specific options (deadzones, saturations)
     pub device_options: Vec<ScDeviceOptions>,
+    /// Raw modifiers block content (currently preserved as-is)
+    pub modifiers: Option<String>,
     /// All action maps with their bindings
     pub action_maps: Vec<ScActionMap>,
 }
+
 
 /// Parsed representation of a complete actionmaps.xml file.
 /// Contains a version number and one or more profiles.
@@ -428,8 +432,10 @@ fn parse_actionmaps_xml(c: &str) -> Result<ParsedActionMaps, String> {
                             rebind_version: get_attr(e, b"rebindVersion").unwrap_or("2".into()),
                             devices: vec![],
                             device_options: vec![],
+                            modifiers: None,
                             action_maps: vec![],
                         });
+
                     }
                     "options" => {
                         // <options> tags define input devices with type, instance, and product name.
@@ -514,12 +520,28 @@ fn parse_actionmaps_xml(c: &str) -> Result<ParsedActionMaps, String> {
                     }
                     "rebind" => {
                         if let (Some(ref mut m), Some(ref a)) = (cm.as_mut(), ca.as_ref()) {
-                            m.bindings.push(ScBinding {
-                                action_name: a.to_string(),
-                                input: get_attr(e, b"input").unwrap_or_default(),
-                            });
+                            // Find existing binding for this action in this map, or create new
+                            if let Some(existing) = m.bindings.iter_mut().find(|b| &b.action_name == *a) {
+
+                                let input = get_attr(e, b"input").unwrap_or_default();
+                                if !existing.inputs.contains(&input) {
+                                    existing.inputs.push(input);
+                                }
+                            } else {
+                                m.bindings.push(ScBinding {
+                                    action_name: a.to_string(),
+                                    inputs: vec![get_attr(e, b"input").unwrap_or_default()],
+                                });
+                            }
                         }
                     }
+                    "modifiers" => {
+                        // Just track that the tag exists for now to preserve it on write
+                        if let Some(ref mut p) = cp {
+                            p.modifiers = Some("".to_string());
+                        }
+                    }
+
                     _ => {
                         // Inside an <options> block: parse unknown children as tuning entries
                         if let Some(dev_idx) = current_device_index {
@@ -580,51 +602,76 @@ fn parse_actionmaps_xml(c: &str) -> Result<ParsedActionMaps, String> {
 
 /// Writes a ParsedActionMaps structure back as an XML file.
 /// Produces valid XML in SC actionmaps format with proper indentation.
-/// The GUID is inserted back into the Product attribute (format: "Name {GUID}").
-fn write_actionmaps_xml(p: &Path, parsed: &ParsedActionMaps) -> Result<(), String> {
-    let mut w = Writer::new_with_indent(Cursor::new(vec![]), b' ', 1);
-    w.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None))).ok();
+/// Correctly formats a device name and optional GUID for Star Citizen's XML.
+/// SC on Wine/Windows expects exactly TWO spaces between the name and the GUID.
+fn format_sc_device_name(name: &str, guid: Option<&str>) -> String {
+    if let Some(g) = guid {
+        // SC format: "Name  {GUID}"
+        format!("{}  {{{}}}", name.trim(), g)
+    } else {
+        name.to_string()
+    }
+}
+
+pub fn write_actionmaps_xml(path: &Path, res: &ParsedActionMaps) -> Result<(), String> {
+    use quick_xml::events::{ BytesDecl, BytesEnd, BytesStart, Event };
+
+    // Use a cursor to capture the XML in memory first for post-processing
+    let mut w = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 1);
+
+    // Write XML declaration: Star Citizen uses lowercase encoding="utf-8"
+    w.write_event(Event::Decl(BytesDecl::new("1.0", Some("utf-8"), None))).ok();
+
+    // <ActionMaps version="1">
     let mut root = BytesStart::new("ActionMaps");
-    root.push_attribute(("version", parsed.version.as_str()));
+    root.push_attribute(("version", res.version.as_str()));
     w.write_event(Event::Start(root)).ok();
 
-    for po in &parsed.profiles {
+    for po in &res.profiles {
+        // <ActionProfiles profileName="default" version="1" optionsVersion="2" rebindVersion="2">
         let mut p_tag = BytesStart::new("ActionProfiles");
+        p_tag.push_attribute(("profileName", po.profile_name.as_str()));
         p_tag.push_attribute(("version", po.version.as_str()));
         p_tag.push_attribute(("optionsVersion", po.options_version.as_str()));
         p_tag.push_attribute(("rebindVersion", po.rebind_version.as_str()));
-        p_tag.push_attribute(("profileName", po.profile_name.as_str()));
         w.write_event(Event::Start(p_tag)).ok();
 
-        // Write devices with GUID in Product attribute
-        for d in &po.devices {
+        // Write devices with GUID in Product attribute (sorted by instance for consistency)
+        let mut devices = po.devices.clone();
+        devices.sort_by_key(|d| d.instance);
+
+        for d in &devices {
             let mut d_tag = BytesStart::new("options");
             d_tag.push_attribute(("type", d.device_type.as_str()));
             d_tag.push_attribute(("instance", d.instance.to_string().as_str()));
             if !d.product.is_empty() {
-                // Include GUID in Product attribute if available
-                let product_with_guid = if let Some(ref guid) = d.guid {
-                    format!("{} {{{}}}", d.product.trim(), guid)
-                } else {
-                    d.product.clone()
-                };
+                let product_with_guid = format_sc_device_name(&d.product, d.guid.as_deref());
                 d_tag.push_attribute(("Product", product_with_guid.as_str()));
             }
+
             if d.tuning.is_empty() {
                 w.write_event(Event::Empty(d_tag)).ok();
             } else {
                 w.write_event(Event::Start(d_tag)).ok();
                 for t in &d.tuning {
                     let mut t_tag = BytesStart::new(t.name.as_str());
-                    if let Some(inv) = t.invert {
-                        t_tag.push_attribute(("invert", inv.to_string().as_str()));
-                    }
+                    
+                    // SC always writes 'invert' if it exists (even if 0)
+                    t_tag.push_attribute(("invert", t.invert.unwrap_or(0).to_string().as_str()));
+                    
+                    // SC only writes exponent/sensitivity if they are NOT 1.0
                     if let Some(exp) = t.exponent {
-                        t_tag.push_attribute(("exponent", exp.to_string().as_str()));
+                        if (exp - 1.0).abs() > 0.000001 {
+                            t_tag.push_attribute(("exponent", format!("{:.9}", exp).trim_end_matches('0').trim_end_matches('.').to_string().as_str()));
+                        }
                     }
+                    
                     if let Some(sens) = t.sensitivity {
-                        t_tag.push_attribute(("sensitivity", sens.to_string().as_str()));
+                        if (sens - 1.0).abs() > 0.000001 {
+                            t_tag.push_attribute(("sensitivity", format!("{:.9}", sens).trim_end_matches('0').trim_end_matches('.').to_string().as_str()));
+                        }
                     }
+                    
                     w.write_event(Event::Empty(t_tag)).ok();
                 }
                 w.write_event(Event::End(BytesEnd::new("options"))).ok();
@@ -634,17 +681,26 @@ fn write_actionmaps_xml(p: &Path, parsed: &ParsedActionMaps) -> Result<(), Strin
         // Write device options (deadzone, saturation)
         for do_opts in &po.device_options {
             let mut do_tag = BytesStart::new("deviceoptions");
-            do_tag.push_attribute(("name", do_opts.name.as_str()));
+            
+            let normalized_name = if let Some(idx) = do_opts.name.find('{') {
+                let name = do_opts.name[..idx].trim();
+                let guid = &do_opts.name[idx + 1..do_opts.name.len() - 1];
+                format_sc_device_name(name, Some(guid))
+            } else {
+                do_opts.name.clone()
+            };
+            
+            do_tag.push_attribute(("name", normalized_name.as_str()));
             w.write_event(Event::Start(do_tag)).ok();
 
             for opt in &do_opts.options {
                 let mut o_tag = BytesStart::new("option");
                 o_tag.push_attribute(("input", opt.input.as_str()));
                 if let Some(dz) = opt.deadzone {
-                    o_tag.push_attribute(("deadzone", format!("{}", dz).as_str()));
+                    o_tag.push_attribute(("deadzone", format!("{:.9}", dz).trim_end_matches('0').trim_end_matches('.').to_string().as_str()));
                 }
                 if let Some(sat) = opt.saturation {
-                    o_tag.push_attribute(("saturation", format!("{}", sat).as_str()));
+                    o_tag.push_attribute(("saturation", format!("{:.9}", sat).trim_end_matches('0').trim_end_matches('.').to_string().as_str()));
                 }
                 w.write_event(Event::Empty(o_tag)).ok();
             }
@@ -652,7 +708,9 @@ fn write_actionmaps_xml(p: &Path, parsed: &ParsedActionMaps) -> Result<(), Strin
             w.write_event(Event::End(BytesEnd::new("deviceoptions"))).ok();
         }
 
-        w.write_event(Event::Empty(BytesStart::new("modifiers"))).ok();
+        if po.modifiers.is_some() {
+            w.write_event(Event::Empty(BytesStart::new("modifiers"))).ok();
+        }
 
         for am in &po.action_maps {
             let mut am_tag = BytesStart::new("actionmap");
@@ -664,9 +722,11 @@ fn write_actionmaps_xml(p: &Path, parsed: &ParsedActionMaps) -> Result<(), Strin
                 a_tag.push_attribute(("name", b.action_name.as_str()));
                 w.write_event(Event::Start(a_tag)).ok();
 
-                let mut r_tag = BytesStart::new("rebind");
-                r_tag.push_attribute(("input", b.input.as_str()));
-                w.write_event(Event::Empty(r_tag)).ok();
+                for input in &b.inputs {
+                    let mut r_tag = BytesStart::new("rebind");
+                    r_tag.push_attribute(("input", input.as_str()));
+                    w.write_event(Event::Empty(r_tag)).ok();
+                }
 
                 w.write_event(Event::End(BytesEnd::new("action"))).ok();
             }
@@ -678,11 +738,19 @@ fn write_actionmaps_xml(p: &Path, parsed: &ParsedActionMaps) -> Result<(), Strin
     }
 
     w.write_event(Event::End(BytesEnd::new("ActionMaps"))).ok();
-    fs::write(
-        p,
-        String::from_utf8(w.into_inner().into_inner()).map_err(|e| e.to_string())?
-    ).map_err(|e| e.to_string())
+
+    // Final processing: Take the XML buffer and convert LF to CRLF for Star Citizen compatibility
+    let buffered = w.into_inner().into_inner();
+    let xml_str = String::from_utf8(buffered).map_err(|e| e.to_string())?;
+    
+    // Replace LF with CRLF and ensure trailing CRLF (Star Citizen style)
+    let final_xml = xml_str.replace("\n", "\r\n").trim_end().to_string() + "\r\n";
+    
+    fs::write(path, final_xml).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
+
 
 /// Finds the ZIP64 Central Directory in a P4K archive file.
 ///
@@ -976,8 +1044,9 @@ fn traverse_xml_node(
                 let action_name = last_action.name.clone();
                 profile.action_maps[idx].bindings.push(ScBinding {
                     action_name,
-                    input: input.clone(),
+                    inputs: vec![input.clone()],
                 });
+
             }
         }
     }
@@ -1058,8 +1127,10 @@ fn parse_cryxmlb_full(data: &[u8]) -> Result<ParsedActionMaps, String> {
         rebind_version: "2".into(),
         devices: vec![],
         device_options: vec![],
+        modifiers: None,
         action_maps: vec![],
     };
+
 
     traverse_xml_node(
         data,
@@ -1306,6 +1377,11 @@ pub async fn read_attributes(gp: String, v: String) -> Result<ScAttributes, Stri
         return Ok(ScAttributes::default());
     }
     let c = fs::read_to_string(p).map_err(|e| e.to_string())?;
+    Ok(parse_attributes_str(&c))
+}
+
+/// Simple string-based attributes.xml parser.
+pub fn parse_attributes_str(c: &str) -> ScAttributes {
     let mut attrs = ScAttributes::default();
     if let Some(s) = c.find("Version=\"").or(c.find("version=\"")) {
         let st = s + 9;
@@ -1333,7 +1409,7 @@ pub async fn read_attributes(gp: String, v: String) -> Result<ScAttributes, Stri
         }
         pos = st + 1;
     }
-    Ok(attrs)
+    attrs
 }
 /// Writes attributes back to the attributes.xml of the default profile.
 #[tauri::command]
@@ -1598,10 +1674,13 @@ pub async fn get_complete_binding_list(
         }
         for b in &am.bindings {
             let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None, false));
-            if !entry.0.contains(&b.input) {
-                entry.0.push(b.input.clone());
+            for input in &b.inputs {
+                if !entry.0.contains(input) {
+                    entry.0.push(input.clone());
+                }
             }
         }
+
     }
     // Then overlay user bindings and mark them as "custom"
     if let Some(up) = user_profile {
@@ -1611,14 +1690,17 @@ pub async fn get_complete_binding_list(
                 let entry = map
                     .entry(b.action_name.clone())
                     .or_insert_with(|| (vec![], None, false));
-                if !entry.0.contains(&b.input) {
-                    entry.0.push(b.input.clone());
+                for input in &b.inputs {
+                    if !entry.0.contains(input) {
+                        entry.0.push(input.clone());
+                    }
                 }
                 // Mark as custom
                 entry.2 = true;
             }
         }
     }
+
     // Convert merged data into the final list with localized names
     let mut results = vec![];
     let mut stats = BindingStats { total: 0, custom: 0 };
@@ -1755,10 +1837,13 @@ pub async fn get_profile_bindings(
         }
         for b in &am.bindings {
             let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None, false));
-            if !entry.0.contains(&b.input) {
-                entry.0.push(b.input.clone());
+            for input in &b.inputs {
+                if !entry.0.contains(input) {
+                    entry.0.push(input.clone());
+                }
             }
         }
+
     }
 
     if let Some(up) = user_profile {
@@ -1766,12 +1851,15 @@ pub async fn get_profile_bindings(
             let map = merged.entry(am.name.clone()).or_default();
             for b in &am.bindings {
                 let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None, false));
-                if !entry.0.contains(&b.input) {
-                    entry.0.push(b.input.clone());
+                for input in &b.inputs {
+                    if !entry.0.contains(input) {
+                        entry.0.push(input.clone());
+                    }
                 }
                 entry.2 = true;
             }
         }
+
     }
 
     let mut results = vec![];
@@ -1857,10 +1945,12 @@ pub async fn assign_binding(args: AssignBindingArgs) -> Result<(), String> {
                 rebind_version: "2".into(),
                 devices: vec![],
                 device_options: vec![],
+                modifiers: None,
                 action_maps: vec![],
             }],
         }
     };
+
     let profile = parsed.profiles
         .iter_mut()
         .find(|pr| pr.profile_name == "default" || pr.profile_name.is_empty())
@@ -1869,41 +1959,44 @@ pub async fn assign_binding(args: AssignBindingArgs) -> Result<(), String> {
     for am in &mut profile.action_maps {
         if am.name == args.category {
             if let Some(ref old) = args.old_input {
-                if
-                    let Some(b) = am.bindings
-                        .iter_mut()
-                        .find(|b| b.action_name == args.action_name && b.input == *old)
+                if let Some(b) = am.bindings.iter_mut()
+                    .find(|b| b.action_name == args.action_name && b.inputs.contains(old))
                 {
-                    b.input = args.input.clone();
+                    if let Some(pos) = b.inputs.iter().position(|x| x == old) {
+                        b.inputs[pos] = args.input.clone();
+                    }
                     found = true;
                     break;
                 }
-            } else if
-                let Some(b) = am.bindings.iter_mut().find(|b| b.action_name == args.action_name)
+            } else if let Some(b) = am.bindings.iter_mut()
+                .find(|b| b.action_name == args.action_name)
             {
-                b.input = args.input.clone();
+                // If no specific old_input, we replace ALL existing inputs for this action
+                b.inputs = vec![args.input.clone()];
                 found = true;
                 break;
             }
         }
     }
+
     if !found {
         if let Some(am) = profile.action_maps.iter_mut().find(|am| am.name == args.category) {
             am.bindings.push(ScBinding {
                 action_name: args.action_name.clone(),
-                input: args.input,
+                inputs: vec![args.input],
             });
         } else {
             profile.action_maps.push(ScActionMap {
                 name: args.category.clone(),
                 bindings: vec![ScBinding {
                     action_name: args.action_name.clone(),
-                    input: args.input,
+                    inputs: vec![args.input],
                 }],
                 actions: vec![ScAction { name: args.action_name, label: None }],
             });
         }
     }
+
     write_actionmaps_xml(&p, &parsed)
 }
 /// Arguments for removing a key binding.
@@ -1930,9 +2023,15 @@ pub async fn remove_binding(args: RemoveBindingArgs) -> Result<(), String> {
         .find(|pr| pr.profile_name == "default" || pr.profile_name.is_empty())
         .ok_or("No profile")?;
     for am in &mut profile.action_maps {
-        am.bindings.retain(|b| !(b.action_name == args.action_name && b.input == args.input));
+        for b in &mut am.bindings {
+            if b.action_name == args.action_name {
+                b.inputs.retain(|x| x != &args.input);
+            }
+        }
+        am.bindings.retain(|b| !b.inputs.is_empty());
     }
     write_actionmaps_xml(&p, &parsed)
+
 }
 
 /// Helper function: sets the dirty flag and recalculates the hash of actionmaps.xml.
@@ -1981,9 +2080,11 @@ pub async fn assign_profile_binding(
         for am in &mut profile.action_maps {
             if am.name == action_map {
                 if let Some(b) = am.bindings.iter_mut()
-                    .find(|b| b.action_name == action_name && b.input == *old)
+                    .find(|b| b.action_name == action_name && b.inputs.contains(old))
                 {
-                    b.input = new_input.clone();
+                    if let Some(pos) = b.inputs.iter().position(|x| x == old) {
+                        b.inputs[pos] = new_input.clone();
+                    }
                     found = true;
                     break;
                 }
@@ -1991,20 +2092,25 @@ pub async fn assign_profile_binding(
         }
     }
 
+
     if !found {
         if let Some(am) = profile.action_maps.iter_mut().find(|am| am.name == action_map) {
             am.bindings.push(ScBinding {
                 action_name: action_name.clone(),
-                input: new_input,
+                inputs: vec![new_input],
             });
         } else {
             profile.action_maps.push(ScActionMap {
                 name: action_map,
-                bindings: vec![ScBinding { action_name: action_name.clone(), input: new_input }],
+                bindings: vec![ScBinding {
+                    action_name: action_name.clone(),
+                    inputs: vec![new_input],
+                }],
                 actions: vec![ScAction { name: action_name, label: None }],
             });
         }
     }
+
 
     write_actionmaps_xml(&actionmaps_path, &parsed)?;
     mark_backup_dirty(&bdir)
@@ -2040,13 +2146,19 @@ pub async fn remove_profile_binding(
         if am.name == action_map {
             if let Some(ref inp) = input {
                 // Remove only the specific binding matching both action and input
-                am.bindings.retain(|b| !(b.action_name == action_name && b.input == *inp));
+                for b in &mut am.bindings {
+                    if b.action_name == action_name {
+                        b.inputs.retain(|x| x != inp);
+                    }
+                }
+                am.bindings.retain(|b| !b.inputs.is_empty());
             } else {
                 // Fallback: remove all bindings for the action
                 am.bindings.retain(|b| b.action_name != action_name);
             }
         }
     }
+
 
     write_actionmaps_xml(&actionmaps_path, &parsed)?;
     mark_backup_dirty(&bdir)
@@ -2529,10 +2641,124 @@ pub async fn reorder_profile_devices(
     Ok(())
 }
 /// Computes the SHA256 hash of a file. Used for change detection in backups.
+/// Calculates a stable, logical hash for a file.
+/// For actionmaps.xml and attributes.xml, it uses a canonicalized data-driven 
+/// representation that ignores formatting and noise.
+/// For other files, it falls back to a raw SHA-256 byte hash.
 fn hash_file(path: &Path) -> Option<String> {
+    let filename = path.file_name()?.to_string_lossy();
+    
+    if filename == "actionmaps.xml" {
+        if let Ok(data) = fs::read_to_string(path) {
+            if let Ok(mut parsed) = parse_actionmaps_xml(&data) {
+                // Canonicalize: Sort everything alphabetically and normalize numbers
+                parsed.canonicalize();
+                if let Ok(json) = serde_json::to_string(&parsed) {
+                    return Some(format!("{:x}", Sha256::digest(json.as_bytes())));
+                }
+            }
+        }
+    } else if filename == "attributes.xml" {
+        if let Ok(data) = fs::read_to_string(path) {
+            let mut parsed: ScAttributes = parse_attributes_str(&data);
+            // Canonicalize: Filter out noise (timestamps, versions) and sort
+            parsed.canonicalize();
+            if let Ok(json) = serde_json::to_string(&parsed) {
+                return Some(format!("{:x}", Sha256::digest(json.as_bytes())));
+            }
+        }
+    } else if filename == "profile.xml" {
+        if let Ok(data) = fs::read_to_string(path) {
+            // Simple string filter for LastPlayed="..." attribute
+            let mut filtered = data.clone();
+            if let Some(st) = filtered.find("LastPlayed=\"") {
+                if let Some(en) = filtered[st + 12..].find('"') {
+                    filtered.replace_range(st..st + 12 + en + 1, "");
+                }
+            }
+            return Some(format!("{:x}", Sha256::digest(filtered.as_bytes())));
+        }
+    }
+
+    // Default: Raw byte hash for other files
     let data = fs::read(path).ok()?;
     let hash = Sha256::digest(&data);
     Some(format!("{:x}", hash))
+}
+
+impl ParsedActionMaps {
+    pub fn canonicalize(&mut self) {
+        self.profiles.sort_by(|a, b| a.profile_name.cmp(&b.profile_name));
+        for p in &mut self.profiles {
+            p.canonicalize();
+        }
+    }
+}
+
+impl ScActionProfile {
+    pub fn canonicalize(&mut self) {
+        // Sort sub-collections alphabetically by name/instance
+        self.action_maps.sort_by(|a, b| a.name.cmp(&b.name));
+        for am in &mut self.action_maps {
+            am.canonicalize();
+        }
+        self.devices.sort_by(|a, b| a.instance.cmp(&b.instance));
+        for d in &mut self.devices {
+            d.canonicalize();
+        }
+        self.device_options.sort_by(|a, b| a.name.cmp(&b.name));
+        for do_opt in &mut self.device_options {
+            do_opt.canonicalize();
+        }
+    }
+}
+
+impl ScActionMap {
+    pub fn canonicalize(&mut self) {
+        self.actions.sort_by(|a, b| a.name.cmp(&b.name));
+        self.bindings.sort_by(|a, b| a.action_name.cmp(&b.action_name));
+        for b in &mut self.bindings {
+            b.inputs.sort();
+        }
+    }
+}
+
+impl ScDevice {
+    pub fn canonicalize(&mut self) {
+        self.tuning.sort_by(|a, b| a.name.cmp(&b.name));
+        // Normalize float precision for hashing (ignore minimal diffs)
+        for t in &mut self.tuning {
+            if let Some(ref mut exp) = t.exponent { *exp = (*exp * 1000000.0).round() / 1000000.0; }
+            if let Some(ref mut sens) = t.sensitivity { *sens = (*sens * 1000000.0).round() / 1000000.0; }
+        }
+    }
+}
+
+impl ScDeviceOptions {
+    pub fn canonicalize(&mut self) {
+        self.options.sort_by(|a, b| a.input.cmp(&b.input));
+        // Normalize float precision
+        for o in &mut self.options {
+            if let Some(ref mut dz) = o.deadzone { *dz = (*dz * 1000000.0).round() / 1000000.0; }
+            if let Some(ref mut sat) = o.saturation { *sat = (*sat * 1000000.0).round() / 1000000.0; }
+        }
+    }
+}
+
+impl ScAttributes {
+    pub fn canonicalize(&mut self) {
+        // Filter out "noisy" volatile session data
+        self.attrs.retain(|a| {
+            !matches!(a.name.as_str(), 
+                "Version" | "lastPlayed" | "WindowPositionX" | "WindowPositionY" | 
+                "WindowWidth" | "WindowHeight" | "WindowMode" | "UIVolume" | "Focus"
+            )
+        });
+        // Sort alphabetically to be invariant of XML order
+        self.attrs.sort_by(|a, b| a.name.cmp(&b.name));
+        // Ignore the header version if possible (SC updates it slightly)
+        self.version = "1".into();
+    }
 }
 
 /// Creates a manual backup of the default profile with a user-defined label.
@@ -3677,5 +3903,98 @@ pub async fn update_backup_from_sc(
 
     log::info!("Updated profile {} from current SC files", bid);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_semantic_actionmaps_hashing() {
+        let temp = std::env::temp_dir();
+        let file1 = temp.join("actionmaps_test1.xml");
+        let file2 = temp.join("actionmaps.xml"); // Must be named exactly for hash_file branch
+
+        let xml1 = r#"<ActionMaps version="1">
+    <ActionProfiles profileName="default" version="1" optionsVersion="2" rebindVersion="2">
+        <actionmap name="spaceship_movement">
+            <action name="v_pitch"><rebind input="js1_x"/></action>
+            <action name="v_yaw"><rebind input="js1_y"/></action>
+        </actionmap>
+    </ActionProfiles>
+</ActionMaps>"#;
+
+        // Swapped order of pitch and yaw
+        let xml2 = r#"<ActionMaps version="1">
+    <ActionProfiles profileName="default" version="1" optionsVersion="2" rebindVersion="2">
+        <actionmap name="spaceship_movement">
+            <action name="v_yaw"><rebind input="js1_y"/></action>
+            <action name="v_pitch"><rebind input="js1_x"/></action>
+        </actionmap>
+    </ActionProfiles>
+</ActionMaps>"#;
+
+        // Test 1: file1 name is different, should use raw hash (different)
+        fs::write(&file1, xml1).unwrap();
+        let h_raw1 = hash_file(&file1).unwrap();
+        fs::write(&file1, xml2).unwrap();
+        let h_raw2 = hash_file(&file1).unwrap();
+        assert_ne!(h_raw1, h_raw2, "Raw hashes should differ for changed byte order");
+
+        // Test 2: file name is actionmaps.xml, should use logical hash (same)
+        fs::write(&file2, xml1).unwrap();
+        let h_log1 = hash_file(&file2).unwrap();
+        fs::write(&file2, xml2).unwrap();
+        let h_log2 = hash_file(&file2).unwrap();
+        assert_eq!(h_log1, h_log2, "Logical hashes must match despite node order changes");
+        
+        fs::remove_file(&file1).ok();
+        fs::remove_file(&file2).ok();
+    }
+
+    #[test]
+    fn test_semantic_attributes_hashing() {
+        let temp = std::env::temp_dir();
+        let file1 = temp.join("attributes.xml");
+
+        let xml1 = r#"<Attributes Version="1">
+    <Attr name="lastPlayed" value="12345678"/>
+    <Attr name="VSync" value="1"/>
+</Attributes>"#;
+
+        // Changed lastPlayed, Version and swapped order
+        let xml2 = r#"<Attributes Version="2">
+    <Attr name="VSync" value="1"/>
+    <Attr name="lastPlayed" value="87654321"/>
+</Attributes>"#;
+
+        fs::write(&file1, xml1).unwrap();
+        let h1 = hash_file(&file1).unwrap();
+        
+        fs::write(&file1, xml2).unwrap();
+        let h2 = hash_file(&file1).unwrap();
+
+        assert_eq!(h1, h2, "Hashes must match despite session noise in attributes.xml");
+        fs::remove_file(&file1).ok();
+    }
+
+    #[test]
+    fn test_semantic_profile_hashing() {
+        let temp = std::env::temp_dir();
+        let file1 = temp.join("profile.xml");
+
+        let xml1 = r#"<Profile Name="default" LastPlayed="1774630092" LastTimeQRCodeDisabled="139638949847072"/>"#;
+        let xml2 = r#"<Profile Name="default" LastPlayed="1774630895" LastTimeQRCodeDisabled="139638949847072"/>"#;
+
+        fs::write(&file1, xml1).unwrap();
+        let h1 = hash_file(&file1).unwrap();
+        
+        fs::write(&file1, xml2).unwrap();
+        let h2 = hash_file(&file1).unwrap();
+
+        assert_eq!(h1, h2, "Hashes must match despite changing LastPlayed in profile.xml");
+        fs::remove_file(&file1).ok();
+    }
 }
 

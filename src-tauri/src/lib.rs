@@ -66,7 +66,7 @@ mod system_check;
 mod action_definitions;
 
 // simplelog is used for file-based logging (writes to ~/.config/penguin-citizen/logs/debug.log)
-use simplelog::{ CombinedLogger, WriteLogger, LevelFilter, Config };
+use simplelog::{ CombinedLogger, WriteLogger, TermLogger, LevelFilter, Config, TerminalMode, ColorChoice };
 use std::fs::File;
 
 /// Initializes the logging system with file output.
@@ -100,7 +100,10 @@ fn init_logging() {
 
     // CombinedLogger allows multiple logger backends – here only file logging at debug level
     let logger = CombinedLogger::init(
-        vec![WriteLogger::new(LevelFilter::Debug, Config::default(), log_file)]
+        vec![
+            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
+            WriteLogger::new(LevelFilter::Debug, Config::default(), log_file)
+        ]
     );
 
     match logger {
