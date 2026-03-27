@@ -7579,3 +7579,165 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
+
+/* ============================
+   Matrix View (Bindings)
+   ============================ */
+
+.bindings-matrix-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.bindings-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.bindings-matrix-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border);
+  background: var(--bg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.matrix-action-th {
+  width: 30%;
+  min-width: 200px;
+}
+
+.bindings-matrix-table td {
+  padding: 0; 
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.bindings-matrix-table td:last-child {
+  border-right: none;
+}
+
+.bindings-matrix-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Action Left Column */
+.matrix-action-cell {
+  padding: 10px 12px !important;
+  background-color: var(--bg-primary);
+}
+
+/* Assignment Cells */
+.binding-matrix-cell {
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+  position: relative;
+  min-width: 120px;
+}
+
+.binding-matrix-cell:hover {
+  background-color: rgba(6, 182, 212, 0.05); /* very faint accent */
+}
+
+.matrix-cell-content {
+  min-height: 50px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.binding-matrix-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-muted);
+  font-size: var(--font-xl);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.binding-matrix-cell:hover .binding-matrix-empty {
+  opacity: 0.3;
+}
+
+/* Redesigned Input Pill */
+.binding-input-pill {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.binding-input-pill.custom-binding {
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.1);
+}
+
+.binding-input-pill .binding-input {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: var(--font-xs);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  font-family: var(--font-sans); /* Use sans-serif for readability if preferred, or omit */
+  cursor: text; /* implies it can be clicked to edit */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.binding-input-pill .binding-input:hover {
+  color: var(--accent);
+}
+
+.btn-matrix-remove {
+  width: 24px;
+  background: rgba(239, 68, 68, 0.05);
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--danger);
+  font-weight: bold;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.btn-matrix-remove:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: white;
+}
+
+/* Align "Essentials Only" Toggle in Toolbar */
+.essentials-only-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  user-select: none;
+  margin-left: auto;
+}
+
+.essentials-only-toggle:hover {
+  color: var(--text-primary);
+}

@@ -28,6 +28,64 @@ use std::thread;
 use once_cell::sync::Lazy;
 use chrono::Local;
 use serde::{ Deserialize, Serialize };
+use crate::action_definitions::DeviceMapping;
+
+/// Helper function to map a gilrs gamepad to Star Citizen's device type and instance number.
+/// It consumes elements from `used_mappings` so identical devices get distinct instances.
+fn resolve_sc_instance(
+    gamepad_name: &str,
+    gilrs_id: GamepadId,
+    device_map_opt: &Option<Vec<DeviceMapping>>,
+    used_mappings: &mut std::collections::HashSet<(String, u32)>,
+) -> (u32, String) {
+    if let Some(dmap) = device_map_opt {
+        let s_ln = gamepad_name.to_lowercase();
+        
+        // Pass 1: Try to find an EXACT match first
+        if let Some(dm) = dmap.iter().find(|m| {
+            let s_sc = m.product_name.to_lowercase();
+            s_sc == s_ln && !used_mappings.contains(&(m.device_type.clone(), m.sc_instance))
+        }) {
+            log_capture(&format!("[SYNC] Exact match for '{}': SC {} ({})", gamepad_name, dm.sc_instance, dm.device_type));
+            used_mappings.insert((dm.device_type.clone(), dm.sc_instance));
+            return (dm.sc_instance, dm.device_type.clone());
+        }
+
+        // Pass 2: Fuzzy match (either name contains the other) as fallback
+        if let Some(dm) = dmap.iter().find(|m| {
+            let s_sc = m.product_name.to_lowercase();
+            let matches_name = s_sc.contains(&s_ln) || s_ln.contains(&s_sc);
+            matches_name && !used_mappings.contains(&(m.device_type.clone(), m.sc_instance))
+        }) {
+            log_capture(&format!("[SYNC] Fuzzy match for '{}': SC {} ({})", gamepad_name, dm.sc_instance, dm.device_type));
+            used_mappings.insert((dm.device_type.clone(), dm.sc_instance));
+            return (dm.sc_instance, dm.device_type.clone());
+        }
+    }
+
+    // Fallback logic for unmapped devices
+    let dev_type = "joystick".to_string(); // gilrs mostly sees joysticks/gamepads
+    
+    // Find a free fallback instance number that doesn't collide with ANY mapped instance in the device_map
+    let mut fallback = (usize::from(gilrs_id) + 1) as u32;
+    
+    // Collision detection: ensure this fallback isn't already "claimed" by a device_map entry
+    if let Some(dmap) = device_map_opt {
+        let claimed_instances: std::collections::HashSet<u32> = dmap.iter()
+            .filter(|m| m.device_type == dev_type || dev_type == "joystick") 
+            .map(|m| m.sc_instance)
+            .collect();
+        
+        while claimed_instances.contains(&fallback) || used_mappings.contains(&(dev_type.clone(), fallback)) {
+            // Priority: avoid duplication across ALMOST ALL joystick-like devices
+            fallback += 1;
+        }
+    }
+
+    log_capture(&format!("[FALLBACK] No match for '{}'. Using instance {} (ID: {:?})", gamepad_name, fallback, gilrs_id));
+    used_mappings.insert((dev_type.clone(), fallback));
+    (fallback, dev_type)
+}
 
 /// Global atomic flag indicating whether input capture is currently running.
 /// Initialized as a lazy static so it can be shared across multiple Tauri commands
@@ -87,21 +145,19 @@ pub struct CapturedInput {
 /// Called by the frontend to display a device list to the user.
 /// Creates a new gilrs instance and iterates over all detected gamepads.
 #[tauri::command]
-pub fn list_connected_devices() -> Result<Vec<ConnectedDevice>, String> {
+pub fn list_connected_devices(device_map: Option<Vec<DeviceMapping>>) -> Result<Vec<ConnectedDevice>, String> {
     let gilrs = Gilrs::new().map_err(|e| e.to_string())?;
 
     let mut devices = Vec::new();
+    let mut used_mappings = std::collections::HashSet::new();
 
     for (id, gamepad) in gilrs.gamepads() {
-        // Convert gilrs internal ID to a 1-based instance number
-        // to match the SC format (js1, js2, ...)
-        let js_id: usize = id.into();
-        let instance = (js_id + 1) as u32;
+        let (instance, dev_type) = resolve_sc_instance(gamepad.name(), id, &device_map, &mut used_mappings);
 
         devices.push(ConnectedDevice {
             linux_uuid: uuid_to_hex(gamepad.uuid()),
             product_name: gamepad.name().to_string(),
-            device_type: "joystick".to_string(),
+            device_type: dev_type,
             instance,
         });
     }
@@ -130,13 +186,13 @@ pub struct ConnectedDeviceWithAxes {
 /// Lists all connected devices with their available axes.
 /// Used by the tuning UI to show axis-level deadzone/saturation controls.
 #[tauri::command]
-pub fn list_device_axes() -> Result<Vec<ConnectedDeviceWithAxes>, String> {
+pub fn list_device_axes(device_map: Option<Vec<DeviceMapping>>) -> Result<Vec<ConnectedDeviceWithAxes>, String> {
     let gilrs = Gilrs::new().map_err(|e| e.to_string())?;
     let mut results = Vec::new();
+    let mut used_mappings = std::collections::HashSet::new();
 
     for (id, gamepad) in gilrs.gamepads() {
-        let js_id: usize = id.into();
-        let instance = (js_id + 1) as u32;
+        let (instance, _dev_type) = resolve_sc_instance(gamepad.name(), id, &device_map, &mut used_mappings);
 
         let mut axes = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -188,7 +244,12 @@ pub fn list_device_axes() -> Result<Vec<ConnectedDeviceWithAxes>, String> {
 /// Prevents double start via the global IS_CAPTURING flag.
 /// The thread runs until `stop_input_capture()` is called.
 #[tauri::command]
-pub fn start_input_capture(app: AppHandle) {
+pub fn start_input_capture(
+    app: AppHandle, 
+    device_map: Option<Vec<DeviceMapping>>,
+    target_instance: Option<u32>,
+    target_type: Option<String>
+) {
     // Prevent double start - if already capturing, return immediately
     if IS_CAPTURING.load(Ordering::SeqCst) {
         return;
@@ -206,53 +267,72 @@ pub fn start_input_capture(app: AppHandle) {
             Ok(mut gilrs) => {
                 log_capture(&format!("Gilrs active. Found {} devices.", gilrs.gamepads().count()));
 
-                // Build a map at startup: GamepadId -> (UUID, Name, Instance).
-                // This avoids re-querying the gamepad on every event,
-                // which speeds up processing in the main loop.
+                // Build a map at startup: GamepadId -> (UUID, Name, Instance, DeviceType).
                 let mut device_info_map: std::collections::HashMap<
                     GamepadId,
-                    (String, String, u32)
+                    (String, String, u32, String)
                 > = std::collections::HashMap::new();
+                
+                let mut used_mappings = std::collections::HashSet::new();
                 for (id, gamepad) in gilrs.gamepads() {
-                    let js_id: usize = id.into();
-                    let instance = (js_id + 1) as u32;
+                    let (instance, dev_type) = resolve_sc_instance(gamepad.name(), id, &device_map, &mut used_mappings);
                     device_info_map.insert(id, (
                         uuid_to_hex(gamepad.uuid()),
                         gamepad.name().to_string(),
                         instance,
+                        dev_type,
                     ));
                 }
+
+                // Track initial axis values to calculate significant deltas (change > 0.5)
+                // This replaces the absolute threshold which caused jitter issues on resting axes.
+                let mut initial_axis_vals: std::collections::HashMap<(GamepadId, Axis), f32> = std::collections::HashMap::new();
 
                 // Main capture loop - runs until IS_CAPTURING is set to false
                 while capturing.load(Ordering::SeqCst) {
                     // Process all pending events from the gilrs queue
                     while let Some(Event { id, event, .. }) = gilrs.next_event() {
+                        // Raw diagnostic logging
+                        log_capture(&format!("[RAW EVENT] Dev {:?}: {:?}", id, event));
                         // Look up device information - if the device is not in the map
-                        // (e.g. because it was connected after capture started), it is
-                        // queried now and added to the map
-                        let (linux_uuid, product_name, instance) = if
+                        let (linux_uuid, product_name, instance, dev_type) = if
                             let Some(info) = device_info_map.get(&id)
                         {
                             info.clone()
                         } else {
                             // Device may have been added after capture started
                             let gamepad = gilrs.gamepad(id);
-                            let js_id: usize = id.into();
-                            let inst = (js_id + 1) as u32;
+                            let (inst, dtype) = resolve_sc_instance(gamepad.name(), id, &device_map, &mut used_mappings);
                             let info = (
                                 uuid_to_hex(gamepad.uuid()),
                                 gamepad.name().to_string(),
                                 inst,
+                                dtype,
                             );
                             device_info_map.insert(id, info.clone());
                             info
                         };
 
+                        // Filter by target device if provided (Rock-Solid Target Filtering)
+                        if let (Some(t_inst), Some(t_type)) = (target_instance, &target_type) {
+                            if instance != t_inst || dev_type != *t_type {
+                                // Diagnostic: Log skip reasons periodically
+                                static SKIP_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                                let count = SKIP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if count % 50 == 0 {
+                                    log_capture(&format!(
+                                        "[FILTER SKIPPED] Dev {:?} (Inst {} {}) != Target (Inst {} {})",
+                                        id, instance, dev_type, t_inst, t_type
+                                    ));
+                                }
+                                continue;
+                            }
+                        }
+
                         // Convert event to SC-compatible input format.
-                        // Only ButtonPressed and significant axis movements are processed.
                         let sc_input = match event {
-                            // Process button press events
-                            EventType::ButtonPressed(button, code) => {
+                            // Process button press events (including virtual buttons from remapper)
+                            EventType::ButtonPressed(button, code) | EventType::ButtonChanged(button, 1.0, code) => {
                                 let btn_name = if button != Button::Unknown {
                                     // Known button - convert to SC format via the mapping function
                                     format_gilrs_button(button)
@@ -305,35 +385,44 @@ pub fn start_input_capture(app: AppHandle) {
                                 Some((btn_name, itype.to_string()))
                             }
 
-                            // Only process axis movements when deflection exceeds 80%.
-                            // The high threshold prevents accidental captures
-                            // from slight wobble or deadzone noise.
-                            EventType::AxisChanged(axis, val, code) if val.abs() > 0.8 => {
-                                let code_str = format!("{:?}", code);
+                            // Track initial position to require a significant movement (delta > 0.5)
+                            // This prevents resting axes with tiny jitter from constantly firing.
+                            EventType::AxisChanged(axis, val, code) => {
+                                let baseline = *initial_axis_vals.entry((id, axis)).or_insert(val);
+                                
+                                if (val - baseline).abs() > 0.5 {
+                                    // Update baseline so it requires another large movement to trigger again
+                                    initial_axis_vals.insert((id, axis), val);
 
-                                // Convert gilrs axes to SC axis names
-                                let axis_name = match axis {
-                                    Axis::LeftStickX => "x".to_string(),
-                                    Axis::LeftStickY => "y".to_string(),
-                                    Axis::LeftZ => "z".to_string(),
-                                    Axis::RightStickX => "rotx".to_string(),
-                                    Axis::RightStickY => "roty".to_string(),
-                                    Axis::RightZ => "rotz".to_string(),
-                                    _ => {
-                                        // Detect non-standard axes via hardware code.
-                                        // Codes 6 and 7 are typically slider/throttle axes
-                                        // on HOTAS systems.
-                                        if code_str.contains("code: 6") {
-                                            "slider1".to_string()
-                                        } else if code_str.contains("code: 7") {
-                                            "slider2".to_string()
-                                        } else {
-                                            // Fallback: gilrs axis name in lowercase
-                                            format!("{:?}", axis).to_lowercase()
+                                    let code_str = format!("{:?}", code);
+
+                                    // Convert gilrs axes to SC axis names
+                                    let axis_name = match axis {
+                                        Axis::LeftStickX => "x".to_string(),
+                                        Axis::LeftStickY => "y".to_string(),
+                                        Axis::LeftZ => "z".to_string(),
+                                        Axis::RightStickX => "rotx".to_string(),
+                                        Axis::RightStickY => "roty".to_string(),
+                                        Axis::RightZ => "rotz".to_string(),
+                                        _ => {
+                                            // Detect non-standard axes via hardware code.
+                                            // Codes 6 and 7 are typically slider/throttle axes
+                                            // on HOTAS systems.
+                                            if code_str.contains("code: 6") {
+                                                "slider1".to_string()
+                                            } else if code_str.contains("code: 7") {
+                                                "slider2".to_string()
+                                            } else {
+                                                // Fallback: gilrs axis name in lowercase
+                                                format!("{:?}", axis).to_lowercase()
+                                            }
                                         }
-                                    }
-                                };
-                                Some((axis_name, "axis".to_string()))
+                                    };
+                                    Some((axis_name, "axis".to_string()))
+                                } else {
+                                    // Movement was too small (jitter)
+                                    None
+                                }
                             }
 
                             // Ignore all other events (ButtonReleased, small axis movements, etc.)
@@ -342,8 +431,15 @@ pub fn start_input_capture(app: AppHandle) {
 
                         // If a valid input event was detected, send it to the frontend
                         if let Some((input, input_type)) = sc_input {
-                            // Build the full input string in SC format: "js{N}_{input}"
-                            let full_input = format!("js{}_{}", instance, input);
+                            // Build the full input string in SC format based on device type
+                            let prefix = match dev_type.as_str() {
+                                "joystick" => format!("js{}", instance),
+                                "gamepad"  => format!("gp{}", instance), // or xi
+                                "keyboard" => format!("kb{}", instance),
+                                "mouse"    => format!("mo{}", instance),
+                                _          => format!("js{}", instance),
+                            };
+                            let full_input = format!("{}_{}", prefix, input);
 
                             log_capture(
                                 &format!(
