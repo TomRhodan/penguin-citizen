@@ -6482,9 +6482,9 @@
 }
 
 .binding-category-content .bindings-table td {
-  padding: 18px 24px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--border);
-  font-size: 1.143rem;
+  font-size: var(--font-md);
   vertical-align: middle;
 }
 
@@ -6506,14 +6506,14 @@
 
 .binding-action-name {
   font-weight: 600;
-  font-size: 1.286rem;
+  font-size: var(--font-lg);
   color: var(--text-primary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   letter-spacing: 0.3px;
 }
 
 .binding-action-key {
-  font-size: var(--font-md);
+  font-size: var(--font-xs);
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
