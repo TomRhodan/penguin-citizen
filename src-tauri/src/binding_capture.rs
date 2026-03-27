@@ -319,7 +319,7 @@ pub fn start_input_capture(
                                 // Diagnostic: Log skip reasons periodically
                                 static SKIP_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
                                 let count = SKIP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                if count % 50 == 0 {
+                                if count.is_multiple_of(50) {
                                     log_capture(&format!(
                                         "[FILTER SKIPPED] Dev {:?} (Inst {} {}) != Target (Inst {} {})",
                                         id, instance, dev_type, t_inst, t_type
