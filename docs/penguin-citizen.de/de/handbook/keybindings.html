@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tastenbelegung - Penguin Citizen Handbuch</title>
-    <meta name="description" content="Controller verwalten, Tastenbelegungen bearbeiten und Joysticks in Penguin Citizen konfigurieren." />
+    <meta name="description" content="Controller verwalten, Tastenbelegungen bearbeiten und Joystick-Achsen in Penguin Citizen konfigurieren." />
     <link rel="icon" type="image/png" href="../../assets/logo.png" />
     <link rel="stylesheet" href="../../css/fonts.css" />
     <link rel="stylesheet" href="../../css/styles.css" />
@@ -52,58 +52,90 @@
 
           <header>
             <h1>Tastenbelegung</h1>
-            <p>Controller-Belegungen anzeigen und bearbeiten, Geraete verwalten und Joystick-Einstellungen feinjustieren.</p>
+            <p>Controller-Belegungen anzeigen und bearbeiten, Geräte verwalten und Joystick-Achsen feinabstimmen.</p>
           </header>
 
-          <h2>Binding-Editor</h2>
-          <p>Der Binding-Editor zeigt alle Star Citizen Tastenbelegungen, organisiert nach Geraetetyp und Aktionskategorie.</p>
-
-          <h3>Geraetefilter</h3>
-          <p>Filtere Belegungen nach Geraetetyp mit den Tabs oben:</p>
-          <ul>
-            <li><strong>Tastatur</strong> - Standard-Tastaturkuerzel</li>
-            <li><strong>Maus</strong> - Maustastenbelegungen</li>
-            <li><strong>Gamepad</strong> - Controller/Gamepad-Belegungen</li>
-            <li><strong>Joystick</strong> - HOTAS und Joystick-Belegungen</li>
-          </ul>
+          <h2>Binding-Matrix</h2>
+          <p>
+            Die Tastenbelegungs-Seite zeigt alle Star Citizen-Aktionen in einer Tabelle. Jede Zeile ist
+            eine Aktion; die Spalten stellen deine angeschlossenen Geräte dar — Tastatur, Maus und alle
+            Joysticks oder Gamepads. Die Aktionskategorien sind in der Seitenleiste links aufgelistet.
+          </p>
 
           <h3>Filtern und Suchen</h3>
           <ul>
-            <li><strong>Aktionssuche</strong> - Tippe, um Belegungen nach Aktionsname in Echtzeit zu filtern</li>
-            <li><strong>Kategoriefilter</strong> - Gruppiere Belegungen nach Star Citizen Kategorie (Flug, Zielerfassung, Fahrzeuge, etc.)</li>
-            <li><strong>Nur Angepasste</strong> - Zeige nur Belegungen, die von den Standardwerten abweichen</li>
+            <li><strong>Kategorie-Seitenleiste</strong> — Klicke eine Kategorie (z.B. Flugbewegung, Zielerfassung) an, um direkt dorthin zu springen oder sie ein-/auszuklappen.</li>
+            <li><strong>Suche</strong> — Tippe in das Suchfeld, um Aktionen nach Name in Echtzeit zu filtern.</li>
+            <li><strong>Geräte-Tabs</strong> — Zeige nur die Spalten eines bestimmten Gerätetyps (Tastatur, Maus, Joystick, Gamepad) oder alle gleichzeitig.</li>
+            <li><strong>Nur belegte Aktionen</strong> — Aktiviere diesen Filter, um alle Aktionen ohne Belegung auszublenden und nur die tatsächlich gemappten anzuzeigen.</li>
           </ul>
 
           <h3>Eine Belegung bearbeiten</h3>
-          <p>Klicke auf den Bearbeiten-Button einer Belegung, um den Binding-Editor-Dialog zu oeffnen:</p>
+          <p>Jede Zelle in der Matrix gehört zu einer Aktion und einem Gerät. So änderst du eine Belegung:</p>
           <ol class="handbook-steps">
-            <li>Die aktuelle Belegung wird zusammen mit dem Aktionsnamen angezeigt</li>
-            <li>Waehle das Zielgeraet (Tastatur, Maus, Gamepad oder Joystick)</li>
-            <li>Druecke die gewuenschte Taste oder den gewuenschten Button, um die neue Belegung zu erfassen</li>
-            <li>Wenn die Belegung mit einer bestehenden kollidiert, wird eine Warnung angezeigt</li>
-            <li>Klicke Speichern zum Uebernehmen oder Abbrechen zum Verwerfen</li>
+            <li>Klicke den <strong>+</strong>-Button in einer leeren Zelle, um eine neue Belegung für diese Aktion und dieses Gerät hinzuzufügen.</li>
+            <li>Klicke die Beschriftung einer vorhandenen Belegungs-Pille, um sie zu bearbeiten.</li>
+            <li>Der passende Editor-Dialog öffnet sich (siehe unten).</li>
+            <li>Klicke <strong>Speichern</strong> zum Übernehmen, <strong>Auf Standard zurücksetzen</strong> zum Wiederherstellen des Originals oder <strong>Abbrechen</strong> zum Verwerfen.</li>
           </ol>
-          <p>Verwende den <strong>Loeschen</strong>-Button, um eine Belegung zu entfernen, oder <strong>Zuruecksetzen</strong>, um den Standardwert wiederherzustellen.</p>
-
-          <h2>Joystick-Verwaltung</h2>
-          <p>Penguin Citizen erkennt angeschlossene Joysticks und zeigt sie in einer Liste an. Du kannst Joysticks per Drag-and-Drop umsortieren, um ihre Instanznummern zu aendern, die bestimmen, wie Star Citizen <code>js1_</code>, <code>js2_</code>, etc. deinen Geraeten zuweist.</p>
+          <p>Um eine Belegung vollständig zu entfernen, klicke den <strong>×</strong>-Button auf der Belegungs-Pille.</p>
 
           <div class="handbook-note">
-            Joystick-Instanznummern unter Linux koennen sich von dem unterscheiden, was Star Citizen erwartet. Wenn deine Belegungen auf dem falschen Geraet zu sein scheinen, versuche hier deine Joysticks umzusortieren.
+            Änderungen werden direkt in dein aktives Star Citizen-Profil geschrieben. Stelle sicher,
+            dass ein Profil geladen ist, bevor du Belegungen bearbeitest — ist kein Profil aktiv,
+            zeigt der Speichern-Button eine Fehlermeldung.
           </div>
 
-          <h2>Joystick-Tuning</h2>
-          <p>Justiere das Verhalten jedes Joysticks mit diesen Einstellungen:</p>
+          <h2>Tastatur- &amp; Joystick-Belegungen</h2>
+          <p>
+            Für Tastatur- und Joystick-/Gamepad-Belegungen öffnet ein Klick auf eine Zelle den
+            <strong>Live-Capture-Dialog</strong>. Drücke einfach die Taste, den Button oder bewege
+            die Achse, die du zuweisen möchtest — Penguin Citizen erkennt die Eingabe automatisch.
+            Wird die Eingabe bereits von einer anderen Aktion verwendet, erscheint eine Konfliktwarnung.
+          </p>
+
+          <h2>Maus-Belegungen</h2>
+          <p>
+            Maus-Belegungen verwenden einen eigenen <strong>statischen Auswahl-Dialog</strong> statt
+            Live-Capture. Live-Capture ist für die Maus nicht möglich, da der Mauszeiger zum Bedienen
+            der App selbst benötigt wird.
+          </p>
+          <p>Der Dialog zeigt alle 11 Star Citizen-kompatiblen Mauseingaben in drei Spalten:</p>
           <ul>
-            <li><strong>Deadzone</strong> - Passe den Deadzone-Regler an, um kleine Bewegungen um die Mittelposition zu ignorieren. Nuetzlich fuer aeltere Joysticks mit Drift.</li>
-            <li><strong>Empfindlichkeitskurve</strong> - Waehle eine Antwortkurve, die aendert, wie Eingaben in Spielbewegungen uebersetzt werden. Linear gibt eine 1:1-Antwort; andere Kurven bieten mehr Praezision nahe der Mitte.</li>
-            <li><strong>Achseninversion</strong> - Schalte die Inversion fuer X-, Y- und Z-Achse unabhaengig um.</li>
-            <li><strong>Empfindlichkeitsmultiplikator</strong> - Skaliere die Gesamtempfindlichkeit hoch oder runter.</li>
+            <li><strong>Bewegungsachsen</strong> — X-Achse (horizontal) und Y-Achse (vertikal)</li>
+            <li><strong>Scrollräder</strong> — Scrollrad aufwärts/abwärts und horizontales Scrollrad rechts/links</li>
+            <li><strong>Buttons</strong> — Linksklick, Rechtsklick, Mittelklick, Seitentaste Zurück, Seitentaste Vorwärts</li>
           </ul>
-          <p>Jeder Joystick kann unabhaengig konfiguriert werden, sodass du unterschiedliche Einstellungen fuer deinen linken und rechten Stick in einem Dual-Stick-Setup haben kannst.</p>
+          <p>Klicke eine Zeile, um sie auszuwählen — das <em>Aktuell</em>-Badge oben aktualisiert sich sofort. Klicke <strong>Speichern</strong> zum Übernehmen.</p>
+
+          <h2>Joystick-Verwaltung</h2>
+          <p>
+            Penguin Citizen erkennt angeschlossene Joysticks und zeigt sie in der Geräte-Seitenleiste an.
+            Du kannst Joysticks per Drag-and-Drop umsortieren, um ihre Instanznummern zu ändern, die
+            bestimmen, wie Star Citizen <code>js1_</code>, <code>js2_</code>, etc. deinen Geräten zuweist.
+          </p>
+
+          <div class="handbook-note">
+            Joystick-Instanznummern unter Linux können sich von dem unterscheiden, was Star Citizen erwartet.
+            Wenn deine Belegungen auf dem falschen Gerät zu sein scheinen, versuche hier deine Joysticks umzusortieren.
+          </div>
+
+          <h2>Achsen-Tuning</h2>
+          <p>
+            Joystick-Achsen-Belegungen zeigen einen kleinen <strong>Tuning-Button (∧)</strong> neben der
+            Belegungs-Pille. Klicke ihn, um den Achsen-Tuning-Editor für diese spezifische Aktion zu öffnen:
+          </p>
+          <ul>
+            <li><strong>Deadzone</strong> — Ignoriere kleine Bewegungen um die Mittelposition. Nützlich für Joysticks mit Drift.</li>
+            <li><strong>Empfindlichkeitskurve</strong> — Wähle eine Antwortkurve (Linear, Exponentiell, etc.), die steuert, wie physische Bewegung in Spielbewegung übersetzt wird.</li>
+            <li><strong>Achseninversion</strong> — Kehre die Achsenrichtung um.</li>
+            <li><strong>Empfindlichkeitsmultiplikator</strong> — Skaliere die Gesamtempfindlichkeit hoch oder runter.</li>
+          </ul>
+          <p>Tuning-Einstellungen werden pro Joystick-Gerät gespeichert — ein Wechsel des USB-Ports setzt sie nicht zurück.</p>
 
           <div class="handbook-tip">
-            Joystick-Tuning-Einstellungen werden pro Geraet gespeichert. Wenn du USB-Ports tauschst, folgen die Einstellungen dem Geraet, nicht dem Port.
+            Maus-Achsen-Belegungen (X-Achse, Y-Achse) haben keinen Tuning-Button — Star Citizen steuert
+            die Mausempfindlichkeit über seine eigenen Spieleinstellungen und nicht über die Profil-XML.
           </div>
 
           <nav class="handbook-nav-bottom">
@@ -112,7 +144,7 @@
               <span class="nav-title">Profile</span>
             </a>
             <a href="usercfg.html" class="nav-next">
-              <span class="nav-label">Naechste</span>
+              <span class="nav-label">Nächste</span>
               <span class="nav-title">Grafikeinstellungen</span>
             </a>
           </nav>

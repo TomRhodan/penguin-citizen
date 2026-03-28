@@ -52,58 +52,88 @@
 
           <header>
             <h1>Keybindings</h1>
-            <p>View and edit controller bindings, manage devices, and fine-tune joystick settings.</p>
+            <p>View and edit controller bindings, manage devices, and fine-tune joystick axes.</p>
           </header>
 
-          <h2>Binding Editor</h2>
-          <p>The binding editor displays all Star Citizen keybindings organized by device type and action category.</p>
-
-          <h3>Device Filters</h3>
-          <p>Filter bindings by device type using the tabs at the top:</p>
-          <ul>
-            <li><strong>Keyboard</strong> - Standard keyboard shortcuts</li>
-            <li><strong>Mouse</strong> - Mouse button bindings</li>
-            <li><strong>Gamepad</strong> - Controller/gamepad bindings</li>
-            <li><strong>Joystick</strong> - HOTAS and joystick bindings</li>
-          </ul>
+          <h2>Binding Matrix</h2>
+          <p>
+            The keybindings page displays all Star Citizen actions in a table. Each row is an action;
+            columns represent your connected devices — keyboard, mouse, and any joysticks or gamepads.
+            Action categories are listed in the sidebar on the left.
+          </p>
 
           <h3>Filtering and Search</h3>
           <ul>
-            <li><strong>Action Search</strong> - Type to filter bindings by action name in real-time</li>
-            <li><strong>Category Filter</strong> - Group bindings by Star Citizen category (Flight, Targeting, Vehicles, etc.)</li>
-            <li><strong>Customized Only</strong> - Show only bindings that have been modified from defaults</li>
+            <li><strong>Category Sidebar</strong> — Click a category (e.g. Flight Movement, Targeting) to jump to it or collapse it.</li>
+            <li><strong>Search</strong> — Type in the search box to filter actions by name in real-time.</li>
+            <li><strong>Device Tabs</strong> — Show only the columns for a specific device type (Keyboard, Mouse, Joystick, Gamepad), or show all at once.</li>
+            <li><strong>Bound Only</strong> — Toggle to hide all actions that have no bindings yet, so you only see what is actually mapped.</li>
           </ul>
 
           <h3>Editing a Binding</h3>
-          <p>Click the edit button on any binding to open the binding editor modal:</p>
+          <p>Each cell in the matrix belongs to one action and one device. To change a binding:</p>
           <ol class="handbook-steps">
-            <li>The current binding is displayed along with the action name</li>
-            <li>Select the target device (keyboard, mouse, gamepad, or joystick)</li>
-            <li>Press the desired key or button to capture the new binding</li>
-            <li>If the binding conflicts with an existing one, a warning is shown</li>
-            <li>Click Save to apply or Cancel to discard the change</li>
+            <li>Click the <strong>+</strong> button in an empty cell to add a new binding for that action and device.</li>
+            <li>Click the label of an existing binding pill to edit it.</li>
+            <li>The appropriate editor dialog opens (see below).</li>
+            <li>Click <strong>Save</strong> to apply, <strong>Reset to Default</strong> to restore the original, or <strong>Cancel</strong> to discard.</li>
           </ol>
-          <p>Use the <strong>Clear</strong> button to remove a binding, or <strong>Reset</strong> to restore the default.</p>
-
-          <h2>Joystick Management</h2>
-          <p>Penguin Citizen detects connected joysticks and displays them in a list. You can drag and drop joysticks to reorder their instance numbers, which controls how Star Citizen assigns <code>js1_</code>, <code>js2_</code>, etc. to your devices.</p>
+          <p>To remove a binding entirely, click the <strong>×</strong> button on the binding pill.</p>
 
           <div class="handbook-note">
-            Joystick instance numbers in Linux can differ from what Star Citizen expects. If your bindings seem to be on the wrong device, try reordering your joysticks here.
+            Changes are written directly to your active Star Citizen profile. Make sure a profile is
+            loaded before editing bindings — if no profile is active, the save button will show an error.
           </div>
 
-          <h2>Joystick Tuning</h2>
-          <p>Fine-tune each joystick's behavior with these settings:</p>
+          <h2>Keyboard &amp; Joystick Bindings</h2>
+          <p>
+            For keyboard and joystick/gamepad bindings, clicking a cell opens the <strong>live capture dialog</strong>.
+            Simply press the key, button, or move the axis you want to assign — Penguin Citizen detects
+            the input automatically. If the input is already used by another action, a conflict warning is shown.
+          </p>
+
+          <h2>Mouse Bindings</h2>
+          <p>
+            Mouse bindings use a dedicated <strong>static selection dialog</strong> instead of live capture.
+            Live capture is not possible for the mouse because the mouse cursor is needed to operate the
+            application itself.
+          </p>
+          <p>The dialog shows all 11 Star Citizen-compatible mouse inputs grouped in three columns:</p>
           <ul>
-            <li><strong>Deadzone</strong> - Adjust the deadzone slider to ignore small movements around the center position. Useful for older joysticks with drift.</li>
-            <li><strong>Sensitivity Curve</strong> - Select a response curve that changes how input translates to in-game movement. Linear gives a 1:1 response; other curves provide more precision near the center.</li>
-            <li><strong>Axis Inversion</strong> - Toggle inversion for the X, Y, and Z axes independently.</li>
-            <li><strong>Sensitivity Multiplier</strong> - Scale the overall sensitivity up or down.</li>
+            <li><strong>Movement Axes</strong> — X-Axis (horizontal) and Y-Axis (vertical)</li>
+            <li><strong>Scroll Wheels</strong> — Scroll up/down and horizontal scroll wheel right/left</li>
+            <li><strong>Buttons</strong> — Left click, Right click, Middle click, Side button back, Side button forward</li>
           </ul>
-          <p>Each joystick can be tuned independently, so you can have different settings for your left and right sticks in a dual-stick setup.</p>
+          <p>Click any row to select it — the <em>Current</em> badge at the top updates immediately. Click <strong>Save</strong> to apply.</p>
+
+          <h2>Joystick Management</h2>
+          <p>
+            Penguin Citizen detects connected joysticks and displays them in the device sidebar.
+            You can drag and drop joysticks to reorder their instance numbers, which controls how
+            Star Citizen assigns <code>js1_</code>, <code>js2_</code>, etc. to your devices.
+          </p>
+
+          <div class="handbook-note">
+            Joystick instance numbers in Linux can differ from what Star Citizen expects. If your
+            bindings appear to be on the wrong device, try reordering your joysticks here.
+          </div>
+
+          <h2>Axis Tuning</h2>
+          <p>
+            Joystick axis bindings show a small <strong>tuning button (∧)</strong> next to the binding pill.
+            Click it to open the axis tuning editor for that specific action:
+          </p>
+          <ul>
+            <li><strong>Deadzone</strong> — Ignore small movements around the centre position. Useful for joysticks with drift.</li>
+            <li><strong>Sensitivity Curve</strong> — Choose a response curve (Linear, Exponential, etc.) that controls how physical movement translates to in-game movement.</li>
+            <li><strong>Axis Inversion</strong> — Flip the axis direction.</li>
+            <li><strong>Sensitivity Multiplier</strong> — Scale the overall sensitivity up or down.</li>
+          </ul>
+          <p>Tuning settings are stored per joystick device, so swapping USB ports does not reset them.</p>
 
           <div class="handbook-tip">
-            Joystick tuning settings are stored per device. If you swap joystick USB ports, the settings follow the device, not the port.
+            Mouse axis bindings (X-Axis, Y-Axis) do not have a tuning button — Star Citizen handles
+            mouse sensitivity through its own in-game settings rather than the profile XML.
           </div>
 
           <nav class="handbook-nav-bottom">
