@@ -675,7 +675,8 @@
 /* ── Mouse Binding Dialog ─────────────────────────── */
 
 .mouse-binding-modal {
-  width: min(44rem, 96vw);
+  width: max-content;
+  max-width: 80vw;
 }
 
 /* "Current:" badge */
@@ -717,7 +718,7 @@
 /* 3-column grid */
 .mouse-binding-columns {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: max-content max-content max-content;
   gap: 0;
   padding: 0.86rem 1.14rem 1rem;
   align-items: start;
@@ -727,7 +728,6 @@
   display: flex;
   flex-direction: column;
   padding: 0 0.57rem;
-  min-width: 0;
 }
 
 .mouse-binding-column:first-child { padding-left: 0; }
@@ -797,6 +797,7 @@
   font-size: 0.79rem;
   color: #b8ccda;
   font-weight: 500;
+  white-space: nowrap;
   line-height: 1.25;
 }
 
