@@ -9,60 +9,6 @@
    Setup Wizard (First Run)
    ============================ */
 
-/* Keybindings Accordion Styling */
-.binding-category-block {
-  margin-bottom: 10px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-  border-radius: var(--radius-sm);
-  background: var(--bg-card, rgba(255, 255, 255, 0.02));
-  overflow: hidden;
-  transition: border-color var(--transition-normal);
-}
-
-.binding-category-block:hover {
-  border-color: var(--primary-color, #00d2ff);
-}
-
-.binding-category-header {
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  background: var(--bg-card-header, rgba(255, 255, 255, 0.03));
-  user-select: none;
-}
-
-.category-title {
-  font-weight: 600;
-  font-size: var(--font-md);
-  color: #fff;
-  flex: 1;
-}
-
-.category-count {
-  font-size: var(--font-xs);
-  color: var(--text-muted, #888);
-  margin-right: 12px;
-}
-
-.binding-category-block .chevron {
-  transition: transform 0.3s ease;
-  color: var(--text-muted, #888);
-}
-
-.binding-category-block.expanded .chevron {
-  transform: rotate(180deg);
-}
-
-.binding-category-content {
-  display: none;
-  padding: 0;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-}
-
-.binding-category-block.expanded .binding-category-content {
-  display: block;
-}
 
 .binding-search {
   width: 100%;
@@ -399,6 +345,337 @@
   gap: 10px;
   margin-bottom: 12px;
   padding: 0 12px;
+}
+
+/* ── Bindings Sidebar+Table Layout ─────────────────── */
+
+.bindings-layout {
+  display: flex;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-height: 400px;
+  max-height: 70vh;
+}
+
+/* Sidebar */
+.bindings-sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.15);
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.bindings-sidebar::-webkit-scrollbar { width: 3px; }
+.bindings-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+.binding-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.binding-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.binding-sidebar-item.active {
+  background: rgba(0, 210, 255, 0.06);
+  border-left-color: var(--primary-color, #00d2ff);
+}
+
+.binding-sidebar-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.binding-sidebar-dot.has-custom {
+  background: rgba(0, 210, 255, 0.5);
+}
+
+.binding-sidebar-label {
+  flex: 1;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.binding-sidebar-item.active .binding-sidebar-label {
+  color: #bdd4e4;
+}
+
+.binding-sidebar-count {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.17);
+  flex-shrink: 0;
+}
+
+.binding-sidebar-empty {
+  padding: 16px 14px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* Right pane */
+.bindings-table-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.bindings-cat-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.bindings-cat-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ddeaf5;
+  letter-spacing: 0.2px;
+}
+
+.bindings-cat-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.22);
+}
+
+/* Column header */
+.bindings-col-header {
+  display: flex;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.bindings-col-th {
+  padding: 7px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: rgba(255, 255, 255, 0.28);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bindings-col-action { flex: 0 0 28%; }
+.bindings-col-th:not(.bindings-col-action) { flex: 1; }
+
+.col-device-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Scrollable table body */
+.bindings-table-body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.bindings-table-body::-webkit-scrollbar { width: 5px; }
+.bindings-table-body::-webkit-scrollbar-track { background: transparent; }
+.bindings-table-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.07); border-radius: 3px; }
+.bindings-table-body::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* Table inside scroll pane */
+.bindings-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Action cell */
+.binding-action-cell {
+  padding: 8px 8px 8px 16px;
+  width: 28%;
+}
+
+.binding-action-name {
+  font-size: 13px;
+  color: #c2d4e2;
+  font-weight: 500;
+}
+
+.binding-action-key {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.18);
+  margin-top: 2px;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Data cell */
+.binding-matrix-cell {
+  padding: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+.binding-row {
+  transition: background 0.1s;
+}
+
+.binding-row:hover {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.binding-row td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+.binding-cell-inner {
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+/* ── Binding Pill ──────────────────────────────────── */
+.binding-pill {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.binding-pill.custom {
+  background: rgba(0, 160, 200, 0.1);
+  border: 1px solid rgba(0, 200, 240, 0.22);
+}
+
+.binding-pill.default {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.binding-pill-label {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.binding-pill.custom .binding-pill-label { color: #d4eef8; }
+.binding-pill.default .binding-pill-label { color: rgba(255, 255, 255, 0.38); }
+
+.binding-pill-label:hover { text-decoration: underline; text-decoration-color: rgba(0,210,255,0.4); }
+
+/* Tuning button */
+.binding-pill-tuning {
+  flex-shrink: 0;
+  width: 22px;
+  height: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  padding: 0;
+}
+
+.binding-pill-tuning.has-active-tuning {
+  opacity: 1;
+  color: var(--primary-color, #00d2ff);
+}
+
+.binding-row:hover .binding-pill-tuning { opacity: 1; }
+.binding-pill-tuning:hover { color: var(--primary-color, #00d2ff); background: rgba(0,210,255,0.05); }
+
+/* Remove button */
+.binding-pill-remove {
+  flex-shrink: 0;
+  width: 22px;
+  height: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  padding: 0;
+}
+
+.binding-row:hover .binding-pill-remove { opacity: 1; }
+
+.binding-pill-remove:hover {
+  background: rgba(220, 60, 60, 0.15);
+  color: #f87171;
+  border-left-color: rgba(220, 60, 60, 0.15);
+}
+
+/* Add button (empty cell) */
+.binding-cell-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px dashed rgba(255, 255, 255, 0.07);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.12);
+  font-size: 15px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+}
+
+.binding-row:hover .binding-cell-add { opacity: 1; }
+.binding-cell-add:hover {
+  border-color: rgba(0, 210, 255, 0.35);
+  color: var(--primary-color, #00d2ff);
+  background: rgba(0, 210, 255, 0.05);
+}
+
+/* Empty state row */
+.binding-empty-row {
+  padding: 24px 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 13px;
 }
 
 /* Empty State */
@@ -4251,11 +4528,6 @@
    Profiles - Keybindings
    ============================ */
 
-.bindings-body {
-  padding: 12px 16px;
-}
-
-
 .binding-category-pills {
   display: flex;
   gap: 4px;
@@ -6429,85 +6701,6 @@
   border-color: var(--color-primary);
 }
 
-.binding-category-block {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  margin-bottom: 8px;
-  overflow: hidden;
-}
-
-.binding-category-header {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--bg-tertiary);
-  cursor: pointer;
-}
-
-.binding-category-header .category-title {
-  flex: 1;
-  font-weight: 600;
-  font-size: var(--font-md);
-}
-
-.binding-category-header .category-count {
-  font-size: var(--font-sm);
-  color: var(--text-secondary);
-  margin-right: 12px;
-}
-
-.binding-category-header .chevron {
-  color: var(--text-secondary);
-  transition: transform var(--transition-normal);
-}
-
-.binding-category-block.expanded .chevron {
-  transform: rotate(180deg);
-}
-
-.binding-category-content {
-  display: none;
-}
-
-.binding-category-block.expanded .binding-category-content {
-  display: block;
-}
-
-.binding-category-content .bindings-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.binding-category-content .bindings-table thead th {
-  padding: 14px 24px;
-  font-size: var(--font-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  background: var(--bg-tertiary);
-  border-bottom: 2px solid var(--border);
-}
-
-.binding-category-content .bindings-table td {
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-  font-size: var(--font-md);
-  vertical-align: middle;
-}
-
-.binding-category-content .bindings-table tr:last-child td {
-  border-bottom: none;
-}
-
-.binding-category-content .bindings-table tr:hover {
-  background: var(--bg-hover);
-}
-
-.binding-category-content .bindings-table tbody tr {
-  transition: background-color var(--transition-fast);
-}
 
 .binding-action-cell {
   min-width: 240px;
@@ -7333,49 +7526,6 @@
   opacity: 0.3;
 }
 
-/* Redesigned Input Pill */
-.binding-input-pill {
-  display: flex;
-  align-items: stretch;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.binding-input-pill.custom-binding {
-  border-left: 3px solid var(--primary-color, #00d2ff);
-  background: rgba(0, 210, 255, 0.06);
-}
-
-.binding-input-pill.default-binding {
-  border-left: 3px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.02);
-  opacity: 0.7;
-}
-
-.binding-input-pill.default-binding:hover {
-  opacity: 1;
-}
-
-.binding-input-pill .binding-input {
-  flex: 1;
-  padding: 6px 8px;
-  font-size: var(--font-xs);
-  color: var(--text-primary);
-  background: transparent;
-  border: none;
-  font-family: var(--font-sans); /* Use sans-serif for readability if preferred, or omit */
-  cursor: text; /* implies it can be clicked to edit */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.binding-input-pill .binding-input:hover {
-  color: var(--accent);
-}
 
 .btn-matrix-remove {
   width: 24px;

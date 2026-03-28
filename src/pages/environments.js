@@ -111,6 +111,8 @@ let bindingCategory = 'all';
 let collapsedCategories = new Set(['quality', 'shaders', 'textures', 'effects', 'clarity', 'lod', 'input', 'advanced']);
 /** @type {Set<string>} Which binding categories are expanded (must be global for inline onclick) */
 window.expandedBindingCategories = new Set();
+// Active category in the new sidebar layout (replaces expandedBindingCategories)
+let activeCategoryKey = null;
 /** @type {number|null} Instance number of the joystick currently being dragged */
 let draggedJoystickInstance = null;
 /** @type {string} Active tab: 'profile' | 'usercfg' | 'localization' | 'storage' */
@@ -1611,14 +1613,7 @@ function resolveSourceRepo() {
  * Called after binding changes (add, edit, delete).
  */
 function refreshBindingsInPlace() {
-  // Re-render category HTML inside .bindings-body
-  const body = document.querySelector('.bindings-body');
-  if (!body) return;
-
-  // Temporarily clear filter so renderBindingCategory renders ALL items
-  const savedFilter = bindingFilter;
-  bindingFilter = '';
-
+  // Recompute categorized list
   const sourceList = completeBindingList.filter(b => {
     if (customizedOnly && !b.is_custom) return false;
     if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
@@ -1626,50 +1621,67 @@ function refreshBindingsInPlace() {
   });
 
   const categorized = {};
-  if (Array.isArray(sourceList)) {
-    for (const b of sourceList) {
-      const catKey = b.category || 'unknown';
-      const catLabel = b.category_label || catKey;
-      if (!categorized[catKey]) {
-        categorized[catKey] = { label: catLabel, bindings: [] };
-      }
-      categorized[catKey].bindings.push(b);
+  for (const b of sourceList) {
+    const catKey = b.category || 'unknown';
+    const catLabel = b.category_label || catKey;
+    if (!categorized[catKey]) {
+      categorized[catKey] = { label: catLabel, bindings: [], customCount: 0 };
     }
+    categorized[catKey].bindings.push(b);
+    if (b.is_custom) categorized[catKey].customCount++;
   }
 
-  const categoryKeys = Object.keys(categorized).sort((a, b) => {
-    const labelA = categorized[a].label || '';
-    const labelB = categorized[b].label || '';
-    return labelA.toLowerCase().localeCompare(labelB.toLowerCase());
-  });
+  const categoryKeys = Object.keys(categorized).sort((a, b) =>
+    (categorized[a].label || '').toLowerCase().localeCompare((categorized[b].label || '').toLowerCase())
+  );
 
-  body.innerHTML = categoryKeys.length === 0
-    ? `<div class="sc-hint">${customizedOnly ? t('environments:binding.noCustomized') : t('environments:binding.noKeybindings')}</div>`
-    : categoryKeys.map(catKey => renderBindingCategory(catKey, categorized[catKey].label, categorized[catKey].bindings)).join('');
+  // Ensure activeCategoryKey is valid
+  if (!activeCategoryKey || !categorized[activeCategoryKey]) {
+    activeCategoryKey = categoryKeys[0] || null;
+  }
 
-  // Restore filter
-  bindingFilter = savedFilter;
+  // Re-render sidebar
+  const sidebar = document.getElementById('bindings-sidebar');
+  if (sidebar) sidebar.innerHTML = renderBindingSidebar(categorized, categoryKeys);
+
+  // Build device columns
+  const activeBackup = lastRestoredBackupId ? backups.find(b => b.id === lastRestoredBackupId) : null;
+  const deviceMap = activeBackup?.device_map || [];
+  const columns = [
+    { id: 'keyboard', label: t('environments:device.keyboard', 'Keyboard'), prefix: 'kb', type: 'keyboard' },
+    { id: 'mouse',    label: t('environments:device.mouse',    'Mouse'),    prefix: 'mo', type: 'mouse'    }
+  ];
+  deviceMap.filter(d => d.device_type === 'joystick')
+    .sort((a, b) => parseInt(a.sc_instance) - parseInt(b.sc_instance))
+    .forEach(d => columns.push({ id: `js${d.sc_instance}`, label: d.alias || d.product_name, prefix: `js${d.sc_instance}_`, type: 'joystick' }));
+
+  // Re-render table body for active category
+  const tbody = document.getElementById('bindings-tbody');
+  const activeCat = activeCategoryKey ? categorized[activeCategoryKey] : null;
+  if (tbody) {
+    tbody.innerHTML = activeCat
+      ? renderBindingRows(activeCat.bindings, activeCategoryKey, columns)
+      : `<tr><td colspan="${columns.length + 1}" class="binding-empty-row">${t('environments:binding.noCategories', 'Keine Kategorien')}</td></tr>`;
+  }
+
+  // Update heading
+  const titleEl = document.getElementById('bindings-cat-title');
+  const subEl = document.getElementById('bindings-cat-sub');
+  if (titleEl && activeCat) titleEl.textContent = activeCat.label;
+  if (subEl && activeCat) subEl.textContent = `${activeCat.bindings.length} ${t('environments:binding.actions')}${activeCat.customCount ? ` · ${activeCat.customCount} ${t('environments:binding.customizedOnly')}` : ''}`;
 
   // Update stats badge
   const badge = document.querySelector('.binding-stats-badge');
   if (badge) badge.textContent = t('environments:binding.customizedOfTotal', { custom: bindingStats.custom, total: bindingStats.total });
 
-  // Sync toggle states with JS variables (in case DOM and state drifted)
+  // Sync toggles
   const customToggle = document.getElementById('customized-only-toggle');
   if (customToggle) customToggle.checked = customizedOnly;
   const essentialsToggle = document.getElementById('essentials-only-toggle');
   if (essentialsToggle) essentialsToggle.checked = essentialsOnly;
 
-  // Re-attach binding-specific listeners on the new DOM
+  // Re-attach listeners
   attachBindingEventListeners();
-
-  // Re-apply filter if one was active (hides non-matching rows via display style)
-  if (bindingFilter) {
-    const searchInput = document.getElementById('binding-search');
-    if (searchInput) {
-      searchInput.dispatchEvent(new Event('input'));
-    }
-  }
 }
 
 /**
@@ -1677,34 +1689,38 @@ function refreshBindingsInPlace() {
  * Called after in-place binding updates to rebind handlers on new DOM elements.
  */
 function attachBindingEventListeners() {
-  document.getElementById('binding-search')?.addEventListener('input', (e) => {
-    const term = e.target.value.toLowerCase().trim();
-    bindingFilter = term;
-
-    const categoryBlocks = document.querySelectorAll('.binding-category-block');
-    categoryBlocks.forEach(block => {
-      const rows = block.querySelectorAll('.binding-row');
-      let hasVisibleRow = false;
-
-      rows.forEach(row => {
-        const searchIn = [
-          row.dataset.actionName,
-          row.dataset.displayName,
-          row.dataset.input,
-          row.dataset.deviceName,
-          row.dataset.inputDisplay
-        ].filter(Boolean).join(' ').toLowerCase();
-
-        const matches = !term || searchIn.includes(term);
-        row.style.display = matches ? '' : 'none';
-        if (matches) hasVisibleRow = true;
-      });
-
-      block.style.display = hasVisibleRow ? '' : 'none';
-      if (term.length > 1 && hasVisibleRow) {
-        block.classList.add('expanded');
-      }
+  // Sidebar: select category
+  document.querySelectorAll('[data-action="select-binding-category"]').forEach(item => {
+    item.addEventListener('click', () => {
+      activeCategoryKey = item.dataset.category;
+      refreshBindingsInPlace();
     });
+  });
+
+  document.getElementById('binding-search')?.addEventListener('input', (e) => {
+    bindingFilter = e.target.value.toLowerCase().trim();
+    // Re-render just the table body with the new filter
+    const tbody = document.getElementById('bindings-tbody');
+    if (!tbody || !activeCategoryKey) return;
+
+    const sourceList = completeBindingList.filter(b => {
+      if (customizedOnly && !b.is_custom) return false;
+      if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
+      return b.category === activeCategoryKey;
+    });
+
+    const activeBackup = lastRestoredBackupId ? backups.find(b => b.id === lastRestoredBackupId) : null;
+    const deviceMap = activeBackup?.device_map || [];
+    const columns = [
+      { id: 'keyboard', label: t('environments:device.keyboard', 'Keyboard'), prefix: 'kb', type: 'keyboard' },
+      { id: 'mouse',    label: t('environments:device.mouse',    'Mouse'),    prefix: 'mo', type: 'mouse'    }
+    ];
+    deviceMap.filter(d => d.device_type === 'joystick')
+      .sort((a, b) => parseInt(a.sc_instance) - parseInt(b.sc_instance))
+      .forEach(d => columns.push({ id: `js${d.sc_instance}`, label: d.alias || d.product_name, prefix: `js${d.sc_instance}_`, type: 'joystick' }));
+
+    tbody.innerHTML = renderBindingRows(sourceList, activeCategoryKey, columns);
+    attachBindingEventListeners();
   });
 
   document.querySelectorAll('[data-action="add-binding"]').forEach(btn => {
@@ -2051,38 +2067,223 @@ function renderDeviceMapCollapsible() {
 }
 
 /**
+ * Renders the sidebar category list for the new sidebar+table binding layout.
+ * @param {Object} categorized - { [catKey]: { label, bindings, customCount } }
+ * @param {string[]} categoryKeys - sorted array of category keys
+ * @returns {string} HTML string
+ */
+function renderBindingSidebar(categorized, categoryKeys) {
+  if (categoryKeys.length === 0) {
+    return `<div class="binding-sidebar-empty">${t('environments:binding.noCategories', 'No categories')}</div>`;
+  }
+
+  return categoryKeys.map(key => {
+    const cat = categorized[key];
+    const isActive = key === activeCategoryKey;
+    const hasCustom = cat.customCount > 0;
+    return `
+      <div class="binding-sidebar-item ${isActive ? 'active' : ''}"
+           data-action="select-binding-category"
+           data-category="${escapeHtml(key)}">
+        <span class="binding-sidebar-dot ${hasCustom ? 'has-custom' : ''}"></span>
+        <span class="binding-sidebar-label">${escapeHtml(cat.label)}</span>
+        <span class="binding-sidebar-count">${cat.bindings.length}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * Renders <tr> rows for the active category in the new sidebar layout.
+ * @param {Object[]} items - bindings for this category
+ * @param {string} categoryKey - the category key
+ * @param {Object[]} columns - device columns: [{ id, label, prefix, type }]
+ * @returns {string} HTML string of <tr> elements
+ */
+function renderBindingRows(items, categoryKey, columns) {
+  // Group by action_name so we get 1 row per unique action
+  const groupedActions = {};
+  for (const b of items) {
+    if (!groupedActions[b.action_name]) {
+      groupedActions[b.action_name] = {
+        action_name: b.action_name,
+        display_name: b.display_name,
+        category: b.category,
+        bindings: []
+      };
+    }
+    if (b.current_input) {
+      groupedActions[b.action_name].bindings.push(b);
+    }
+  }
+
+  const actionList = Object.values(groupedActions);
+  const query = (bindingFilter || '').toLowerCase();
+
+  const filteredGroups = !query ? actionList : actionList.filter(group => {
+    let searchableText = [group.action_name, group.display_name, group.category].join(' ').toLowerCase();
+    for (const b of group.bindings) {
+      const inputDisplay = useHumanReadable ? formatInputDisplayText(b.current_input) : b.current_input;
+      searchableText += ' ' + [b.current_input, inputDisplay].join(' ').toLowerCase();
+      searchableText += ' ' + (b.current_input || '').replace(/_/g, ' ');
+    }
+    return searchableText.includes(query);
+  });
+
+  if (filteredGroups.length === 0) {
+    return `<tr><td colspan="${columns.length + 1}" class="binding-empty-row">${t('environments:binding.noResults', 'Keine Ergebnisse')}</td></tr>`;
+  }
+
+  const isAxisInput = (input) => {
+    if (!input) return false;
+    const lower = input.toLowerCase();
+    return lower.includes('_x') || lower.includes('_y') || lower.includes('_z') ||
+           lower.includes('_rot') || lower.includes('_throttle') || lower.includes('_slider');
+  };
+
+  return filteredGroups.map(group => {
+    let rowHtml = `
+      <tr class="binding-row" data-action-name="${escapeHtml(group.action_name)}" data-display-name="${escapeHtml(group.display_name || '')}">
+        <td class="binding-action-cell">
+          <div class="binding-action-name">${escapeHtml(group.display_name || group.action_name)}</div>
+          <div class="binding-action-key">${escapeHtml(group.action_name)}</div>
+        </td>
+    `;
+
+    for (const col of columns) {
+      const colBindings = group.bindings.filter(b => b.current_input.startsWith(col.prefix));
+      const targetInstance = parseInt(col.id.replace(/\D/g, '')) || 0;
+
+      rowHtml += `
+        <td class="binding-matrix-cell"
+            data-action="matrix-assign"
+            data-action-name="${escapeHtml(group.action_name)}"
+            data-category="${escapeHtml(categoryKey)}"
+            data-device-type="${escapeHtml(col.type)}"
+            data-target-instance="${targetInstance}">
+          <div class="binding-cell-inner">
+      `;
+
+      if (colBindings.length > 0) {
+        colBindings.forEach(b => {
+          const inputDisplay = useHumanReadable ? formatInputDisplayText(b.current_input) : b.current_input;
+          const isAxis = isAxisInput(b.current_input);
+          const tuningName = resolveTuningName(b.action_name);
+          const device = deviceTuningData.find(d => d.instance === targetInstance && d.device_type === col.type);
+
+          let hasActiveTuning = false;
+          if (device) {
+            const tn = device.tuning.find(x => x.name === tuningName);
+            if (tn && (tn.invert !== 0 || tn.exponent !== 1.0 || tn.sensitivity !== 1.0)) hasActiveTuning = true;
+            if (!hasActiveTuning) {
+              const axisInput = b.current_input.split('_').pop();
+              const opt = device.axis_options.find(o => o.input === axisInput);
+              if (opt && (opt.deadzone > 0 || opt.saturation < 1.0)) hasActiveTuning = true;
+            }
+          }
+
+          rowHtml += `
+            <div class="binding-pill ${b.is_custom ? 'custom' : 'default'}">
+              <span class="binding-pill-label"
+                    data-action="edit-binding"
+                    data-action-name="${escapeHtml(b.action_name)}"
+                    data-category="${escapeHtml(categoryKey)}"
+                    data-input="${escapeHtml(b.current_input)}">${escapeHtml(inputDisplay)}</span>
+              ${isAxis ? `
+                <button class="binding-pill-tuning ${hasActiveTuning ? 'has-active-tuning' : ''}"
+                        data-action="open-tuning"
+                        data-action-name="${escapeHtml(b.action_name)}"
+                        data-category="${escapeHtml(categoryKey)}"
+                        data-input="${escapeHtml(b.current_input)}"
+                        title="${hasActiveTuning ? t('environments:binding.hasTuning') : t('environments:binding.tuning')}">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 19s4-15 9-15 9 15 9 15"/></svg>
+                </button>
+              ` : ''}
+              <button class="binding-pill-remove"
+                      data-action="remove-binding-direct"
+                      data-action-name="${escapeHtml(b.action_name)}"
+                      data-category="${escapeHtml(categoryKey)}"
+                      data-input="${escapeHtml(b.current_input)}"
+                      title="${t('environments:binding.remove')}">×</button>
+            </div>
+          `;
+        });
+      } else {
+        rowHtml += `
+          <button class="binding-cell-add"
+                  data-action="matrix-assign"
+                  data-action-name="${escapeHtml(group.action_name)}"
+                  data-category="${escapeHtml(categoryKey)}"
+                  data-device-type="${escapeHtml(col.type)}"
+                  data-target-instance="${targetInstance}"
+                  title="${t('environments:binding.clickToAssign', 'Zuweisen')}">+</button>
+        `;
+      }
+
+      rowHtml += `</div></td>`;
+    }
+
+    rowHtml += `</tr>`;
+    return rowHtml;
+  }).join('');
+}
+
+/**
  * Renders the collapsible keybindings section with search field, filter toggle,
  * and category-based grouping of all bindings.
  */
 function renderBindingsCollapsible() {
-  // Apply filters
   const sourceList = completeBindingList.filter(b => {
     if (customizedOnly && !b.is_custom) return false;
     if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
     return true;
   });
 
-  // Group by technical category name but display with label
   const categorized = {};
-  if (Array.isArray(sourceList)) {
-    for (const b of sourceList) {
-      const catKey = b.category || 'unknown';
-      const catLabel = b.category_label || catKey;
-      if (!categorized[catKey]) {
-        categorized[catKey] = { label: catLabel, bindings: [], customCount: 0 };
-      }
-      categorized[catKey].bindings.push(b);
-      if (b.is_custom) categorized[catKey].customCount++;
+  for (const b of sourceList) {
+    const catKey = b.category || 'unknown';
+    const catLabel = b.category_label || catKey;
+    if (!categorized[catKey]) {
+      categorized[catKey] = { label: catLabel, bindings: [], customCount: 0 };
     }
+    categorized[catKey].bindings.push(b);
+    if (b.is_custom) categorized[catKey].customCount++;
   }
 
-  const categoryKeys = Object.keys(categorized).sort((a, b) => {
-    const labelA = categorized[a].label || '';
-    const labelB = categorized[b].label || '';
-    return labelA.toLowerCase().localeCompare(labelB.toLowerCase());
-  });
+  const categoryKeys = Object.keys(categorized).sort((a, b) =>
+    (categorized[a].label || '').toLowerCase().localeCompare((categorized[b].label || '').toLowerCase())
+  );
+
+  // Set initial active category if not set or no longer valid
+  if (!activeCategoryKey || !categorized[activeCategoryKey]) {
+    activeCategoryKey = categoryKeys[0] || null;
+  }
 
   const isExpanded = window.expandedPanels?.bindings === true;
+  const activeCat = activeCategoryKey ? categorized[activeCategoryKey] : null;
+  const activeBackup = lastRestoredBackupId ? backups.find(b => b.id === lastRestoredBackupId) : null;
+  const deviceMap = activeBackup?.device_map || [];
+
+  // Build device columns
+  const columns = [
+    { id: 'keyboard', label: t('environments:device.keyboard', 'Keyboard'), prefix: 'kb', type: 'keyboard' },
+    { id: 'mouse',    label: t('environments:device.mouse',    'Mouse'),    prefix: 'mo', type: 'mouse'    }
+  ];
+  deviceMap.filter(d => d.device_type === 'joystick')
+    .sort((a, b) => parseInt(a.sc_instance) - parseInt(b.sc_instance))
+    .forEach(d => columns.push({
+      id: `js${d.sc_instance}`,
+      label: d.alias || d.product_name,
+      prefix: `js${d.sc_instance}_`,
+      type: 'joystick'
+    }));
+
+  // Device colour dots (first 2 fixed, rest yellow for joysticks)
+  const deviceDotColors = ['#5bc4e8', '#b688f5', '#f5a623', '#f5a623', '#f5a623'];
+
+  const tableBody = activeCat
+    ? renderBindingRows(activeCat.bindings, activeCategoryKey, columns)
+    : `<tr><td colspan="${columns.length + 1}" class="binding-empty-row">${t('environments:binding.noCategories', 'Keine Kategorien')}</td></tr>`;
 
   return `
     <div class="sc-section collapsible-section">
@@ -2092,17 +2293,20 @@ function renderBindingsCollapsible() {
         </span>
         <h3>
           ${t('environments:binding.title')}
-          <span class="binding-stats-badge" title="Total actions / Customized by you">
+          <span class="binding-stats-badge">
             ${t('environments:binding.customizedOfTotal', { custom: bindingStats.custom, total: bindingStats.total })}
           </span>
-          ${localizationLoading ? `<span class="loading-spinner-inline" title="${t('environments:binding.loadingTranslations')}"></span>` : ''}
+          ${localizationLoading ? `<span class="loading-spinner-inline"></span>` : ''}
         </h3>
       </div>
       <div class="collapsible-content ${isExpanded ? '' : 'collapsed'}">
         ${renderHint('bindings-intro', t('environments:hint.bindingsIntro'))}
+
+        <!-- Toolbar -->
         <div class="bindings-toolbar">
           <input type="text" class="input binding-search" id="binding-search"
-                 placeholder="${t('environments:binding.searchPlaceholder')}" value="${escapeHtml(bindingFilter)}"
+                 placeholder="${t('environments:binding.searchPlaceholder')}"
+                 value="${escapeHtml(bindingFilter)}"
                  aria-label="Search bindings" />
           <div class="bindings-filter-bar">
             <label class="filter-toggle" title="${t('environments:binding.customizedOnly')}">
@@ -2121,195 +2325,51 @@ function renderBindingsCollapsible() {
             </label>
           </div>
         </div>
-        <div class="bindings-body">
-          ${categoryKeys.length === 0
-            ? `<div class="sc-hint">${customizedOnly ? t('environments:binding.noCustomized') : t('environments:binding.noKeybindingsWithHint')}</div>`
-            : categoryKeys.map(catKey => renderBindingCategory(catKey, categorized[catKey].label, categorized[catKey].bindings)).join('')
-          }
+
+        <!-- Sidebar + Table layout -->
+        <div class="bindings-layout">
+          <!-- Left: category sidebar -->
+          <div class="bindings-sidebar" id="bindings-sidebar">
+            ${renderBindingSidebar(categorized, categoryKeys)}
+          </div>
+
+          <!-- Right: active category table -->
+          <div class="bindings-table-pane">
+            <div class="bindings-cat-heading">
+              <span class="bindings-cat-title" id="bindings-cat-title">
+                ${activeCat ? escapeHtml(activeCat.label) : ''}
+              </span>
+              <span class="bindings-cat-sub" id="bindings-cat-sub">
+                ${activeCat ? `${activeCat.bindings.length} ${t('environments:binding.actions')}${activeCat.customCount ? ` · ${activeCat.customCount} ${t('environments:binding.customizedOnly')}` : ''}` : ''}
+              </span>
+            </div>
+            <div class="bindings-col-header">
+              <div class="bindings-col-th bindings-col-action">${t('environments:binding.columnAction')}</div>
+              ${columns.map((col, i) => `
+                <div class="bindings-col-th">
+                  <span class="col-device-dot" style="background:${deviceDotColors[i] || '#f5a623'}"></span>
+                  ${escapeHtml(col.label)}
+                </div>
+              `).join('')}
+            </div>
+            <div class="bindings-table-body" id="bindings-table-body">
+              <table class="bindings-matrix-table">
+                <colgroup>
+                  <col style="width: 28%">
+                  ${columns.map(() => `<col>`).join('')}
+                </colgroup>
+                <tbody id="bindings-tbody">
+                  ${tableBody}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   `;
 }
 
-
-/**
- * Renders a single binding category as a collapsible block with table.
- * Filters entries by search term (searches action names, devices, inputs).
- * @param {string} categoryKey - Technical category name (e.g. "spaceship_movement")
- * @param {string} label - Display label of the category
- * @param {Array} items - Bindings in this category
- * @returns {string} HTML string or empty string if no matches
- */
-function renderBindingCategory(categoryKey, label, items) {
-  const activeBackup = lastRestoredBackupId ? backups.find(b => b.id === lastRestoredBackupId) : null;
-  const deviceMap = activeBackup?.device_map || [];
-  
-  const columns = [
-    { id: 'keyboard', label: t('environments:device.keyboard', 'Keyboard'), prefix: 'kb', type: 'keyboard' },
-    { id: 'mouse', label: t('environments:device.mouse', 'Mouse'), prefix: 'mo', type: 'mouse' }
-  ];
-  
-  // Add joysticks dynamically based on profile, strictly sorted by their SC instance
-  const mappedJoysticks = deviceMap.filter(d => d.device_type === 'joystick').sort((a,b) => {
-    return parseInt(a.sc_instance, 10) - parseInt(b.sc_instance, 10);
-  });
-  
-  console.log('[MATRIX] Columns Device Map:', mappedJoysticks);
-
-  mappedJoysticks.forEach(d => {
-    columns.push({ id: `js${d.sc_instance}`, label: d.alias || d.product_name, prefix: `js${d.sc_instance}_`, type: 'joystick' });
-  });
-
-  // Group bindings by action_name so we get 1 row per unique action
-  const groupedActions = {};
-  for (const b of items) {
-    if (!groupedActions[b.action_name]) {
-      groupedActions[b.action_name] = {
-        action_name: b.action_name,
-        display_name: b.display_name,
-        category: b.category,
-        category_label: b.category_label,
-        bindings: []
-      };
-    }
-    if (b.current_input) {
-      groupedActions[b.action_name].bindings.push(b);
-    }
-  }
-  
-  const actionList = Object.values(groupedActions);
-  const query = (bindingFilter || '').toLowerCase();
-  const isExpanded = query.length > 0 || window.expandedBindingCategories.has(categoryKey);
-
-  // Filter groups
-  const filteredGroups = !query ? actionList : actionList.filter(group => {
-    let searchableText = [group.action_name, group.display_name, group.category, group.category_label].join(' ').toLowerCase();
-    
-    // Also include inputs in search
-    for (const b of group.bindings) {
-      const deviceName = resolveDeviceLabel(b.current_input);
-      const inputDisplay = useHumanReadable ? formatInputDisplayText(b.current_input) : b.current_input;
-      searchableText += ' ' + [b.current_input, deviceName, inputDisplay].join(' ').toLowerCase();
-      searchableText += ' ' + (b.current_input || '').replace(/_/g, ' ');
-    }
-    
-    return searchableText.includes(query);
-  });
-
-  if (filteredGroups.length === 0 && query) return '';
-
-  return `
-    <div class="binding-category-block ${isExpanded ? 'expanded' : ''}" data-category="${escapeHtml(categoryKey)}">
-      <div class="binding-category-header" data-category="${escapeHtml(categoryKey)}">
-        <span class="category-title">${escapeHtml(label)}</span>
-        <span class="category-count">${actionList.length} ${t('environments:binding.actions')}</span>
-        <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
-      </div>
-      <div class="binding-category-content">
-        <div class="bindings-matrix-wrapper">
-          <table class="bindings-table bindings-matrix-table">
-            <thead>
-              <tr>
-                <th class="matrix-action-th">${t('environments:binding.columnAction')}</th>
-                ${columns.map(c => `<th>${escapeHtml(c.label)}</th>`).join('')}
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredGroups.map(group => {
-                let rowHtml = `
-                  <tr class="binding-row" data-action-name="${escapeHtml(group.action_name)}" data-display-name="${escapeHtml(group.display_name || '')}">
-                    <td class="matrix-action-cell">
-                      <div class="binding-action-name">${escapeHtml(group.display_name || group.action_name)}</div>
-                      <div class="binding-action-key">${escapeHtml(group.action_name)}</div>
-                    </td>
-                `;
-                
-                // Helper to check if an input is an axis (pitch, roll, yaw, throttle, slider)
-                const isAxisInput = (input) => {
-                  if (!input) return false;
-                  const lower = input.toLowerCase();
-                  return lower.includes('_x') || lower.includes('_y') || lower.includes('_z') || 
-                         lower.includes('_rot') || lower.includes('_throttle') || lower.includes('_slider');
-                };
-                
-                for (const col of columns) {
-                  const colPrefix = col.prefix;
-                  const colBindings = group.bindings.filter(b => {
-                    const match = b.current_input.startsWith(colPrefix);
-                    if (match && group.action_name === 'v_pitch') {
-                      console.log(`[MATRIX] v_pitch binding '${b.current_input}' MATCHED column '${col.label}' (prefix: ${colPrefix})`);
-                    }
-                    return match;
-                  });
-                  
-                  rowHtml += `
-                    <td class="binding-matrix-cell" data-action="matrix-assign" 
-                        data-action-name="${escapeHtml(group.action_name)}" 
-                        data-category="${escapeHtml(group.category)}" 
-                        data-device-type="${escapeHtml(col.type)}"
-                        data-target-instance="${col.id.replace(/\D/g, '')}">
-                      <div class="matrix-cell-content">
-                  `;
-                  
-                  if (colBindings.length > 0) {
-                      colBindings.forEach(b => {
-                        const inputDisplay = useHumanReadable ? formatInputDisplayText(b.current_input) : b.current_input;
-                        const isAxis = isAxisInput(b.current_input);
-                        
-                        const tuningName = resolveTuningName(b.action_name);
-                        const targetInstance = parseInt(col.id.replace(/\D/g, ''));
-                        const device = deviceTuningData.find(d => d.instance === targetInstance && d.device_type === col.type);
-                        
-                        let hasActiveTuning = false;
-                        if (device) {
-                          const t = device.tuning.find(tn => tn.name === tuningName);
-                          if (t && (t.invert !== 0 || t.exponent !== 1.0 || t.sensitivity !== 1.0)) hasActiveTuning = true;
-                          
-                          if (!hasActiveTuning) {
-                            const axisInput = b.current_input.split('_').pop();
-                            const opt = device.axis_options.find(o => o.input === axisInput);
-                            if (opt && (opt.deadzone > 0 || opt.saturation < 1.0)) hasActiveTuning = true;
-                          }
-                        }
-                        
-                        rowHtml += `
-                          <div class="binding-input-pill ${b.is_custom ? 'custom-binding' : 'default-binding'}" title="${b.is_custom ? t('environments:binding.custom') : t('environments:binding.default', 'Default')}">
-                            <code class="binding-input" data-action="edit-binding" data-action-name="${escapeHtml(b.action_name)}" data-category="${escapeHtml(categoryKey)}" data-input="${escapeHtml(b.current_input)}">${escapeHtml(inputDisplay)}</code>
-                            ${isAxis ? `
-                              <button class="btn-matrix-tuning ${hasActiveTuning ? 'has-active-tuning' : ''}" data-action="open-tuning" data-action-name="${escapeHtml(b.action_name)}" data-category="${escapeHtml(categoryKey)}" data-input="${escapeHtml(b.current_input)}" title="${hasActiveTuning ? t('environments:binding.hasTuning', 'Aktives Tuning') : t('environments:binding.tuning', 'Kurven & Invertierung')}">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                  <path d="M3 19s4-15 9-15 9 15 9 15"></path>
-                                </svg>
-                              </button>
-                            ` : ''}
-                            <button class="btn-matrix-remove" data-action="remove-binding-direct" data-action-name="${escapeHtml(b.action_name)}" data-category="${escapeHtml(categoryKey)}" data-input="${escapeHtml(b.current_input)}" title="${t('environments:binding.remove')}">×</button>
-                          </div>
-                        `;
-
-                      });
-                  } else {
-                    rowHtml += `<div class="binding-matrix-empty" title="${t('environments:binding.clickToAssign', 'Hier klicken zum Zuweisen')}"><span>+</span></div>`;
-                  }
-                  
-                  rowHtml += `
-                      </div>
-                    </td>
-                  `;
-                }
-                
-                rowHtml += `</tr>`;
-                return rowHtml;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  `;
-}
 
 /**
  * Determines the device type based on the input prefix.
@@ -4405,20 +4465,6 @@ function attachProfilesEventListeners() {
     await loadDevicesAndBindings();
     await loadCompleteBindingList();
     renderEnvironments(document.getElementById('content'));
-  });
-
-  // Binding category toggle (event delegation on stable parent)
-  document.querySelector('.bindings-body')?.addEventListener('click', (e) => {
-    const header = e.target.closest('.binding-category-header');
-    if (!header) return;
-    const block = header.parentElement;
-    const categoryKey = header.dataset.category;
-    block.classList.toggle('expanded');
-    if (block.classList.contains('expanded')) {
-      window.expandedBindingCategories.add(categoryKey);
-    } else {
-      window.expandedBindingCategories.delete(categoryKey);
-    }
   });
 
   // Bindings specific listeners (Search, Matrix, Add/Edit/Delete)
