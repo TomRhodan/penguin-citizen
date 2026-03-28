@@ -433,8 +433,9 @@ pub fn run() {
         log::info!("XWayland detected: applying compensation={:.2}", compensation);
     }
 
-    // Check for screenshot mode via environment variable
-    if std::env::var("PENGUIN_CITIZEN_SCREENSHOTS").map(|v| v == "1").unwrap_or(false) {
+    // Screenshot mode is only available in development builds (tauri dev).
+    // In release builds (AppImage, .deb) the env var is intentionally ignored.
+    if cfg!(debug_assertions) && std::env::var("PENGUIN_CITIZEN_SCREENSHOTS").map(|v| v == "1").unwrap_or(false) {
         IS_SCREENSHOT_MODE.store(true, Ordering::Relaxed);
         log::info!("Screenshot mode enabled via environment variable");
     }
