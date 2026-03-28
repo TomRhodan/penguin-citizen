@@ -2207,7 +2207,7 @@ function renderBindingRows(items, categoryKey, columns) {
                     data-action-name="${escapeHtml(b.action_name)}"
                     data-category="${escapeHtml(categoryKey)}"
                     data-input="${escapeHtml(b.current_input)}">${escapeHtml(inputDisplay)}</span>
-              ${isAxis ? `
+              ${isAxis && col.type !== 'mouse' ? `
                 <button class="binding-pill-tuning ${hasActiveTuning ? 'has-active-tuning' : ''}"
                         data-action="open-tuning"
                         data-action-name="${escapeHtml(b.action_name)}"
