@@ -268,6 +268,17 @@ async function loadLocalStatus() {
   }
 
   renderStatusCards();
+
+  // Cache local state when config loaded successfully — skip on failure
+  if (dashConfig) {
+    DashboardCache.set('local', {
+      config: dashConfig,
+      installStatus: dashInstallStatus,
+      locStatus: dashLocStatus,
+      locUpdate: dashLocUpdate,
+      scVersion: dashScVersion,
+    });
+  }
 }
 
 /**
