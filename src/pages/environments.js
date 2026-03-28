@@ -1623,8 +1623,16 @@ function refreshBindingsInPlace() {
     return true;
   });
 
+  const query = (bindingFilter || '').toLowerCase();
+
   const categorized = {};
   for (const b of sourceList) {
+    // When a search is active, skip bindings whose action doesn't match
+    if (query) {
+      const inputText = (b.current_input || '').replace(/_/g, ' ');
+      const searchable = [b.action_name, b.display_name, b.current_input || '', inputText].join(' ').toLowerCase();
+      if (!searchable.includes(query)) continue;
+    }
     const catKey = b.category || 'unknown';
     const catLabel = b.category_label || catKey;
     if (!categorized[catKey]) {
@@ -1685,136 +1693,106 @@ function refreshBindingsInPlace() {
   const boundToggle = document.getElementById('bound-only-toggle');
   if (boundToggle) boundToggle.checked = boundOnly;
 
-  // Re-attach listeners
-  attachBindingEventListeners();
 }
 
 /**
- * Attaches only the binding-related event listeners (search, edit, add, delete).
- * Called after in-place binding updates to rebind handlers on new DOM elements.
+ * Attaches binding-related event listeners using delegation on stable containers.
+ * Must be called once after renderEnvironments() sets up the DOM — not after
+ * every refreshBindingsInPlace() call, because delegated listeners survive
+ * innerHTML updates to the sidebar and tbody.
  */
 function attachBindingEventListeners() {
-  // Sidebar: select category
-  document.querySelectorAll('[data-action="select-binding-category"]').forEach(item => {
-    item.addEventListener('click', () => {
+  // Sidebar: category selection (delegated — survives sidebar innerHTML updates)
+  const sidebar = document.getElementById('bindings-sidebar');
+  if (sidebar) {
+    sidebar.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-action="select-binding-category"]');
+      if (!item) return;
       activeCategoryKey = item.dataset.category;
       refreshBindingsInPlace();
     });
-  });
+  }
 
+  // Search input (attached once — refreshBindingsInPlace now updates both sidebar and table)
   document.getElementById('binding-search')?.addEventListener('input', (e) => {
     bindingFilter = e.target.value.toLowerCase().trim();
-    // Re-render just the table body with the new filter
-    const tbody = document.getElementById('bindings-tbody');
-    if (!tbody || !activeCategoryKey) return;
-
-    const sourceList = completeBindingList.filter(b => {
-      if (customizedOnly && !b.is_custom) return false;
-      if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
-    if (boundOnly && !b.current_input) return false;
-      return b.category === activeCategoryKey;
-    });
-
-    const activeBackup = lastRestoredBackupId ? backups.find(b => b.id === lastRestoredBackupId) : null;
-    const deviceMap = activeBackup?.device_map || [];
-    const columns = [
-      { id: 'keyboard', label: t('environments:device.keyboard', 'Keyboard'), prefix: 'kb', type: 'keyboard' },
-      { id: 'mouse',    label: t('environments:device.mouse',    'Mouse'),    prefix: 'mo', type: 'mouse'    }
-    ];
-    deviceMap.filter(d => d.device_type === 'joystick')
-      .sort((a, b) => parseInt(a.sc_instance) - parseInt(b.sc_instance))
-      .forEach(d => columns.push({ id: `js${d.sc_instance}`, label: d.alias || d.product_name, prefix: `js${d.sc_instance}_`, type: 'joystick' }));
-
-    tbody.innerHTML = renderBindingRows(sourceList, activeCategoryKey, columns);
-    attachBindingEventListeners();
+    refreshBindingsInPlace();
   });
 
-  document.querySelectorAll('[data-action="add-binding"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openBindingEditor(btn.dataset.actionName, btn.dataset.category, null);
-    });
-  });
+  // Table actions (delegated — survives tbody innerHTML updates)
+  const tbody = document.getElementById('bindings-tbody');
+  if (!tbody) return;
 
-  document.querySelectorAll('[data-action="matrix-assign"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+  tbody.addEventListener('click', async (e) => {
+    // add-binding
+    const addBtn = e.target.closest('[data-action="add-binding"]');
+    if (addBtn) {
       e.stopPropagation();
-      const targetInstance = btn.dataset.targetInstance ? parseInt(btn.dataset.targetInstance, 10) : null;
-      const deviceType = btn.dataset.deviceType || 'joystick';
+      openBindingEditor(addBtn.dataset.actionName, addBtn.dataset.category, null);
+      return;
+    }
 
+    // matrix-assign
+    const matrixBtn = e.target.closest('[data-action="matrix-assign"]');
+    if (matrixBtn) {
+      e.stopPropagation();
+      const targetInstance = matrixBtn.dataset.targetInstance ? parseInt(matrixBtn.dataset.targetInstance, 10) : null;
+      const deviceType = matrixBtn.dataset.deviceType || 'joystick';
       if (deviceType === 'mouse') {
-        // Find existing mouse binding for this action if any
         const existing = completeBindingList.find(b =>
-          b.action_name === btn.dataset.actionName &&
+          b.action_name === matrixBtn.dataset.actionName &&
           b.current_input &&
           b.current_input.startsWith('mo')
         );
-        openMouseBindingEditor(btn.dataset.actionName, btn.dataset.category, existing?.current_input || '');
+        openMouseBindingEditor(matrixBtn.dataset.actionName, matrixBtn.dataset.category, existing?.current_input || '');
       } else {
-        openBindingEditor(
-          btn.dataset.actionName,
-          btn.dataset.category,
-          null,
-          deviceType,
-          targetInstance
-        );
+        openBindingEditor(matrixBtn.dataset.actionName, matrixBtn.dataset.category, null, deviceType, targetInstance);
       }
-    });
-  });
+      return;
+    }
 
-  document.querySelectorAll('[data-action="edit-binding"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    // edit-binding
+    const editBtn = e.target.closest('[data-action="edit-binding"]');
+    if (editBtn) {
       e.stopPropagation();
-      const cell = btn.closest('.binding-matrix-cell');
-      const deviceType = cell?.dataset.deviceType || resolveDeviceType(btn.dataset.input) || 'joystick';
+      const cell = editBtn.closest('.binding-matrix-cell');
+      const deviceType = cell?.dataset.deviceType || resolveDeviceType(editBtn.dataset.input) || 'joystick';
       const targetInstance = cell?.dataset.targetInstance ? parseInt(cell.dataset.targetInstance, 10) : null;
-
       if (deviceType === 'mouse') {
-        openMouseBindingEditor(btn.dataset.actionName, btn.dataset.category, btn.dataset.input || '');
+        openMouseBindingEditor(editBtn.dataset.actionName, editBtn.dataset.category, editBtn.dataset.input || '');
       } else {
-        openBindingEditor(
-          btn.dataset.actionName,
-          btn.dataset.category,
-          btn.dataset.input || '',
-          deviceType,
-          targetInstance
-        );
+        openBindingEditor(editBtn.dataset.actionName, editBtn.dataset.category, editBtn.dataset.input || '', deviceType, targetInstance);
       }
-    });
-  });
+      return;
+    }
 
-  document.querySelectorAll('[data-action="open-tuning"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    // open-tuning
+    const tuningBtn = e.target.closest('[data-action="open-tuning"]');
+    if (tuningBtn) {
       e.stopPropagation();
-      const cell = btn.closest('.binding-matrix-cell');
+      const cell = tuningBtn.closest('.binding-matrix-cell');
       const targetInstance = cell?.dataset.targetInstance ? parseInt(cell.dataset.targetInstance, 10) : null;
       const deviceType = cell?.dataset.deviceType || 'joystick';
-      
-      console.log(`[TUNING-CLICK] Action: ${btn.dataset.actionName}, Input: ${btn.dataset.input}, Instance: ${targetInstance}`);
-      
-      openTuningEditor(
-        btn.dataset.actionName,
-        btn.dataset.category,
-        btn.dataset.input,
-        deviceType,
-        targetInstance
-      );
-    });
-  });
+      console.log(`[TUNING-CLICK] Action: ${tuningBtn.dataset.actionName}, Input: ${tuningBtn.dataset.input}, Instance: ${targetInstance}`);
+      openTuningEditor(tuningBtn.dataset.actionName, tuningBtn.dataset.category, tuningBtn.dataset.input, deviceType, targetInstance);
+      return;
+    }
 
-  document.querySelectorAll('[data-action="add-alt-binding"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    // add-alt-binding
+    const addAltBtn = e.target.closest('[data-action="add-alt-binding"]');
+    if (addAltBtn) {
       e.stopPropagation();
-      openBindingEditor(btn.dataset.actionName, btn.dataset.category, null);
-    });
-  });
+      openBindingEditor(addAltBtn.dataset.actionName, addAltBtn.dataset.category, null);
+      return;
+    }
 
-  document.querySelectorAll('[data-action="remove-binding"], [data-action="remove-binding-direct"]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    // remove-binding / remove-binding-direct
+    const removeBtn = e.target.closest('[data-action="remove-binding"], [data-action="remove-binding-direct"]');
+    if (removeBtn) {
       e.stopPropagation();
-      const actionName = btn.dataset.actionName;
-      const category = btn.dataset.category;
-      const input = btn.dataset.input || '';
+      const actionName = removeBtn.dataset.actionName;
+      const category = removeBtn.dataset.category;
+      const input = removeBtn.dataset.input || '';
 
       if (!lastRestoredBackupId) {
         showNotification(t('environments:notification.noProfileLoaded'), 'error');
@@ -1834,16 +1812,14 @@ function attachBindingEventListeners() {
             actionName: actionName,
             input: input || null,
           });
-
           showNotification(t('environments:notification.bindingRemoved'), 'success');
-          await loadBackups();
-          await loadCompleteBindingList();
-          refreshBindingsInPlace();
+          await loadProfileStatus();
+          renderEnvironments(document.getElementById('content'));
         } catch (err) {
           showNotification(t('environments:notification.removeBindingFailed', { error: err }), 'error');
         }
       }
-    });
+    }
   });
 }
 /** SC tuning categories with human-readable labels */
@@ -2817,9 +2793,8 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
         window.expandedBindingCategories.add(bindingEditorAction.category);
       }
       cleanupAndClose();
-      await loadBackups(); // refresh dirty flag
-      await loadCompleteBindingList();
-      refreshBindingsInPlace();
+      await loadProfileStatus();
+      renderEnvironments(document.getElementById('content'));
     } catch (err) {
       console.error('[EDITOR] Delete failed:', err);
       showNotification(t('environments:notification.deleteError', { error: err }), 'error');
@@ -2845,9 +2820,8 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
         window.expandedBindingCategories.add(bindingEditorAction.category);
       }
       cleanupAndClose();
-      await loadBackups();
-      await loadCompleteBindingList();
-      refreshBindingsInPlace();
+      await loadProfileStatus();
+      renderEnvironments(document.getElementById('content'));
     } catch (err) {
       console.error('[EDITOR] Reset failed:', err);
       showNotification(t('environments:notification.resetError', { error: err }), 'error');
@@ -2929,9 +2903,8 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
         window.expandedBindingCategories.add(bindingEditorAction.category);
       }
       cleanupAndClose();
-      await loadBackups(); // refresh dirty flag
-      await loadCompleteBindingList();
-      refreshBindingsInPlace();
+      await loadProfileStatus();
+      renderEnvironments(document.getElementById('content'));
     } catch (err) {
       console.error('[EDITOR] Save failed. Error:', err);
       showNotification(t('environments:notification.saveError', { error: err }), 'error');
@@ -3091,9 +3064,8 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
       showNotification(t('environments:notification.bindingReset', 'Binding reset to default'), 'success');
       window.expandedBindingCategories?.add(category);
       cleanupAndClose();
-      await loadBackups();
-      await loadCompleteBindingList();
-      refreshBindingsInPlace();
+      await loadProfileStatus();
+      renderEnvironments(document.getElementById('content'));
     } catch (err) {
       showNotification(t('environments:notification.resetError', { error: err }), 'error');
     }
@@ -3121,9 +3093,8 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
       showNotification(t('environments:notification.bindingSaved'), 'success');
       window.expandedBindingCategories?.add(category);
       cleanupAndClose();
-      await loadBackups();
-      await loadCompleteBindingList();
-      refreshBindingsInPlace();
+      await loadProfileStatus();
+      renderEnvironments(document.getElementById('content'));
     } catch (err) {
       showNotification(t('environments:notification.saveError', { error: err }), 'error');
     }
