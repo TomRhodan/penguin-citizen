@@ -1,7 +1,7 @@
 {
   "name": "penguin-citizen",
   "private": true,
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "A Linux management tool for Star Citizen - install, configure, and launch with Wine/Proton",
   "author": "TomRhodan <tomrhodan@gmail.com>",
   "license": "GPL-3.0-or-later",

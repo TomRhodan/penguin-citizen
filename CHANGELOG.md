@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-03-28
+
+### Added
+- **Mouse Binding Dialog** — Dedicated static-selection dialog for mouse inputs instead of live capture. Clicking a Mouse column cell opens a 3-column dialog (Axes / Scroll Wheels / Buttons) with all 11 SC-compatible mouse inputs. Save/Reset/Cancel work via the same Tauri commands as the existing binding editor.
+
+### Fixed
+- Tuning button (^) no longer appears on mouse axis bindings (mouse devices have no tuning data in SC profiles).
+
 ## [0.4.5] - 2026-03-27
 
 ## [0.4.0] - 2026-03-18
