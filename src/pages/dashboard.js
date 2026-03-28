@@ -634,16 +634,25 @@ async function loadCommunityStats() {
   try {
     const result = await invoke('fetch_community_stats');
     if (result.error || !result.stats) {
-      el.innerHTML = renderError(t('dashboard:error.couldNotLoadCommunityStats'), () => loadCommunityStats());
+      if (!DashboardCache.get('stats')) {
+        el.innerHTML = renderError(t('dashboard:error.couldNotLoadCommunityStats'), () => loadCommunityStats());
+      }
       return;
     }
     statsCurrent = result.stats;
-    renderStats(el, result.stats);
-
-    // Load history asynchronously - don't block initial render
+    DashboardCache.set('stats', result.stats);
+    // If history is already loaded (from cache or a previous fetch), render sparklines
+    if (statsHistoryData) {
+      renderStatsWithSparklines();
+    } else {
+      renderStats(el, result.stats);
+    }
+    // Load fresh history in background
     loadStatsHistory();
   } catch {
-    el.innerHTML = renderError(t('dashboard:error.couldNotLoadCommunityStats'), () => loadCommunityStats());
+    if (!DashboardCache.get('stats')) {
+      el.innerHTML = renderError(t('dashboard:error.couldNotLoadCommunityStats'), () => loadCommunityStats());
+    }
   }
 }
 
@@ -656,10 +665,18 @@ async function loadStatsHistory() {
     const result = await invoke('fetch_community_stats_history', { days: 30 });
     if (!result.error && result.data_points.length > 0) {
       statsHistoryData = result.data_points;
+      DashboardCache.set('stats_history', { data_points: result.data_points });
       renderStatsWithSparklines();
     }
   } catch {
-    // Silent failure - stats remain without sparklines
+    // On failure, fall back to cached history if not already rendered
+    if (!statsHistoryData) {
+      const historyCache = DashboardCache.get('stats_history');
+      if (historyCache && historyCache.data_points.length >= 2 && statsCurrent) {
+        statsHistoryData = historyCache.data_points;
+        renderStatsWithSparklines();
+      }
+    }
   }
 }
 
