@@ -165,8 +165,6 @@ let renderGeneration = 0;
 let migrationChecked = false;
 /** @type {Array} Tuning data for all joystick devices (from get_device_tuning) */
 let deviceTuningData = [];
-/** @type {number|null} Debounce timer for tuning slider changes */
-let tuningDebounceTimer = null;
 
 // Which collapsible panels are open (persists within the session)
 if (!window.expandedPanels) window.expandedPanels = { bindings: false, devices: false, tuning: false };
@@ -1656,6 +1654,12 @@ function refreshBindingsInPlace() {
   const badge = document.querySelector('.binding-stats-badge');
   if (badge) badge.textContent = t('environments:binding.customizedOfTotal', { custom: bindingStats.custom, total: bindingStats.total });
 
+  // Sync toggle states with JS variables (in case DOM and state drifted)
+  const customToggle = document.getElementById('customized-only-toggle');
+  if (customToggle) customToggle.checked = customizedOnly;
+  const essentialsToggle = document.getElementById('essentials-only-toggle');
+  if (essentialsToggle) essentialsToggle.checked = essentialsOnly;
+
   // Re-attach binding-specific listeners on the new DOM
   attachBindingEventListeners();
 
@@ -1809,233 +1813,6 @@ function attachBindingEventListeners() {
     });
   });
 }
-
-/**
- * Generates SVG path data for a response curve y = x^exponent.
- * @param {number} exp - Exponent value
- * @param {number} w - SVG width
- * @param {number} h - SVG height
- * @returns {string} SVG path d attribute
- */
-function curvePathData(exp, w, h) {
-  const steps = 20;
-  let d = `M 0 ${h}`;
-  for (let i = 1; i <= steps; i++) {
-    const x = i / steps;
-    const y = Math.pow(x, exp);
-    d += ` L ${(x * w).toFixed(1)} ${(h - y * h).toFixed(1)}`;
-  }
-  return d;
-}
-
-/**
- * Opens the tuning dialog for a specific joystick device.
- */
-function openTuningDialog(instance, deviceType) {
-  const dev = deviceTuningData.find(d => d.instance === instance && d.device_type === deviceType);
-  if (!dev) return;
-
-  // Snapshot for change detection
-  const snapshot = JSON.stringify({ tuning: dev.tuning, axis_options: dev.axis_options });
-
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
-  modal.id = 'tuning-dialog';
-
-  const renderTab = (activeTab) => {
-    let tabContent = '';
-
-    if (activeTab === 'curves') {
-      const svgW = 120, svgH = 80;
-      tabContent = dev.tuning.filter(t => t.exponent != null).map(t => {
-        const exp = t.exponent ?? 1;
-        return `
-          <div class="td-curve-item">
-            <div class="td-curve-header">
-              <span class="td-curve-label">${escapeHtml(tuningLabel(t.name))}</span>
-              <span class="td-curve-value" data-tuning-val="${escapeHtml(t.name)}">${exp.toFixed(1)}</span>
-            </div>
-            <div class="td-curve-body">
-              <svg class="td-curve-svg" viewBox="0 0 ${svgW} ${svgH}">
-                <line x1="0" y1="${svgH}" x2="${svgW}" y2="0" stroke-dasharray="3 3" />
-                <path d="${curvePathData(exp, svgW, svgH)}" />
-              </svg>
-              <input type="range" class="td-slider" min="0.5" max="5" step="0.1" value="${exp}"
-                data-tuning-name="${escapeHtml(t.name)}" data-tuning-field="exponent" />
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    if (activeTab === 'inversion') {
-      tabContent = dev.tuning.filter(t => t.invert != null).map(t => `
-        <div class="td-invert-item">
-          <label class="td-invert-label">
-            <input type="checkbox" class="tuning-toggle td-invert-check"
-              ${t.invert === 1 ? 'checked' : ''}
-              data-tuning-name="${escapeHtml(t.name)}" />
-            <span>${escapeHtml(tuningLabel(t.name))}</span>
-          </label>
-        </div>
-      `).join('');
-    }
-
-    if (activeTab === 'sensitivity') {
-      tabContent = dev.tuning.filter(t => t.sensitivity != null).map(t => `
-        <div class="td-sens-item">
-          <span class="td-sens-label">${escapeHtml(tuningLabel(t.name))}</span>
-          <input type="range" class="td-slider" min="0.1" max="3" step="0.05" value="${t.sensitivity ?? 1}"
-            data-tuning-name="${escapeHtml(t.name)}" data-tuning-field="sensitivity" />
-          <span class="td-sens-value" data-tuning-val="${escapeHtml(t.name)}">${(t.sensitivity ?? 1).toFixed(2)}</span>
-        </div>
-      `).join('');
-    }
-
-    if (activeTab === 'axes') {
-      tabContent = dev.axis_options.length > 0 ? dev.axis_options.map(opt => `
-        <div class="td-axis-item">
-          <span class="td-axis-name">${escapeHtml(opt.input.toUpperCase())}</span>
-          <div class="td-axis-controls">
-            <div class="td-axis-field">
-              <span class="td-axis-field-label">${t('environments:tuning.deadzone')}</span>
-              <input type="range" class="td-slider td-axis-slider" min="0" max="0.5" step="0.005" value="${opt.deadzone ?? 0}"
-                data-axis-input="${escapeHtml(opt.input)}" data-axis-field="deadzone" />
-              <span class="td-axis-value" data-axis-val="${escapeHtml(opt.input)}-dz">${(opt.deadzone ?? 0).toFixed(3)}</span>
-            </div>
-            <div class="td-axis-field">
-              <span class="td-axis-field-label">${t('environments:tuning.saturation')}</span>
-              <input type="range" class="td-slider td-axis-slider" min="0.1" max="1" step="0.005" value="${opt.saturation ?? 1}"
-                data-axis-input="${escapeHtml(opt.input)}" data-axis-field="saturation" />
-              <span class="td-axis-value" data-axis-val="${escapeHtml(opt.input)}-sat">${(opt.saturation ?? 1).toFixed(3)}</span>
-            </div>
-          </div>
-        </div>
-      `).join('') : `<div class="td-empty">${t('environments:tuning.noTuning')}</div>`;
-    }
-
-    return tabContent;
-  };
-
-  const tabs = [
-    { id: 'curves', label: t('environments:tuning.curves'), icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20Q7 4 12 12Q17 20 21 4"/></svg>' },
-    { id: 'inversion', label: t('environments:tuning.inversion'), icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 18 17 6"/><polyline points="17 18 17 6 7 6"/></svg>' },
-    { id: 'sensitivity', label: t('environments:tuning.sensitivity'), icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>' },
-    { id: 'axes', label: t('environments:tuning.hardware'), icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>' },
-  ];
-
-  let activeTab = 'curves';
-
-  modal.innerHTML = `
-    <div class="modal-container td-modal">
-      <div class="modal-header td-header">
-        <div class="td-title-wrap">
-          <span class="tuning-instance-badge">js${dev.instance}</span>
-          <span class="td-title">${escapeHtml(dev.product || 'Unknown Device')}</span>
-        </div>
-        <button class="modal-close td-close" data-action="close-tuning">&times;</button>
-      </div>
-      <div class="td-tabs">
-        ${tabs.map(tab => `
-          <button class="td-tab ${tab.id === activeTab ? 'active' : ''}" data-tab="${tab.id}">
-            ${tab.icon}
-            <span>${tab.label}</span>
-          </button>
-        `).join('')}
-      </div>
-      <div class="td-body">
-        ${renderTab(activeTab)}
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-  requestAnimationFrame(() => modal.classList.add('show'));
-
-  // --- Event wiring ---
-
-  const switchTab = (tabId) => {
-    activeTab = tabId;
-    modal.querySelectorAll('.td-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
-    modal.querySelector('.td-body').innerHTML = renderTab(tabId);
-    wireTabEvents();
-  };
-
-  const wireTabEvents = () => {
-    // Curve & sensitivity sliders
-    modal.querySelectorAll('.td-slider:not(.td-axis-slider)').forEach(slider => {
-      slider.addEventListener('input', () => {
-        const name = slider.dataset.tuningName;
-        const field = slider.dataset.tuningField;
-        const value = parseFloat(slider.value);
-        const entry = dev.tuning.find(t => t.name === name);
-        if (entry) entry[field] = value;
-
-        const valEl = modal.querySelector(`[data-tuning-val="${name}"]`);
-        if (valEl) valEl.textContent = field === 'exponent' ? value.toFixed(1) : value.toFixed(2);
-
-        if (field === 'exponent') {
-          const path = slider.closest('.td-curve-item')?.querySelector('.td-curve-svg path');
-          if (path) path.setAttribute('d', curvePathData(value, 120, 80));
-        }
-      });
-    });
-
-    // Axis sliders
-    modal.querySelectorAll('.td-axis-slider').forEach(slider => {
-      slider.addEventListener('input', () => {
-        const axisInput = slider.dataset.axisInput;
-        const field = slider.dataset.axisField;
-        const value = parseFloat(slider.value);
-        const opt = dev.axis_options.find(o => o.input === axisInput);
-        if (opt) opt[field] = value;
-
-        const suffix = field === 'deadzone' ? 'dz' : 'sat';
-        const valEl = modal.querySelector(`[data-axis-val="${axisInput}-${suffix}"]`);
-        if (valEl) valEl.textContent = value.toFixed(3);
-      });
-    });
-
-    // Inversion toggles
-    modal.querySelectorAll('.td-invert-check').forEach(check => {
-      check.addEventListener('change', () => {
-        const name = check.dataset.tuningName;
-        const entry = dev.tuning.find(t => t.name === name);
-        if (entry) entry.invert = check.checked ? 1 : 0;
-      });
-    });
-  };
-
-  // Tab clicks
-  modal.querySelectorAll('.td-tab').forEach(tab => {
-    tab.addEventListener('click', () => switchTab(tab.dataset.tab));
-  });
-
-  wireTabEvents();
-
-  // Close
-  const closeDialog = async () => {
-    const current = JSON.stringify({ tuning: dev.tuning, axis_options: dev.axis_options });
-    const hasChanges = current !== snapshot;
-
-    if (hasChanges) {
-      await saveTuningForDevice(instance, deviceType);
-      await loadBackups();
-      await loadProfileStatus();
-      renderEnvironments(document.getElementById('content'));
-    }
-
-    modal.classList.remove('show');
-    setTimeout(() => modal.remove(), 200);
-  };
-
-  modal.querySelector('[data-action="close-tuning"]').addEventListener('click', closeDialog);
-  modal.addEventListener('click', (e) => { if (e.target === modal) closeDialog(); });
-  const escHandler = (e) => { if (e.key === 'Escape') { closeDialog(); window.removeEventListener('keydown', escHandler); } };
-  window.addEventListener('keydown', escHandler);
-}
-
-
 /** SC tuning categories with human-readable labels */
 const SC_TUNING_LABELS = {
   'master': 'Master',
@@ -2251,10 +2028,6 @@ function renderDeviceMapCollapsible() {
         ${renderHint('devices-intro', t('environments:hint.devicesIntro'))}
         <div class="device-map-list">
           ${deviceMap.map(dm => {
-            const tuningDev = deviceTuningData.find(d => d.instance === dm.sc_instance && d.device_type === 'joystick');
-            const customCount = tuningDev ? tuningDev.tuning.filter(t => t.invert !== 0 || t.exponent !== 1.0 || t.sensitivity !== 1.0).length : 0;
-            const axisCount = tuningDev ? tuningDev.axis_options.filter(o => (o.deadzone ?? 0) > 0 || (o.saturation ?? 1) < 1).length : 0;
-            const totalCustom = customCount + axisCount;
             return `
             <div class="device-card-v2 device-card draggable" data-product="${escapeHtml(dm.product_name)}" data-instance="${dm.sc_instance}" data-device-type="${escapeHtml(dm.device_type)}">
               <div class="device-card-v2-drag" title="${t('environments:device.dragToReorder')}">
@@ -2266,13 +2039,6 @@ function renderDeviceMapCollapsible() {
                   <span class="device-card-v2-name" title="${escapeHtml(dm.product_name)}">${escapeHtml(dm.alias || dm.product_name)}</span>
                   <button class="device-card-v2-rename" data-product="${escapeHtml(dm.product_name)}" data-alias="${escapeHtml(dm.alias || '')}" title="${t('environments:device.setAlias')}">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                  </button>
-                </div>
-                <div class="device-card-v2-bottom">
-                  <button class="device-card-v2-tuning tuning-open-btn" data-instance="${dm.sc_instance}" data-device-type="joystick">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-                    <span>${t('environments:tuning.title')}</span>
-                    ${totalCustom > 0 ? `<span class="device-card-v2-badge">${totalCustom}</span>` : ''}
                   </button>
                 </div>
               </div>
@@ -2289,10 +2055,12 @@ function renderDeviceMapCollapsible() {
  * and category-based grouping of all bindings.
  */
 function renderBindingsCollapsible() {
-  // Apply filter: only customized bindings when enabled
-  const sourceList = customizedOnly
-    ? completeBindingList.filter(b => b.is_custom)
-    : completeBindingList;
+  // Apply filters
+  const sourceList = completeBindingList.filter(b => {
+    if (customizedOnly && !b.is_custom) return false;
+    if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
+    return true;
+  });
 
   // Group by technical category name but display with label
   const categorized = {};
@@ -2336,14 +2104,22 @@ function renderBindingsCollapsible() {
           <input type="text" class="input binding-search" id="binding-search"
                  placeholder="${t('environments:binding.searchPlaceholder')}" value="${escapeHtml(bindingFilter)}"
                  aria-label="Search bindings" />
-          <label class="essentials-only-toggle" title="${t('environments:binding.essentialsOnlyTooltip')}">
-            <input type="checkbox" id="essentials-only-toggle" ${essentialsOnly ? 'checked' : ''}>
-            <span>${t('environments:binding.essentialsOnly', 'Essenzielle Aktionen')}</span>
-          </label>
-          <label class="customized-only-toggle">
-            <input type="checkbox" id="customized-only-toggle" ${customizedOnly ? 'checked' : ''}>
-            <span>${t('environments:binding.customizedOnly')}</span>
-          </label>
+          <div class="bindings-filter-bar">
+            <label class="filter-toggle" title="${t('environments:binding.customizedOnly')}">
+              <span class="toggle-switch">
+                <input type="checkbox" id="customized-only-toggle" ${customizedOnly ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </span>
+              <span>${t('environments:binding.customizedOnly')}</span>
+            </label>
+            <label class="filter-toggle" title="${t('environments:binding.essentialsOnlyTooltip')}">
+              <span class="toggle-switch">
+                <input type="checkbox" id="essentials-only-toggle" ${essentialsOnly ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </span>
+              <span>${t('environments:binding.essentialsOnly')}</span>
+            </label>
+          </div>
         </div>
         <div class="bindings-body">
           ${categoryKeys.length === 0
@@ -2444,7 +2220,7 @@ function renderBindingCategory(categoryKey, label, items) {
             <tbody>
               ${filteredGroups.map(group => {
                 let rowHtml = `
-                  <tr class="binding-row" data-action-name="${escapeHtml(group.action_name)}">
+                  <tr class="binding-row" data-action-name="${escapeHtml(group.action_name)}" data-display-name="${escapeHtml(group.display_name || '')}">
                     <td class="matrix-action-cell">
                       <div class="binding-action-name">${escapeHtml(group.display_name || group.action_name)}</div>
                       <div class="binding-action-key">${escapeHtml(group.action_name)}</div>
@@ -2500,7 +2276,7 @@ function renderBindingCategory(categoryKey, label, items) {
                         }
                         
                         rowHtml += `
-                          <div class="binding-input-pill ${b.is_custom ? 'custom-binding' : ''}" title="${b.is_custom ? t('environments:binding.custom') : ''}">
+                          <div class="binding-input-pill ${b.is_custom ? 'custom-binding' : 'default-binding'}" title="${b.is_custom ? t('environments:binding.custom') : t('environments:binding.default', 'Default')}">
                             <code class="binding-input" data-action="edit-binding" data-action-name="${escapeHtml(b.action_name)}" data-category="${escapeHtml(categoryKey)}" data-input="${escapeHtml(b.current_input)}">${escapeHtml(inputDisplay)}</code>
                             ${isAxis ? `
                               <button class="btn-matrix-tuning ${hasActiveTuning ? 'has-active-tuning' : ''}" data-action="open-tuning" data-action-name="${escapeHtml(b.action_name)}" data-category="${escapeHtml(categoryKey)}" data-input="${escapeHtml(b.current_input)}" title="${hasActiveTuning ? t('environments:binding.hasTuning', 'Aktives Tuning') : t('environments:binding.tuning', 'Kurven & Invertierung')}">
@@ -2744,7 +2520,10 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
         </div>
       </div>
       <div class="modal-footer">
-        ${isEdit ? `<button class="btn btn-danger" id="btn-delete-binding">${t('environments:binding.editor.deleteBtn')}</button>` : '<span></span>'}
+        <div class="modal-footer-left">
+          ${isEdit ? `<button class="btn btn-danger" id="btn-delete-binding">${t('environments:binding.editor.deleteBtn')}</button>` : ''}
+          <button class="btn btn-secondary" id="btn-reset-binding" title="${t('environments:binding.editor.resetTooltip', 'Alle eigenen Änderungen entfernen und Default wiederherstellen')}">${t('environments:binding.editor.resetBtn', 'Reset to Default')}</button>
+        </div>
         <div class="modal-footer-actions">
           <button class="btn btn-secondary" data-action="close-binding-editor">${t('environments:binding.editor.cancelBtn')}</button>
           <button class="btn btn-primary" id="btn-save-binding">${t('environments:binding.editor.saveBtn')}</button>
@@ -2961,6 +2740,34 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
     }
   });
 
+  modal.querySelector('#btn-reset-binding')?.addEventListener('click', async () => {
+    if (!lastRestoredBackupId) {
+      showNotification(t('environments:notification.noProfileLoaded'), 'error');
+      return;
+    }
+
+    try {
+      await invoke('reset_profile_binding', {
+        v: activeScVersion,
+        profileId: lastRestoredBackupId,
+        actionMap: category,
+        actionName: actionName,
+      });
+
+      showNotification(t('environments:notification.bindingReset', 'Binding auf Default zurückgesetzt'), 'success');
+      if (bindingEditorAction?.category) {
+        window.expandedBindingCategories.add(bindingEditorAction.category);
+      }
+      cleanupAndClose();
+      await loadBackups();
+      await loadCompleteBindingList();
+      refreshBindingsInPlace();
+    } catch (err) {
+      console.error('[EDITOR] Reset failed:', err);
+      showNotification(t('environments:notification.resetError', { error: err }), 'error');
+    }
+  });
+
   modal.querySelector('#btn-save-binding').addEventListener('click', async () => {
     // Use the raw captured code (preserves js{N}_ prefix needed internally)
     const newInput = capturedRawCode.trim();
@@ -2973,12 +2780,16 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
     // Check binding conflicts: same input on the same device?
     if (completeBindingList.length > 0) {
       const newInputBare = stripDevicePrefix(newInput);
+      const newPrefix = (newInput.match(/^(js|kb|mo|gp|xi)\d+/) || [''])[0]; // e.g. "kb1", "js2"
       const captureDev = (capturedDeviceName || '').trim().toLowerCase();
       const conflicting = completeBindingList.find(b => {
         if (b.action_name === actionName || !b.current_input) return false;
         const existingBare = stripDevicePrefix(b.current_input);
         if (existingBare !== newInputBare) return false;
-        // Only conflict if same device (by product name)
+        // Match by device prefix (kb1, js2, mo1) — covers keyboard/mouse where capturedDeviceName is empty
+        const existingPrefix = (b.current_input.match(/^(js|kb|mo|gp|xi)\d+/) || [''])[0];
+        if (newPrefix && existingPrefix && newPrefix === existingPrefix) return true;
+        // Fallback: match by device product name (for joysticks with same prefix but different devices)
         const existingDev = (b.device_type || '').trim().toLowerCase();
         return captureDev && existingDev && (captureDev.includes(existingDev) || existingDev.includes(captureDev));
       });
@@ -3063,6 +2874,7 @@ async function openTuningEditor(actionName, category, currentInput, deviceType, 
   // Common mapping for SC internal tuning tags
   const tuningName = resolveTuningName(actionName);
   const axisInput = currentInput.split('_').pop(); // e.g. "js2_x" -> "x"
+  const displayName = (completeBindingList.find(b => b.action_name === actionName) || {}).display_name || '';
 
 
   console.log(`[TUNING] Opening for: ${actionName} (${tuningName}), Input: ${currentInput} (Axis: ${axisInput})`);
@@ -3114,12 +2926,15 @@ async function openTuningEditor(actionName, category, currentInput, deviceType, 
 
           <div class="tuning-info">
             <div class="tuning-device-name">${escapeHtml(device.product)}</div>
-            <div class="tuning-action-name">${actionName} <span class="text-muted">(${currentInput})</span></div>
+            <div class="tuning-action-name">${displayName ? escapeHtml(displayName) : actionName} <span class="text-muted">(${currentInput})</span></div>
           </div>
 
           <div class="tuning-grid">
-            <label class="tuning-label style-checkbox">
-              <input type="checkbox" id="tuningInvert" ${currentTuning.invert ? 'checked' : ''}>
+            <label class="filter-toggle">
+              <span class="toggle-switch">
+                <input type="checkbox" id="tuningInvert" ${currentTuning.invert ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </span>
               <span>${t('environments:tuning.invert', 'Invert Axis')}</span>
             </label>
 
@@ -4706,14 +4521,6 @@ function attachProfilesEventListeners() {
       } catch (e) {
         showNotification(t('environments:notification.aliasSetFailed', { error: e }), 'error');
       }
-    });
-  });
-
-  // Tuning: open dialog from device card
-  document.querySelectorAll('.tuning-open-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openTuningDialog(parseInt(btn.dataset.instance, 10), btn.dataset.deviceType);
     });
   });
 

@@ -949,6 +949,20 @@ pub fn read_p4k_file(game_path: &str, version: &str, file_path: &str) -> Result<
 
 /// Reads a null-terminated C string from a byte buffer starting at the given offset.
 /// Used to read strings from the CryXmlB string table.
+/// Extracts the device prefix type from an SC input string.
+/// e.g. "kb1_w" -> "kb", "js2_button5" -> "js", "mo1_mouse1" -> "mo"
+fn device_prefix(input: &str) -> &str {
+    let s = input.trim();
+    if s.len() >= 2 {
+        let prefix = &s[..2];
+        match prefix {
+            "kb" | "mo" | "js" | "gp" | "xi" => return prefix,
+            _ => {}
+        }
+    }
+    ""
+}
+
 fn read_c_string(string_table: &[u8], offset: usize) -> String {
     if offset >= string_table.len() {
         return String::new();
@@ -1037,8 +1051,28 @@ fn traverse_xml_node(
                 name: name.clone(),
                 label: attrs.get("label").or(attrs.get("uilabel")).cloned(),
             });
+
+            // In CryXmlB defaultProfile, default bindings are stored as attributes
+            // on the action element: keyboard="w", mouse="mouse1", joystick=" ", gamepad="dpad_up"
+            // A single space " " means no binding for that device.
+            let mut inputs = vec![];
+            for (device_prefix, attr_key) in [("kb1_", "keyboard"), ("mo1_", "mouse"), ("js1_", "joystick"), ("gp1_", "gamepad")] {
+                if let Some(raw) = attrs.get(attr_key) {
+                    let trimmed = raw.trim();
+                    if !trimmed.is_empty() {
+                        inputs.push(format!("{}{}", device_prefix, trimmed));
+                    }
+                }
+            }
+            if !inputs.is_empty() {
+                profile.action_maps[idx].bindings.push(ScBinding {
+                    action_name: name.clone(),
+                    inputs,
+                });
+            }
         }
     } else if tag == "rebind" {
+        // User actionmaps.xml uses <rebind input="..."/> children
         if let (Some(idx), Some(input)) = (current_map_index, attrs.get("input")) {
             if let Some(last_action) = profile.action_maps[idx].actions.last() {
                 let action_name = last_action.name.clone();
@@ -1046,7 +1080,6 @@ fn traverse_xml_node(
                     action_name,
                     inputs: vec![input.clone()],
                 });
-
             }
         }
     }
@@ -1663,40 +1696,48 @@ pub async fn get_complete_binding_list(
         .and_then(|up|
             up.profiles.iter().find(|p| p.profile_name == "default" || p.profile_name.is_empty())
         );
-    // MergedActions: action_name -> (input_list, label, is_custom)
-    type MergedActions = HashMap<String, (Vec<String>, Option<String>, bool)>;
+    // MergedActions: action_name -> (input_list with is_custom flag, label)
+    type MergedActions = HashMap<String, (Vec<(String, bool)>, Option<String>)>;
     let mut merged: HashMap<String, MergedActions> = HashMap::new();
     // First, insert all master bindings as the base
     for am in &master_profile.action_maps {
         let map = merged.entry(am.name.clone()).or_default();
         for a in &am.actions {
-            map.entry(a.name.clone()).or_insert_with(|| (vec![], a.label.clone(), false));
+            map.entry(a.name.clone()).or_insert_with(|| (vec![], a.label.clone()));
         }
         for b in &am.bindings {
-            let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None, false));
+            let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None));
             for input in &b.inputs {
-                if !entry.0.contains(input) {
-                    entry.0.push(input.clone());
+                if !entry.0.iter().any(|(i, _)| i == input) {
+                    entry.0.push((input.clone(), false));
                 }
             }
         }
-
     }
-    // Then overlay user bindings and mark them as "custom"
+    // Then overlay user bindings — replace defaults for the same device type
     if let Some(up) = user_profile {
         for am in &up.action_maps {
             let map = merged.entry(am.name.clone()).or_default();
             for b in &am.bindings {
                 let entry = map
                     .entry(b.action_name.clone())
-                    .or_insert_with(|| (vec![], None, false));
+                    .or_insert_with(|| (vec![], None));
+                let user_prefixes: Vec<&str> = b.inputs.iter()
+                    .map(|i| device_prefix(i))
+                    .filter(|p| !p.is_empty())
+                    .collect();
+                entry.0.retain(|(existing_input, is_custom)| {
+                    if *is_custom { return true; }
+                    let ep = device_prefix(existing_input);
+                    !user_prefixes.contains(&ep)
+                });
                 for input in &b.inputs {
-                    if !entry.0.contains(input) {
-                        entry.0.push(input.clone());
+                    let trimmed = input.trim();
+                    if trimmed.is_empty() || trimmed.ends_with('_') { continue; }
+                    if !entry.0.iter().any(|(i, _)| i == input) {
+                        entry.0.push((input.clone(), true));
                     }
                 }
-                // Mark as custom
-                entry.2 = true;
             }
         }
     }
@@ -1705,15 +1746,15 @@ pub async fn get_complete_binding_list(
     let mut results = vec![];
     let mut stats = BindingStats { total: 0, custom: 0 };
     for (cat_name, actions) in merged {
-        // Category label: try "ui_Control{name}" first, then the raw name
         let cat_label = labels
             .get(&format!("ui_Control{}", cat_name))
             .or(labels.get(&cat_name))
             .cloned()
             .unwrap_or_else(|| cat_name.replace('_', " "));
-        for (an, (inputs, alabel, is_custom)) in actions {
+        for (an, (inputs, alabel)) in actions {
+            let has_custom = inputs.iter().any(|(_, c)| *c);
             stats.total += 1;
-            if is_custom {
+            if has_custom {
                 stats.custom += 1;
             }
             let dn = alabel
@@ -1732,10 +1773,10 @@ pub async fn get_complete_binding_list(
                     current_input: "".into(),
                     device_type: "none".into(),
                     description: None,
-                    is_custom,
+                    is_custom: false,
                 });
             } else {
-                for input in inputs {
+                for (input, is_custom) in inputs {
                     results.push(CompleteBinding {
                         category: cat_name.clone(),
                         category_label: cat_label.clone(),
@@ -1826,40 +1867,59 @@ pub async fn get_profile_bindings(
     let user_profile = user_parsed.profiles.iter()
         .find(|p| p.profile_name == "default" || p.profile_name.is_empty());
 
-    // Build merged binding list (same logic as get_complete_binding_list)
-    type MergedActions = HashMap<String, (Vec<String>, Option<String>, bool)>;
+    // Build merged binding list
+    // Each input is tagged: (input_string, is_custom)
+    type MergedActions = HashMap<String, (Vec<(String, bool)>, Option<String>)>;
     let mut merged: HashMap<String, MergedActions> = HashMap::new();
 
+    // Step 1: Load master (default) bindings
     for am in &master_profile.action_maps {
         let map = merged.entry(am.name.clone()).or_default();
         for a in &am.actions {
-            map.entry(a.name.clone()).or_insert_with(|| (vec![], a.label.clone(), false));
+            map.entry(a.name.clone()).or_insert_with(|| (vec![], a.label.clone()));
         }
         for b in &am.bindings {
-            let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None, false));
+            let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None));
             for input in &b.inputs {
-                if !entry.0.contains(input) {
-                    entry.0.push(input.clone());
+                if !entry.0.iter().any(|(i, _)| i == input) {
+                    entry.0.push((input.clone(), false)); // false = default
                 }
             }
         }
-
     }
 
+    // Step 2: Overlay user bindings — replace defaults for the same device type
     if let Some(up) = user_profile {
         for am in &up.action_maps {
             let map = merged.entry(am.name.clone()).or_default();
             for b in &am.bindings {
-                let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None, false));
+                let entry = map.entry(b.action_name.clone()).or_insert_with(|| (vec![], None));
+
+                // Collect device prefixes the user has overridden
+                let user_prefixes: Vec<&str> = b.inputs.iter()
+                    .map(|i| device_prefix(i))
+                    .filter(|p| !p.is_empty())
+                    .collect();
+
+                // Remove default inputs for device types that the user has overridden
+                entry.0.retain(|(existing_input, is_custom)| {
+                    if *is_custom { return true; } // keep previous user inputs
+                    let ep = device_prefix(existing_input);
+                    !user_prefixes.contains(&ep)
+                });
+
+                // Add user inputs
+                // Skip empty strings and prefix-only markers (e.g. "kb1_") —
+                // they signal "default removed" and aren't real bindings
                 for input in &b.inputs {
-                    if !entry.0.contains(input) {
-                        entry.0.push(input.clone());
+                    let trimmed = input.trim();
+                    if trimmed.is_empty() || trimmed.ends_with('_') { continue; }
+                    if !entry.0.iter().any(|(i, _)| i == input) {
+                        entry.0.push((input.clone(), true)); // true = custom
                     }
                 }
-                entry.2 = true;
             }
         }
-
     }
 
     let mut results = vec![];
@@ -1870,9 +1930,10 @@ pub async fn get_profile_bindings(
             .or(labels.get(&cat_name))
             .cloned()
             .unwrap_or_else(|| cat_name.replace('_', " "));
-        for (an, (inputs, alabel, is_custom)) in actions {
+        for (an, (inputs, alabel)) in actions {
+            let has_custom = inputs.iter().any(|(_, c)| *c);
             stats.total += 1;
-            if is_custom { stats.custom += 1; }
+            if has_custom { stats.custom += 1; }
             let dn = alabel.as_ref()
                 .and_then(|l| labels.get(l.strip_prefix('@').unwrap_or(l)))
                 .or(labels.get(&format!("ui_Control{}", an)))
@@ -1888,10 +1949,10 @@ pub async fn get_profile_bindings(
                     current_input: "".into(),
                     device_type: "none".into(),
                     description: None,
-                    is_custom,
+                    is_custom: false,
                 });
             } else {
-                for input in inputs {
+                for (input, is_custom) in inputs {
                     results.push(CompleteBinding {
                         category: cat_name.clone(),
                         category_label: cat_label.clone(),
@@ -2142,16 +2203,58 @@ pub async fn remove_profile_binding(
         .find(|pr| pr.profile_name == "default" || pr.profile_name.is_empty())
         .ok_or("No profile")?;
 
+    // Helper: compute a "cleared" prefix marker from an input string
+    // e.g. "kb1_w" -> "kb1_", "mo1_maxis_x" -> "mo1_"
+    let cleared_prefix = |inp: &str| -> String {
+        inp.find('_')
+            .map(|i| inp[..=i].to_string())
+            .unwrap_or_default()
+    };
+
+    let mut found_action_map = false;
     for am in &mut profile.action_maps {
         if am.name == action_map {
+            found_action_map = true;
             if let Some(ref inp) = input {
-                // Remove only the specific binding matching both action and input
-                for b in &mut am.bindings {
-                    if b.action_name == action_name {
-                        b.inputs.retain(|x| x != inp);
+                // Check if this action already exists in the user's bindings
+                let existing = am.bindings.iter_mut().find(|b| b.action_name == action_name);
+
+                if let Some(b) = existing {
+                    // Action exists in user XML — replace or add the prefix marker
+                    if let Some(pos) = b.inputs.iter().position(|x| x == inp) {
+                        let prefix = cleared_prefix(inp);
+                        if prefix.is_empty() {
+                            b.inputs.remove(pos);
+                        } else {
+                            b.inputs[pos] = prefix;
+                        }
+                    } else {
+                        // Input not in user bindings (it's a default) — add prefix marker
+                        let prefix = cleared_prefix(inp);
+                        if !prefix.is_empty() && !b.inputs.contains(&prefix) {
+                            b.inputs.push(prefix);
+                        }
+                    }
+                    // Clean up duplicate prefixes
+                    let mut seen_prefixes: Vec<String> = vec![];
+                    b.inputs.retain(|x| {
+                        if x.ends_with('_') {
+                            if seen_prefixes.contains(x) { return false; }
+                            seen_prefixes.push(x.clone());
+                        }
+                        true
+                    });
+                } else {
+                    // Action doesn't exist in user XML at all (pure default).
+                    // Create a new binding entry with just the prefix marker.
+                    let prefix = cleared_prefix(inp);
+                    if !prefix.is_empty() {
+                        am.bindings.push(ScBinding {
+                            action_name: action_name.clone(),
+                            inputs: vec![prefix],
+                        });
                     }
                 }
-                am.bindings.retain(|b| !b.inputs.is_empty());
             } else {
                 // Fallback: remove all bindings for the action
                 am.bindings.retain(|b| b.action_name != action_name);
@@ -2159,6 +2262,57 @@ pub async fn remove_profile_binding(
         }
     }
 
+    // If the action map doesn't exist in the user XML yet, create it
+    if !found_action_map {
+        if let Some(ref inp) = input {
+            let prefix = cleared_prefix(inp);
+            if !prefix.is_empty() {
+                profile.action_maps.push(ScActionMap {
+                    name: action_map.clone(),
+                    bindings: vec![ScBinding {
+                        action_name: action_name.clone(),
+                        inputs: vec![prefix],
+                    }],
+                    actions: vec![],
+                });
+            }
+        }
+    }
+
+
+    write_actionmaps_xml(&actionmaps_path, &parsed)?;
+    mark_backup_dirty(&bdir)
+}
+
+/// Resets a binding to its default by removing all user overrides for the action.
+/// After reset, the merge logic will show the master (default) bindings again.
+#[tauri::command]
+pub async fn reset_profile_binding(
+    v: String,
+    profile_id: String,
+    action_map: String,
+    action_name: String,
+) -> Result<(), String> {
+    validate_backup_id(&profile_id)?;
+    let bdir = backup_version_dir(&v)?.join(&profile_id);
+    let actionmaps_path = bdir.join("actionmaps.xml");
+    if !actionmaps_path.exists() {
+        return Err("Profile has no actionmaps.xml".into());
+    }
+
+    let mut parsed = parse_actionmaps_xml(
+        &fs::read_to_string(&actionmaps_path).map_err(|e| e.to_string())?
+    )?;
+
+    let profile = parsed.profiles.iter_mut()
+        .find(|pr| pr.profile_name == "default" || pr.profile_name.is_empty())
+        .ok_or("No profile")?;
+
+    for am in &mut profile.action_maps {
+        if am.name == action_map {
+            am.bindings.retain(|b| b.action_name != action_name);
+        }
+    }
 
     write_actionmaps_xml(&actionmaps_path, &parsed)?;
     mark_backup_dirty(&bdir)

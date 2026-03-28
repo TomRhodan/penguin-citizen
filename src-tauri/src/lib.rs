@@ -558,6 +558,7 @@ pub fn run() {
                 sc_config::get_profile_bindings,
                 sc_config::assign_profile_binding,
                 sc_config::remove_profile_binding,
+                sc_config::reset_profile_binding,
                 sc_config::apply_profile_to_sc,
                 sc_config::set_profile_device_alias,
                 sc_config::migrate_binding_database,
