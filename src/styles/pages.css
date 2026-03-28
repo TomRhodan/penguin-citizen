@@ -675,7 +675,7 @@
 /* ── Mouse Binding Dialog ─────────────────────────── */
 
 .mouse-binding-modal {
-  width: max-content;
+  width: fit-content !important;
   max-width: 80vw !important;
 }
 
