@@ -334,6 +334,9 @@ fn localization_cache_path(v: &str) -> Result<PathBuf, String> {
 /// Path to the backup folder for a specific SC version.
 /// All profile backups for this version are stored here as subfolders.
 fn backup_version_dir(v: &str) -> Result<PathBuf, String> {
+    if v.is_empty() || v.contains('/') || v.contains('\\') || v.contains("..") {
+        return Err("Invalid version ID".into());
+    }
     Ok(dirs::config_dir().ok_or("No config dir")?.join("penguin-citizen/backups").join(v))
 }
 /// Validates a backup ID to prevent path traversal attacks.

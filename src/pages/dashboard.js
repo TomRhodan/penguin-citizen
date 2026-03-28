@@ -527,15 +527,17 @@ function renderServerComponents(el, components) {
     unknown: t('dashboard:server.unknown'),
   };
 
+  const VALID_STATUSES = ['operational', 'degraded', 'major_outage', 'unknown'];
   let html = '<div class="dash-server-list">';
   for (const comp of components) {
-    const label = statusLabels[comp.status] || t('dashboard:server.unknown');
+    const safeStatus = VALID_STATUSES.includes(comp.status) ? comp.status : 'unknown';
+    const label = statusLabels[safeStatus] || t('dashboard:server.unknown');
     html += `
       <div class="dash-server-row">
         <span class="dash-server-name">${escapeHtml(comp.name)}</span>
         <span class="dash-server-badge">
-          <span class="dash-status-dot ${comp.status}"></span>
-          <span class="${comp.status}">${label}</span>
+          <span class="dash-status-dot ${safeStatus}"></span>
+          <span class="${safeStatus}">${label}</span>
         </span>
       </div>`;
   }

@@ -21,17 +21,32 @@ use std::path::Path;
 use tauri::Window;
 use base64::{Engine as _, engine::general_purpose};
 
+/// Validates a screenshot filename to prevent path traversal.
+/// Only a plain filename (no slashes, no `..`) is accepted.
+fn validate_screenshot_filename(filename: &str) -> Result<(), String> {
+    if filename.is_empty()
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains("..")
+    {
+        return Err("Invalid filename: must not contain path separators or '..'".into());
+    }
+    Ok(())
+}
+
 /// Robustly captures the current active window to a file using system tools.
 /// Automatically detects project root to avoid rebuild loops during development.
 #[tauri::command]
 pub async fn capture_app_window(window: Window, filename: String) -> Result<(), String> {
+    validate_screenshot_filename(&filename)?;
+
     let mut project_root = std::env::current_dir().map_err(|e| format!("Failed to get current dir: {}", e))?;
-    
+
     // If we are in src-tauri, we must go up to reach the project root
     if project_root.ends_with("src-tauri") {
         project_root.pop();
     }
-    
+
     let target_path = project_root
         .join("docs/penguin-citizen.de/assets/screenshots")
         .join(&filename);
@@ -81,9 +96,11 @@ pub async fn capture_app_window(window: Window, filename: String) -> Result<(), 
 /// Robustly saves a base64 encoded image (Fallback).
 #[tauri::command]
 pub async fn save_screenshot(base64_data: String, filename: String) -> Result<(), String> {
+    validate_screenshot_filename(&filename)?;
+
     let mut project_root = std::env::current_dir().map_err(|e| e.to_string())?;
     if project_root.ends_with("src-tauri") { project_root.pop(); }
-    
+
     let target_path = project_root.join("docs/penguin-citizen.de/assets/screenshots").join(&filename);
     let data = base64_data.split(',').next_back().ok_or("Invalid image data")?;
     let decoded = general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
