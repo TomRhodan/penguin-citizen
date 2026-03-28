@@ -101,7 +101,9 @@ export function renderDashboard(container) {
     </div>
   `;
 
-  // Render cached data immediately (stale-while-revalidate)
+  // Render cached data immediately (stale-while-revalidate).
+  // Intentionally synchronous — skip requestAnimationFrame so cached content
+  // replaces the skeleton in the same paint, avoiding a visible skeleton flash.
   renderFromCache();
 
   // Load fresh data in parallel — updates display on success
@@ -663,7 +665,7 @@ async function loadCommunityStats() {
 async function loadStatsHistory() {
   try {
     const result = await invoke('fetch_community_stats_history', { days: 30 });
-    if (!result.error && result.data_points.length > 0) {
+    if (!result.error && result.data_points.length >= 2) {
       statsHistoryData = result.data_points;
       DashboardCache.set('stats_history', { data_points: result.data_points });
       renderStatsWithSparklines();
