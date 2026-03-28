@@ -675,7 +675,7 @@
 /* ── Mouse Binding Dialog ─────────────────────────── */
 
 .mouse-binding-modal {
-  width: min(26rem, 92vw);
+  width: min(40rem, 94vw);
 }
 
 .mouse-binding-current {
@@ -731,6 +731,24 @@
   height: 1px;
   background: rgba(255, 255, 255, 0.04);
   margin: 0.86rem 0;
+}
+
+.mouse-binding-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 0.71rem;
+  padding: 0.71rem 0.86rem;
+  align-items: start;
+}
+
+.mouse-binding-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.mouse-binding-column + .mouse-binding-column {
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+  padding-left: 0.71rem;
 }
 
 .mouse-binding-row {

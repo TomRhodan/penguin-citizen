@@ -2979,18 +2979,10 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
   let selectedCode = currentInput || '';
 
   const renderRows = () => {
-    let lastSection = '';
-    return MOUSE_INPUTS.map(inp => {
-      const isSelected = inp.code === selectedCode;
-      let divider = '';
-      if (inp.section !== lastSection && lastSection !== '') {
-        divider = `<div class="mouse-binding-divider"></div>`;
-      }
-      if (inp.section !== lastSection) {
-        divider += `<div class="mouse-binding-section-title">${escapeHtml(SECTION_LABELS[inp.section].title)}</div>`;
-        lastSection = inp.section;
-      }
-      return `${divider}
+    return ['axes', 'scroll', 'buttons'].map(section => {
+      const rows = MOUSE_INPUTS.filter(inp => inp.section === section).map(inp => {
+        const isSelected = inp.code === selectedCode;
+        return `
         <div class="mouse-binding-row ${isSelected ? 'selected' : ''}"
              data-action="mouse-input-select"
              data-code="${escapeHtml(inp.code)}">
@@ -3001,6 +2993,11 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
           </div>
           <div class="mouse-binding-radio ${isSelected ? 'on' : ''}"></div>
         </div>`;
+      }).join('');
+      return `<div class="mouse-binding-column">
+        <div class="mouse-binding-section-title">${escapeHtml(SECTION_LABELS[section].title)}</div>
+        ${rows}
+      </div>`;
     }).join('');
   };
 
@@ -3035,7 +3032,7 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
         <span class="mouse-binding-current-label">${t('environments:binding.mouse.currentLabel', 'Current:')}</span>
         ${currentDisplay}
       </div>
-      <div class="modal-body" id="mouse-binding-list">
+      <div class="mouse-binding-columns" id="mouse-binding-list">
         ${renderRows()}
       </div>
       <div class="modal-footer">
