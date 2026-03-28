@@ -1740,35 +1740,46 @@ function attachBindingEventListeners() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const targetInstance = btn.dataset.targetInstance ? parseInt(btn.dataset.targetInstance, 10) : null;
-      console.log(`[MATRIX-CLICK] Action: ${btn.dataset.actionName}, Column Instance: ${targetInstance}, Device Type: ${btn.dataset.deviceType}`);
-      
-      openBindingEditor(
-        btn.dataset.actionName, 
-        btn.dataset.category, 
-        null, 
-        btn.dataset.deviceType || 'joystick',
-        targetInstance
-      );
+      const deviceType = btn.dataset.deviceType || 'joystick';
+
+      if (deviceType === 'mouse') {
+        // Find existing mouse binding for this action if any
+        const existing = completeBindingList.find(b =>
+          b.action_name === btn.dataset.actionName &&
+          b.current_input &&
+          b.current_input.startsWith('mo')
+        );
+        openMouseBindingEditor(btn.dataset.actionName, btn.dataset.category, existing?.current_input || '');
+      } else {
+        openBindingEditor(
+          btn.dataset.actionName,
+          btn.dataset.category,
+          null,
+          deviceType,
+          targetInstance
+        );
+      }
     });
   });
 
   document.querySelectorAll('[data-action="edit-binding"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Find the nearest matrix cell to get the target instance context
       const cell = btn.closest('.binding-matrix-cell');
-      const targetInstance = cell?.dataset.targetInstance ? parseInt(cell.dataset.targetInstance, 10) : null;
       const deviceType = cell?.dataset.deviceType || resolveDeviceType(btn.dataset.input) || 'joystick';
-      
-      console.log(`[EDIT-CLICK] Input: ${btn.dataset.input}, Column Instance: ${targetInstance}, Device Type: ${deviceType}`);
+      const targetInstance = cell?.dataset.targetInstance ? parseInt(cell.dataset.targetInstance, 10) : null;
 
-      openBindingEditor(
-        btn.dataset.actionName, 
-        btn.dataset.category, 
-        btn.dataset.input || '',
-        deviceType,
-        targetInstance
-      );
+      if (deviceType === 'mouse') {
+        openMouseBindingEditor(btn.dataset.actionName, btn.dataset.category, btn.dataset.input || '');
+      } else {
+        openBindingEditor(
+          btn.dataset.actionName,
+          btn.dataset.category,
+          btn.dataset.input || '',
+          deviceType,
+          targetInstance
+        );
+      }
     });
   });
 
@@ -2930,8 +2941,201 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
   document.body.appendChild(modal);
 }
 
+/**
+ * Opens a mouse-specific binding dialog showing a static list of SC-compatible
+ * mouse inputs. Does NOT use live input capture (the OS mouse is needed for UI).
+ *
+ * @param {string} actionName  - Technical action name, e.g. "v_pitch"
+ * @param {string} category    - Action map name, e.g. "spaceship_movement"
+ * @param {string} currentInput - Existing binding, e.g. "mo1_maxis_y" or ""
+ */
+async function openMouseBindingEditor(actionName, category, currentInput) {
+  const displayName = (completeBindingList.find(b => b.action_name === actionName) || {}).display_name || actionName;
+
+  // Static list of all SC-compatible mouse inputs
+  const MOUSE_INPUTS = [
+    // Section: axes
+    { section: 'axes', icon: '↔', code: 'mo1_maxis_x',      labelKey: 'binding.mouse.axisX' },
+    { section: 'axes', icon: '↕', code: 'mo1_maxis_y',      labelKey: 'binding.mouse.axisY' },
+    // Section: scroll
+    { section: 'scroll', icon: '▲', code: 'mo1_mwheel_up',    labelKey: 'binding.mouse.wheelUp' },
+    { section: 'scroll', icon: '▼', code: 'mo1_mwheel_down',  labelKey: 'binding.mouse.wheelDown' },
+    { section: 'scroll', icon: '►', code: 'mo1_mhwheel_right',labelKey: 'binding.mouse.hWheelRight' },
+    { section: 'scroll', icon: '◄', code: 'mo1_mhwheel_left', labelKey: 'binding.mouse.hWheelLeft' },
+    // Section: buttons
+    { section: 'buttons', icon: '◉', code: 'mo1_mouse1', labelKey: 'binding.mouse.btn1' },
+    { section: 'buttons', icon: '◉', code: 'mo1_mouse2', labelKey: 'binding.mouse.btn2' },
+    { section: 'buttons', icon: '⊙', code: 'mo1_mouse3', labelKey: 'binding.mouse.btn3' },
+    { section: 'buttons', icon: '◂', code: 'mo1_mouse4', labelKey: 'binding.mouse.btn4' },
+    { section: 'buttons', icon: '▸', code: 'mo1_mouse5', labelKey: 'binding.mouse.btn5' },
+  ];
+
+  const SECTION_LABELS = {
+    axes:    { key: 'binding.mouse.sectionAxes',    title: t('environments:binding.mouse.sectionAxes',    'Movement Axes') },
+    scroll:  { key: 'binding.mouse.sectionScroll',  title: t('environments:binding.mouse.sectionScroll',  'Scroll Wheels') },
+    buttons: { key: 'binding.mouse.sectionButtons', title: t('environments:binding.mouse.sectionButtons', 'Buttons') },
+  };
+
+  let selectedCode = currentInput || '';
+
+  const renderRows = () => {
+    let lastSection = '';
+    return MOUSE_INPUTS.map(inp => {
+      const isSelected = inp.code === selectedCode;
+      let divider = '';
+      if (inp.section !== lastSection && lastSection !== '') {
+        divider = `<div class="mouse-binding-divider"></div>`;
+      }
+      if (inp.section !== lastSection) {
+        divider += `<div class="mouse-binding-section-title">${escapeHtml(SECTION_LABELS[inp.section].title)}</div>`;
+        lastSection = inp.section;
+      }
+      return `${divider}
+        <div class="mouse-binding-row ${isSelected ? 'selected' : ''}"
+             data-action="mouse-input-select"
+             data-code="${escapeHtml(inp.code)}">
+          <div class="mouse-binding-icon">${escapeHtml(inp.icon)}</div>
+          <div class="mouse-binding-info">
+            <div class="mouse-binding-name">${escapeHtml(t(`environments:${inp.labelKey}`, inp.labelKey))}</div>
+            <div class="mouse-binding-code">${escapeHtml(inp.code)}</div>
+          </div>
+          <div class="mouse-binding-radio ${isSelected ? 'on' : ''}"></div>
+        </div>`;
+    }).join('');
+  };
+
+  const currentDisplay = currentInput
+    ? `<span class="mouse-binding-current-val">${escapeHtml(currentInput)}</span>`
+    : `<span class="mouse-binding-current-empty">${t('environments:binding.mouse.unbound', 'none')}</span>`;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'mouse-binding-editor-modal';
+
+  modal.innerHTML = `
+    <div class="modal-content mouse-binding-modal">
+      <div class="modal-header">
+        <div>
+          <h3>${t('environments:binding.mouse.title', 'Mouse Binding')}</h3>
+          <div class="binding-editor-context">
+            <span class="binding-editor-context-action">${escapeHtml(displayName)}</span>
+            <span class="binding-editor-context-sep">·</span>
+            <span class="binding-editor-context-category">${escapeHtml(actionName)}</span>
+            <span class="binding-editor-context-sep">·</span>
+            <span class="binding-editor-context-category">${escapeHtml(category)}</span>
+          </div>
+        </div>
+        <button class="modal-close" id="btn-mouse-close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="mouse-binding-current">
+        <span class="mouse-binding-current-label">${t('environments:binding.mouse.currentLabel', 'Current:')}</span>
+        ${currentDisplay}
+      </div>
+      <div class="modal-body" id="mouse-binding-list">
+        ${renderRows()}
+      </div>
+      <div class="modal-footer">
+        <div class="modal-footer-left">
+          <button class="btn btn-secondary" id="btn-mouse-reset">${t('environments:binding.editor.resetBtn', 'Reset to Default')}</button>
+        </div>
+        <div class="modal-footer-actions">
+          <button class="btn btn-secondary" id="btn-mouse-cancel">${t('environments:binding.editor.cancelBtn', 'Cancel')}</button>
+          <button class="btn btn-primary" id="btn-mouse-save">${t('environments:binding.editor.saveBtn', 'Save')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => modal.classList.add('show'));
+
+  const cleanupAndClose = () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  // Row selection
+  modal.querySelector('#mouse-binding-list').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-action="mouse-input-select"]');
+    if (!row) return;
+    selectedCode = row.dataset.code;
+    // Re-render list with new selection
+    modal.querySelector('#mouse-binding-list').innerHTML = renderRows();
+    // Update current badge
+    const badge = modal.querySelector('.mouse-binding-current');
+    badge.innerHTML = `
+      <span class="mouse-binding-current-label">${t('environments:binding.mouse.currentLabel', 'Current:')}</span>
+      <span class="mouse-binding-current-val">${escapeHtml(selectedCode)}</span>
+    `;
+  });
+
+  // Close / Cancel
+  modal.querySelector('#btn-mouse-close').addEventListener('click', cleanupAndClose);
+  modal.querySelector('#btn-mouse-cancel').addEventListener('click', cleanupAndClose);
+  modal.addEventListener('click', (e) => { if (e.target === modal) cleanupAndClose(); });
+
+  // Reset to Default
+  modal.querySelector('#btn-mouse-reset').addEventListener('click', async () => {
+    if (!lastRestoredBackupId) {
+      showNotification(t('environments:notification.noProfileLoaded'), 'error');
+      return;
+    }
+    try {
+      await invoke('reset_profile_binding', {
+        v: activeScVersion,
+        profileId: lastRestoredBackupId,
+        actionMap: category,
+        actionName: actionName,
+      });
+      showNotification(t('environments:notification.bindingReset', 'Binding reset to default'), 'success');
+      window.expandedBindingCategories?.add(category);
+      cleanupAndClose();
+      await loadBackups();
+      await loadCompleteBindingList();
+      refreshBindingsInPlace();
+    } catch (err) {
+      showNotification(t('environments:notification.resetError', { error: err }), 'error');
+    }
+  });
+
+  // Save
+  modal.querySelector('#btn-mouse-save').addEventListener('click', async () => {
+    if (!selectedCode) {
+      showNotification(t('environments:notification.noInputCaptured', 'No input selected'), 'error');
+      return;
+    }
+    if (!lastRestoredBackupId) {
+      showNotification(t('environments:notification.noProfileForSave'), 'error');
+      return;
+    }
+    try {
+      await invoke('assign_profile_binding', {
+        v: activeScVersion,
+        profileId: lastRestoredBackupId,
+        actionMap: category,
+        actionName: actionName,
+        newInput: selectedCode,
+        oldInput: currentInput || null,
+      });
+      showNotification(t('environments:notification.bindingSaved'), 'success');
+      window.expandedBindingCategories?.add(category);
+      cleanupAndClose();
+      await loadBackups();
+      await loadCompleteBindingList();
+      refreshBindingsInPlace();
+    } catch (err) {
+      showNotification(t('environments:notification.saveError', { error: err }), 'error');
+    }
+  });
+}
+
 // Make globally accessible (for inline onclick handlers)
 window.openTuningEditor = openTuningEditor;
+window.openMouseBindingEditor = openMouseBindingEditor;
 
 /**
  * Opens a modal to configure tuning (curves, inversions, deadzones) for an axis.
