@@ -675,7 +675,7 @@
 /* ── Mouse Binding Dialog ─────────────────────────── */
 
 .mouse-binding-modal {
-  width: min(40rem, 94vw);
+  width: min(44rem, 96vw);
 }
 
 /* "Current:" badge */
@@ -727,6 +727,7 @@
   display: flex;
   flex-direction: column;
   padding: 0 0.57rem;
+  min-width: 0;
 }
 
 .mouse-binding-column:first-child { padding-left: 0; }
@@ -796,9 +797,6 @@
   font-size: 0.79rem;
   color: #b8ccda;
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.25;
 }
 
