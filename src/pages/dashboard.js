@@ -509,12 +509,17 @@ async function loadNews() {
   try {
     const result = await invoke('fetch_rsi_news');
     if (result.error && result.items.length === 0) {
-      el.innerHTML = renderError(t('dashboard:error.couldNotLoadNews'), () => loadNews());
+      if (!DashboardCache.get('news')) {
+        el.innerHTML = renderError(t('dashboard:error.couldNotLoadNews'), () => loadNews());
+      }
       return;
     }
     renderNewsItems(el, result.items);
+    DashboardCache.set('news', { items: result.items });
   } catch {
-    el.innerHTML = renderError(t('dashboard:error.couldNotLoadNews'), () => loadNews());
+    if (!DashboardCache.get('news')) {
+      el.innerHTML = renderError(t('dashboard:error.couldNotLoadNews'), () => loadNews());
+    }
   }
 }
 
