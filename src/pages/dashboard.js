@@ -101,7 +101,10 @@ export function renderDashboard(container) {
     </div>
   `;
 
-  // Load all data sources in parallel
+  // Render cached data immediately (stale-while-revalidate)
+  renderFromCache();
+
+  // Load fresh data in parallel — updates display on success
   loadAll();
 }
 
@@ -168,6 +171,48 @@ async function loadAll() {
   const statsPromise = loadCommunityStats();
 
   await Promise.allSettled([localPromise, newsPromise, serverPromise, statsPromise]);
+}
+
+/**
+ * Synchronously renders any sections that have data in localStorage cache.
+ * Called before loadAll() so the user sees content immediately on revisit.
+ * Module-level state variables are populated from cache so subsequent renders
+ * (triggered by successful fetches) produce correct diffs.
+ */
+function renderFromCache() {
+  // Local status cards
+  const localCache = DashboardCache.get('local');
+  if (localCache) {
+    dashConfig = localCache.config;
+    dashInstallStatus = localCache.installStatus;
+    dashLocStatus = localCache.locStatus;
+    dashLocUpdate = localCache.locUpdate;
+    dashScVersion = localCache.scVersion;
+    renderStatusCards();
+  }
+
+  // News
+  const newsCache = DashboardCache.get('news');
+  if (newsCache) {
+    const el = document.getElementById('dash-news-content');
+    if (el) renderNewsItems(el, newsCache.items);
+  }
+
+  // Community stats (numbers only first, then sparklines if history cached too)
+  const statsCache = DashboardCache.get('stats');
+  if (statsCache) {
+    const el = document.getElementById('dash-stats-content');
+    if (el) {
+      statsCurrent = statsCache;
+      const historyCache = DashboardCache.get('stats_history');
+      if (historyCache && historyCache.data_points.length >= 2) {
+        statsHistoryData = historyCache.data_points;
+        renderStatsWithSparklines();
+      } else {
+        renderStats(el, statsCache);
+      }
+    }
+  }
 }
 
 // ── Local Status Cards ──────────────────────────────
