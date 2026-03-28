@@ -151,6 +151,8 @@ let bindingEditorDevice = 'keyboard';
 let customizedOnly = false;
 /** @type {boolean} Filter: Only show essential bindings */
 let essentialsOnly = true;
+/** @type {boolean} Filter: Only show bindings that have at least one input (default or custom) */
+let boundOnly = false;
 
 const ESSENTIAL_ACTIONS = new Set([
   'v_flightready', 'v_gear_toggle', 'v_quantum_toggle', 'v_quantum_engage', 'v_weapon_group1', 'v_weapon_group2',
@@ -1617,6 +1619,7 @@ function refreshBindingsInPlace() {
   const sourceList = completeBindingList.filter(b => {
     if (customizedOnly && !b.is_custom) return false;
     if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
+    if (boundOnly && !b.current_input) return false;
     return true;
   });
 
@@ -1668,7 +1671,7 @@ function refreshBindingsInPlace() {
   const titleEl = document.getElementById('bindings-cat-title');
   const subEl = document.getElementById('bindings-cat-sub');
   if (titleEl && activeCat) titleEl.textContent = activeCat.label;
-  if (subEl && activeCat) subEl.textContent = `${activeCat.bindings.length} ${t('environments:binding.actions')}${activeCat.customCount ? ` · ${activeCat.customCount} ${t('environments:binding.customizedOnly')}` : ''}`;
+  if (subEl && activeCat) subEl.textContent = `${activeCat.bindings.length} ${t('environments:binding.actions')}${activeCat.customCount ? ` · ${activeCat.customCount} ${t('environments:binding.customized', 'customized')}` : ''}`;
 
   // Update stats badge
   const badge = document.querySelector('.binding-stats-badge');
@@ -1679,6 +1682,8 @@ function refreshBindingsInPlace() {
   if (customToggle) customToggle.checked = customizedOnly;
   const essentialsToggle = document.getElementById('essentials-only-toggle');
   if (essentialsToggle) essentialsToggle.checked = essentialsOnly;
+  const boundToggle = document.getElementById('bound-only-toggle');
+  if (boundToggle) boundToggle.checked = boundOnly;
 
   // Re-attach listeners
   attachBindingEventListeners();
@@ -1706,6 +1711,7 @@ function attachBindingEventListeners() {
     const sourceList = completeBindingList.filter(b => {
       if (customizedOnly && !b.is_custom) return false;
       if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
+    if (boundOnly && !b.current_input) return false;
       return b.category === activeCategoryKey;
     });
 
@@ -2084,7 +2090,8 @@ function renderBindingSidebar(categorized, categoryKeys) {
     return `
       <div class="binding-sidebar-item ${isActive ? 'active' : ''}"
            data-action="select-binding-category"
-           data-category="${escapeHtml(key)}">
+           data-category="${escapeHtml(key)}"
+           title="${escapeHtml(cat.label)}">
         <span class="binding-sidebar-dot ${hasCustom ? 'has-custom' : ''}"></span>
         <span class="binding-sidebar-label">${escapeHtml(cat.label)}</span>
         <span class="binding-sidebar-count">${cat.bindings.length}</span>
@@ -2236,6 +2243,7 @@ function renderBindingsCollapsible() {
   const sourceList = completeBindingList.filter(b => {
     if (customizedOnly && !b.is_custom) return false;
     if (essentialsOnly && !ESSENTIAL_ACTIONS.has(b.action_name)) return false;
+    if (boundOnly && !b.current_input) return false;
     return true;
   });
 
@@ -2323,6 +2331,13 @@ function renderBindingsCollapsible() {
               </span>
               <span>${t('environments:binding.essentialsOnly')}</span>
             </label>
+            <label class="filter-toggle" title="${t('environments:binding.boundOnlyTooltip', 'Show only actions with at least one binding')}">
+              <span class="toggle-switch">
+                <input type="checkbox" id="bound-only-toggle" ${boundOnly ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </span>
+              <span>${t('environments:binding.boundOnly', 'Bound only')}</span>
+            </label>
           </div>
         </div>
 
@@ -2340,7 +2355,7 @@ function renderBindingsCollapsible() {
                 ${activeCat ? escapeHtml(activeCat.label) : ''}
               </span>
               <span class="bindings-cat-sub" id="bindings-cat-sub">
-                ${activeCat ? `${activeCat.bindings.length} ${t('environments:binding.actions')}${activeCat.customCount ? ` · ${activeCat.customCount} ${t('environments:binding.customizedOnly')}` : ''}` : ''}
+                ${activeCat ? `${activeCat.bindings.length} ${t('environments:binding.actions')}${activeCat.customCount ? ` · ${activeCat.customCount} ${t('environments:binding.customized', 'customized')}` : ''}` : ''}
               </span>
             </div>
             <div class="bindings-col-header">
@@ -4536,9 +4551,25 @@ function attachProfilesEventListeners() {
     refreshBindingsInPlace();
   });
 
-  // Essentials only toggle
+  // Essentials only toggle — mutually exclusive with bound-only
   document.getElementById('essentials-only-toggle')?.addEventListener('change', (e) => {
     essentialsOnly = e.target.checked;
+    if (essentialsOnly) {
+      boundOnly = false;
+      const boundToggle = document.getElementById('bound-only-toggle');
+      if (boundToggle) boundToggle.checked = false;
+    }
+    refreshBindingsInPlace();
+  });
+
+  // Bound only toggle — mutually exclusive with essentials-only
+  document.getElementById('bound-only-toggle')?.addEventListener('change', (e) => {
+    boundOnly = e.target.checked;
+    if (boundOnly) {
+      essentialsOnly = false;
+      const essentialsToggle = document.getElementById('essentials-only-toggle');
+      if (essentialsToggle) essentialsToggle.checked = false;
+    }
     refreshBindingsInPlace();
   });
 
