@@ -55,6 +55,20 @@ let statsCurrentPeriod = 7;
 /** @type {Object|null} Current community statistics values for display */
 let statsCurrent = null;
 
+// ── Dashboard Cache ──────────────────────────────────
+// Stale-while-revalidate: localStorage cache for sections that tolerate
+// brief staleness. Server Status is intentionally excluded.
+// Cache is replaced only on a successful fetch — no TTL.
+
+const DashboardCache = {
+  get(key) {
+    try { return JSON.parse(localStorage.getItem(`penguin:dashboard:${key}`)); } catch { return null; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(`penguin:dashboard:${key}`, JSON.stringify(value)); } catch {}
+  },
+};
+
 /**
  * Renders the entire dashboard page into the provided container.
  * Shows skeleton placeholders first, then loads all data in parallel.
