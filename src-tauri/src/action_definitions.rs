@@ -139,4 +139,54 @@ pub struct DeviceMapping {
     /// Optional user-defined alias for display in the frontend
     #[serde(default)]
     pub alias: Option<String>,
+    /// Maps Linux/gilrs axis names to Wine/DirectInput axis names.
+    /// Populated by the simultaneous Wine capture during binding sessions.
+    /// e.g. "slider1" -> "roty" when input-remapper forwards ABS_RY as a slider.
+    /// Empty for most devices where Linux and Wine axis names already match.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub axis_wine_map: std::collections::HashMap<String, String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_device_mapping_wine_map_roundtrip() {
+        let mut m = HashMap::new();
+        m.insert("slider1".to_string(), "roty".to_string());
+        let dm = DeviceMapping {
+            product_name: "Test".to_string(),
+            device_type: "joystick".to_string(),
+            sc_guid: None,
+            sc_instance: 2,
+            alias: None,
+            axis_wine_map: m,
+        };
+        let json = serde_json::to_string(&dm).unwrap();
+        let back: DeviceMapping = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.axis_wine_map.get("slider1").unwrap(), "roty");
+    }
+
+    #[test]
+    fn test_device_mapping_empty_wine_map_omitted() {
+        let dm = DeviceMapping {
+            product_name: "Test".to_string(),
+            device_type: "joystick".to_string(),
+            sc_guid: None,
+            sc_instance: 1,
+            alias: None,
+            axis_wine_map: HashMap::new(),
+        };
+        let json = serde_json::to_string(&dm).unwrap();
+        assert!(!json.contains("axis_wine_map"));
+    }
+
+    #[test]
+    fn test_device_mapping_deserializes_without_wine_map() {
+        let json = r#"{"product_name":"T","device_type":"joystick","sc_instance":1}"#;
+        let dm: DeviceMapping = serde_json::from_str(json).unwrap();
+        assert!(dm.axis_wine_map.is_empty());
+    }
 }
