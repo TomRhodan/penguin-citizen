@@ -2193,6 +2193,58 @@ fn translate_wine_axis(input: &str, device_map: &[DeviceMapping]) -> String {
     input.to_string()
 }
 
+/// Sanitises a parsed actionmaps in place, fixing two known malformation classes.
+/// Returns the number of distinct actions that had any issue fixed.
+///
+/// Rule 1 — Merge duplicate `<action>` entries within the same actionmap:
+///   Multiple `ScBinding` entries with the same `action_name` are collapsed into
+///   one; duplicate inputs are dropped.
+///
+/// Rule 2 — Strip orphaned cleared-prefix inputs:
+///   Within a `ScBinding.inputs`, a cleared-prefix entry (e.g. `"js1_"`) that
+///   coexists with at least one real input is removed. A lone cleared-prefix entry
+///   is kept — SC needs it to suppress the default binding.
+#[allow(dead_code)]
+pub fn sanitize_actionmaps(parsed: &mut ParsedActionMaps) -> usize {
+    let mut fixed_actions: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for profile in &mut parsed.profiles {
+        for am in &mut profile.action_maps {
+            // Rule 1: merge duplicate ScBinding entries by action_name
+            let mut merged: Vec<ScBinding> = Vec::new();
+            for binding in am.bindings.drain(..) {
+                if let Some(existing) = merged.iter_mut()
+                    .find(|b| b.action_name == binding.action_name)
+                {
+                    fixed_actions.insert(existing.action_name.clone());
+                    for input in binding.inputs {
+                        if !existing.inputs.contains(&input) {
+                            existing.inputs.push(input);
+                        }
+                    }
+                } else {
+                    merged.push(binding);
+                }
+            }
+            am.bindings = merged;
+
+            // Rule 2: remove orphaned cleared-prefix inputs
+            for binding in &mut am.bindings {
+                let has_real = binding.inputs.iter().any(|x| !x.ends_with('_'));
+                if has_real {
+                    let before = binding.inputs.len();
+                    binding.inputs.retain(|x| !x.ends_with('_'));
+                    if before > binding.inputs.len() {
+                        fixed_actions.insert(binding.action_name.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    fixed_actions.len()
+}
+
 /// Assigns a binding to an action in the actionmaps.xml of a saved profile.
 /// Operates on the backup folder, not on live SC files.
 /// Marks the profile as "dirty" afterwards.
@@ -2230,7 +2282,37 @@ pub async fn assign_profile_binding(
             }
         }
     }
+
+    // Fallback: if the profile has no device assignments (device_map is empty) but the
+    // Wine helper learned axis-name mappings during this capture session, create synthetic
+    // DeviceMapping entries so translate_wine_axis can still apply the translation.
+    // This handles the common case where the user hasn't gone through the Device Setup page.
+    if !device_map.iter().any(|d| d.device_type == "joystick") {
+        if let Some(ref wam) = wine_axis_map {
+            for (instance_str, mappings) in wam {
+                if let Ok(instance) = instance_str.parse::<u32>() {
+                    device_map.push(DeviceMapping {
+                        sc_instance: instance,
+                        device_type: "joystick".to_string(),
+                        product_name: String::new(),
+                        sc_guid: None,
+                        alias: None,
+                        axis_wine_map: mappings.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    let original_input = new_input.clone();
     let new_input = translate_wine_axis(&new_input, &device_map);
+    log::info!(
+        "[ASSIGN] wine_map_provided={} device_map_joystick_count={} input: {} → {}",
+        wine_axis_map.is_some(),
+        device_map.iter().filter(|d| d.device_type == "joystick").count(),
+        original_input,
+        new_input
+    );
 
     let actionmaps_path = bdir.join("actionmaps.xml");
     if !actionmaps_path.exists() {
@@ -2265,10 +2347,22 @@ pub async fn assign_profile_binding(
 
     if !found {
         if let Some(am) = profile.action_maps.iter_mut().find(|am| am.name == action_map) {
-            am.bindings.push(ScBinding {
-                action_name: action_name.clone(),
-                inputs: vec![new_input],
-            });
+            // If a binding for this action already exists (e.g. a cleared-prefix placeholder
+            // like "js1_"), replace the placeholder instead of creating a duplicate <action>.
+            if let Some(existing) = am.bindings.iter_mut().find(|b| b.action_name == action_name) {
+                if let Some(pos) = existing.inputs.iter().position(|x| x.ends_with('_')) {
+                    // Replace the cleared-prefix slot with the new real input
+                    existing.inputs[pos] = new_input;
+                } else if !existing.inputs.contains(&new_input) {
+                    // No cleared placeholder — append as an additional alternative binding
+                    existing.inputs.push(new_input);
+                }
+            } else {
+                am.bindings.push(ScBinding {
+                    action_name: action_name.clone(),
+                    inputs: vec![new_input],
+                });
+            }
         } else {
             profile.action_maps.push(ScActionMap {
                 name: action_map,
@@ -2282,6 +2376,7 @@ pub async fn assign_profile_binding(
     }
 
 
+    sanitize_actionmaps(&mut parsed);
     write_actionmaps_xml(&actionmaps_path, &parsed)?;
     mark_backup_dirty(&bdir)
 }
@@ -2547,19 +2642,36 @@ pub async fn update_device_tuning(
 }
 
 /// Applies the files of a saved profile to the live SC directory.
-/// Copies profile files via restore_profile and then resets the dirty flag.
-/// Also saves the active profile assignment in active_profiles.json.
+/// Sanitizes actionmaps.xml first, then copies via restore_profile, resets the
+/// dirty flag, and saves the active profile assignment. Returns the number of
+/// sanitization corrections made so the frontend can show user feedback.
 #[tauri::command]
 pub async fn apply_profile_to_sc(
     gp: String,
     v: String,
     profile_id: String,
-) -> Result<(), String> {
-    // Reuse existing restore_profile logic
+) -> Result<usize, String> {
+    let bdir = backup_version_dir(&v)?.join(&profile_id);
+
+    // Sanitize the profile's actionmaps.xml before copying to SC so the game
+    // receives a clean file. Record the correction count for user feedback.
+    let actionmaps_path = bdir.join("actionmaps.xml");
+    let corrections = if actionmaps_path.exists() {
+        let xml = fs::read_to_string(&actionmaps_path).map_err(|e| e.to_string())?;
+        let mut parsed = parse_actionmaps_xml(&xml)?;
+        let n = sanitize_actionmaps(&mut parsed);
+        if n > 0 {
+            write_actionmaps_xml(&actionmaps_path, &parsed)?;
+        }
+        n
+    } else {
+        0
+    };
+
+    // Copy sanitized profile to the SC game directory
     restore_profile(gp, v.clone(), profile_id.clone()).await?;
 
     // Clear dirty flag
-    let bdir = backup_version_dir(&v)?.join(&profile_id);
     let meta_path = bdir.join("backup_meta.json");
     if meta_path.exists() {
         let meta_json = fs::read_to_string(&meta_path).map_err(|e| e.to_string())?;
@@ -2568,8 +2680,8 @@ pub async fn apply_profile_to_sc(
         save_backup_meta(&bdir, &meta)?;
     }
 
-    // Update active_profiles.json
-    save_active_profile(v, profile_id).await
+    save_active_profile(v, profile_id).await?;
+    Ok(corrections)
 }
 
 /// Sets a custom alias for a device in the device_map of a profile.
@@ -2874,19 +2986,27 @@ pub async fn reorder_profile_devices(
         let meta_json = fs::read_to_string(&meta_path).map_err(|e| e.to_string())?;
         let mut meta: BackupInfo = serde_json::from_str(&meta_json).map_err(|e| e.to_string())?;
 
-        // Save existing aliases keyed by (product_name) before re-deriving
+        // Preserve aliases and Wine axis mappings from the existing device_map before re-deriving
         let aliases: HashMap<String, String> = meta.device_map.iter()
             .filter_map(|dm| dm.alias.as_ref().map(|a| (dm.product_name.clone(), a.clone())))
             .collect();
+        let wine_maps: HashMap<(String, String), std::collections::HashMap<String, String>> =
+            meta.device_map.iter()
+                .filter(|dm| !dm.axis_wine_map.is_empty())
+                .map(|dm| ((dm.product_name.clone(), dm.device_type.clone()), dm.axis_wine_map.clone()))
+                .collect();
 
         // Re-derive device_map from the modified actionmaps.xml
         let parsed = parse_actionmaps_xml(&xml)?;
         let mut new_map = derive_device_map(&parsed);
 
-        // Restore aliases by matching product_name
+        // Restore aliases and Wine axis mappings by matching product_name + device_type
         for dm in &mut new_map {
             if let Some(alias) = aliases.get(&dm.product_name) {
                 dm.alias = Some(alias.clone());
+            }
+            if let Some(wm) = wine_maps.get(&(dm.product_name.clone(), dm.device_type.clone())) {
+                dm.axis_wine_map = wm.clone();
             }
         }
 
@@ -4145,11 +4265,22 @@ pub async fn update_backup_from_sc(
         }
     }
 
-    // Derive device_map from the updated actionmaps.xml
+    // Derive device_map from the updated actionmaps.xml, preserving existing Wine axis mappings
+    let wine_maps: HashMap<(String, String), std::collections::HashMap<String, String>> =
+        info.device_map.iter()
+            .filter(|dm| !dm.axis_wine_map.is_empty())
+            .map(|dm| ((dm.product_name.clone(), dm.device_type.clone()), dm.axis_wine_map.clone()))
+            .collect();
     let device_map = if target.join("actionmaps.xml").exists() {
         if let Ok(xml) = fs::read_to_string(target.join("actionmaps.xml")) {
             if let Ok(parsed) = parse_actionmaps_xml(&xml) {
-                derive_device_map(&parsed)
+                let mut new_map = derive_device_map(&parsed);
+                for dm in &mut new_map {
+                    if let Some(wm) = wine_maps.get(&(dm.product_name.clone(), dm.device_type.clone())) {
+                        dm.axis_wine_map = wm.clone();
+                    }
+                }
+                new_map
             } else { vec![] }
         } else { vec![] }
     } else { vec![] };
@@ -4365,6 +4496,111 @@ mod wine_axis_tests {
             },
         ];
         assert_eq!(translate_wine_axis("js1_slider1", &dm), "js1_roty");
+    }
+}
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::*;
+
+    fn xml_with_bindings(entries: &[(&str, &str)]) -> String {
+        let rebinds: String = entries.iter().map(|(action, input)| {
+            format!(
+                r#"<action name="{}"><rebind input="{}"/></action>"#,
+                action, input
+            )
+        }).collect::<Vec<_>>().join("\n      ");
+        format!(r#"<?xml version="1.0" encoding="utf-8"?>
+<ActionMaps version="1">
+  <ActionProfiles profileName="default" version="1" optionsVersion="2" rebindVersion="2">
+    <actionmap name="spaceship_movement">
+      {}
+    </actionmap>
+  </ActionProfiles>
+</ActionMaps>"#, rebinds)
+    }
+
+    fn bindings_for(parsed: &ParsedActionMaps, action: &str) -> Vec<String> {
+        parsed.profiles[0].action_maps[0].bindings.iter()
+            .filter(|b| b.action_name == action)
+            .flat_map(|b| b.inputs.iter().cloned())
+            .collect()
+    }
+
+    #[test]
+    fn merges_duplicate_action_entries_and_removes_prefix() {
+        let xml = xml_with_bindings(&[
+            ("v_abc", "js1_"),
+            ("v_abc", "js1_slider1"),
+        ]);
+        let mut parsed = parse_actionmaps_xml(&xml).unwrap();
+        let n = sanitize_actionmaps(&mut parsed);
+
+        assert!(n > 0, "Expected corrections");
+        let count = parsed.profiles[0].action_maps[0].bindings.iter()
+            .filter(|b| b.action_name == "v_abc").count();
+        assert_eq!(count, 1, "Should collapse to one ScBinding");
+        let inputs = bindings_for(&parsed, "v_abc");
+        assert_eq!(inputs, vec!["js1_slider1"]);
+    }
+
+    #[test]
+    fn merges_duplicate_entries_reversed_order() {
+        // Real input comes first, cleared-prefix second — same result must hold
+        let xml = xml_with_bindings(&[
+            ("v_abc", "js1_slider1"),
+            ("v_abc", "js1_"),
+        ]);
+        let mut parsed = parse_actionmaps_xml(&xml).unwrap();
+        let n = sanitize_actionmaps(&mut parsed);
+
+        assert!(n > 0, "Expected corrections");
+        let count = parsed.profiles[0].action_maps[0].bindings.iter()
+            .filter(|b| b.action_name == "v_abc").count();
+        assert_eq!(count, 1, "Should collapse to one ScBinding");
+        let inputs = bindings_for(&parsed, "v_abc");
+        assert_eq!(inputs, vec!["js1_slider1"]);
+    }
+
+    #[test]
+    fn removes_orphaned_cleared_prefix_in_single_entry() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<ActionMaps version="1">
+  <ActionProfiles profileName="default" version="1" optionsVersion="2" rebindVersion="2">
+    <actionmap name="spaceship_movement">
+      <action name="v_abc">
+        <rebind input="js1_"/>
+        <rebind input="js1_roty"/>
+      </action>
+    </actionmap>
+  </ActionProfiles>
+</ActionMaps>"#;
+        let mut parsed = parse_actionmaps_xml(xml).unwrap();
+        let n = sanitize_actionmaps(&mut parsed);
+        assert_eq!(n, 1);
+        let inputs = bindings_for(&parsed, "v_abc");
+        assert_eq!(inputs, vec!["js1_roty"]);
+    }
+
+    #[test]
+    fn keeps_lone_cleared_prefix() {
+        let xml = xml_with_bindings(&[("v_abc", "js1_")]);
+        let mut parsed = parse_actionmaps_xml(xml.as_str()).unwrap();
+        let n = sanitize_actionmaps(&mut parsed);
+        assert_eq!(n, 0, "Lone cleared prefix must be kept");
+        let inputs = bindings_for(&parsed, "v_abc");
+        assert_eq!(inputs, vec!["js1_"]);
+    }
+
+    #[test]
+    fn no_changes_on_clean_input() {
+        let xml = xml_with_bindings(&[
+            ("v_abc", "js1_roty"),
+            ("v_xyz", "kb1_w"),
+        ]);
+        let mut parsed = parse_actionmaps_xml(xml.as_str()).unwrap();
+        let n = sanitize_actionmaps(&mut parsed);
+        assert_eq!(n, 0);
     }
 }
 

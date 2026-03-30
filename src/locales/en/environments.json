@@ -309,6 +309,7 @@
   "notification.revertFailed": "Revert failed: {{error}}",
   "notification.profileApplied": "Profile applied to Star Citizen",
   "notification.applyFailed": "Apply failed: {{error}}",
+  "notification.bindingsSanitized": "{{count}} binding issue(s) automatically fixed",
   "notification.aliasSetFailed": "Failed to set alias: {{error}}",
   "notification.renameFailed": "Failed to rename: {{error}}",
   "notification.unsavedVersionSwitch": "You have unsaved USER.cfg changes. Switching versions will discard them.",

@@ -103,6 +103,8 @@ struct WineCaptureState {
     axis_mappings: HashMap<u32, HashMap<String, String>>,
     /// Maps Wine device GUID → product name (populated from DEVICE: lines)
     device_names: HashMap<String, String>,
+    /// PID of the currently running Wine helper process, used to kill it on stop.
+    wine_pid: Option<i32>,
 }
 
 static WINE_CAPTURE: Lazy<Arc<Mutex<WineCaptureState>>> = Lazy::new(|| {
@@ -110,13 +112,14 @@ static WINE_CAPTURE: Lazy<Arc<Mutex<WineCaptureState>>> = Lazy::new(|| {
         events: Vec::new(),
         axis_mappings: HashMap::new(),
         device_names: HashMap::new(),
+        wine_pid: None,
     }))
 });
 
 /// Helper function for logging capture messages with a timestamp.
 fn log_capture(msg: &str) {
     let now = Local::now();
-    log::trace!("[CAPTURE {}] {}", now.format("%H:%M:%S%.3f"), msg);
+    log::info!("[CAPTURE {}] {}", now.format("%H:%M:%S%.3f"), msg);
 }
 
 /// Converts a gilrs UUID (16-byte array) into a hex string.
@@ -284,6 +287,7 @@ pub fn start_input_capture(
         state.events.clear();
         state.axis_mappings.clear();
         state.device_names.clear();
+        state.wine_pid = None;
     }
 
     // Spawn Wine DirectInput helper in parallel if wine environment is configured.
@@ -311,6 +315,10 @@ pub fn start_input_capture(
                     {
                         Ok(mut child) => {
                             log_capture("[WINE] Helper process started");
+                            // Store PID so stop_input_capture can terminate the process.
+                            if let Ok(mut state) = wine_state.lock() {
+                                state.wine_pid = Some(child.id() as i32);
+                            }
                             if let Some(stdout) = child.stdout.take() {
                                 use std::io::BufRead;
                                 let reader = std::io::BufReader::new(stdout);
@@ -643,6 +651,16 @@ pub fn start_input_capture(
 #[tauri::command]
 pub fn stop_input_capture() {
     IS_CAPTURING.store(false, Ordering::SeqCst);
+    // Kill the Wine helper process so it does not linger into the next capture session.
+    // Without this, two Wine helpers would run concurrently under the same WINEPREFIX,
+    // delaying DirectInput initialisation past the 500 ms correlation window.
+    if let Ok(mut state) = WINE_CAPTURE.lock() {
+        if let Some(pid) = state.wine_pid.take() {
+            // SAFETY: pid is a valid process ID obtained from child.id() above.
+            unsafe { libc::kill(pid, libc::SIGTERM); }
+            log_capture(&format!("[WINE] Sent SIGTERM to helper process (PID {})", pid));
+        }
+    }
     log_capture(">>> HARDWARE CAPTURE DISABLED <<<");
 }
 

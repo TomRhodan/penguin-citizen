@@ -27,10 +27,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MAX_DEVICES  16
-#define MAX_AXES     16
-#define AXIS_THRESHOLD  3000   /* ~9% of 32767 */
-#define POLL_MS         10
+#define MAX_DEVICES      16
+#define MAX_AXES         16
+#define AXIS_THRESHOLD   3000   /* ~9% of 32767 */
+#define POLL_MS          10
+#define FORCE_EMIT_POLLS 10     /* emit all axis values every 100 ms regardless of delta */
 
 /* Per-axis info discovered via EnumObjects */
 typedef struct {
@@ -46,6 +47,7 @@ typedef struct {
     IDirectInputDevice8W *device;
     DIJOYSTATE2           prev_state;
     int                   has_baseline;
+    int                   force_counter; /* counts polls until next forced emit */
     AxisInfo              axes[MAX_AXES];
     int                   naxes;
 } DevInfo;
@@ -191,10 +193,26 @@ int main(void) {
             }
 
             if (!d->has_baseline) {
-                d->prev_state  = state;
+                d->prev_state   = state;
                 d->has_baseline = 1;
+                d->force_counter = 0;
+                /* Emit initial axis values so the Rust correlator has a starting
+                 * point even before the user moves anything. */
+                for (a = 0; a < d->naxes; a++) {
+                    LONG curr = *(LONG *)((char *)&state + d->axes[a].offset);
+                    double norm = (double)curr / 32767.0;
+                    if (norm < -1.0) norm = -1.0;
+                    if (norm >  1.0) norm =  1.0;
+                    printf("AXIS:%s:%s:%.4f\n",
+                           d->guid_str, d->axes[a].sc_name, norm);
+                }
+                fflush(stdout);
                 continue;
             }
+
+            d->force_counter++;
+            int force_emit = (d->force_counter >= FORCE_EMIT_POLLS);
+            if (force_emit) d->force_counter = 0;
 
             for (a = 0; a < d->naxes; a++) {
                 /* Read value at the exact DIJOYSTATE2 byte offset for this axis */
@@ -203,15 +221,17 @@ int main(void) {
                 LONG delta = curr - prev;
                 if (delta < 0) delta = -delta;
 
-                if (delta > AXIS_THRESHOLD) {
+                if (delta > AXIS_THRESHOLD || force_emit) {
                     double norm = (double)curr / 32767.0;
                     if (norm < -1.0) norm = -1.0;
                     if (norm >  1.0) norm =  1.0;
                     printf("AXIS:%s:%s:%.4f\n",
                            d->guid_str, d->axes[a].sc_name, norm);
                     fflush(stdout);
-                    /* Reset baseline after any significant change */
-                    d->prev_state = state;
+                    if (delta > AXIS_THRESHOLD) {
+                        /* Reset baseline only on real movement */
+                        d->prev_state = state;
+                    }
                 }
             }
         }

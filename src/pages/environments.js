@@ -125,6 +125,8 @@ const lastRestoredPerVersion = {};
 let activeProfileStatus = null;
 /** @type {boolean} Whether the changes detail panel is shown */
 let showChangesPanel = false;
+/** @type {Function|null} Delegated click handler stored for removal before re-registration */
+let _profilesDelegatedClickHandler = null;
 /** @type {Object} Snapshot of USER.cfg at last load/save (for change detection) */
 let savedUserCfgSnapshot = {};
 /** @type {string} Raw USER.cfg content at last load/save (for external change detection) */
@@ -169,6 +171,60 @@ let renderGeneration = 0;
 let migrationChecked = false;
 /** @type {Array} Tuning data for all joystick devices (from get_device_tuning) */
 let deviceTuningData = [];
+
+/**
+ * Resets ALL environment-scoped module state before switching to a new SC version.
+ *
+ * Call this before changing activeScVersion so the subsequent renderEnvironments()
+ * starts completely fresh. Never scatter individual resets across the codebase —
+ * always add new environment-scoped variables here.
+ */
+function resetEnvironmentState() {
+  // Kill any running Wine helper and stop hardware capture
+  invoke('stop_input_capture').catch(() => null);
+
+  // Close any modals that belong to the outgoing environment (binding editor,
+  // tuning editor, diff viewer — anything appended to document.body)
+  document.querySelectorAll(
+    '#binding-editor-modal, #mouse-binding-editor-modal, .modal-overlay'
+  ).forEach(m => m.remove());
+
+  // Remove the delegated click handler so attachProfilesEventListeners() starts fresh
+  if (_profilesDelegatedClickHandler) {
+    document.removeEventListener('click', _profilesDelegatedClickHandler);
+    _profilesDelegatedClickHandler = null;
+  }
+
+  // Data — sourced from the SC version; must be refetched for every env
+  backups = [];
+  completeBindingList = [];
+  deviceTuningData = [];
+  parsedActionMaps = null;
+  exportedLayouts = [];
+  activeProfileStatus = null;
+  localizationStatus = null;
+  localizationLabels = {};
+  availableLanguages = [];
+  localizationLoaded = false;
+  remoteLanguageInfo = [];
+  localizationLoading = false;
+  userCfgSettings = {};
+  savedUserCfgSnapshot = {};
+  savedUserCfgRaw = '';
+
+  // UI state — reset to defaults so filters from LIVE don't bleed into HOTFIX
+  showChangesPanel = false;
+  bindingFilter = '';
+  bindingCategory = 'all';
+  selectedBindingSource = null;
+  bindingEditorAction = null;
+  activeProfileTab = 'profile';
+  activeCategoryKey = null;
+  draggedJoystickInstance = null;
+  customizedOnly = false;
+  essentialsOnly = true;
+  boundOnly = false;
+}
 
 // Which collapsible panels are open (persists within the session)
 if (!window.expandedPanels) window.expandedPanels = { bindings: false, devices: false, tuning: false };
@@ -617,11 +673,9 @@ export async function renderEnvironments(container) {
       if (activeScVersion && lastRestoredBackupId) {
         lastRestoredPerVersion[activeScVersion] = lastRestoredBackupId;
       }
+      resetEnvironmentState();
       activeScVersion = card.dataset.version;
       lastRestoredBackupId = lastRestoredPerVersion[activeScVersion] || null;
-      selectedBindingSource = null;
-      bindingFilter = '';
-      bindingCategory = 'all';
       renderEnvironments(document.getElementById('content'));
     });
   });
@@ -2253,7 +2307,14 @@ function renderBindingRows(items, categoryKey, columns) {
     `;
 
     for (const col of columns) {
-      const colBindings = group.bindings.filter(b => b.current_input.startsWith(col.prefix));
+      // Exclude cleared-prefix placeholders (e.g. "js1_") from visible pills.
+      // They are internal markers that suppress SC's defaults and must not
+      // render as editable cells — the user should see a "+" button instead,
+      // which triggers assign_profile_binding with old_input=null and the
+      // backend replaces the placeholder rather than creating a duplicate.
+      const colBindings = group.bindings.filter(b =>
+        b.current_input.startsWith(col.prefix) && !b.current_input.endsWith('_')
+      );
       const targetInstance = parseInt(col.id.replace(/\D/g, '')) || 0;
 
       rowHtml += `
@@ -4634,12 +4695,11 @@ function attachProfilesEventListeners() {
       if (activeScVersion && lastRestoredBackupId) {
         lastRestoredPerVersion[activeScVersion] = lastRestoredBackupId;
       }
+      // Full state reset before switching — prevents outgoing-env data from
+      // contaminating the incoming environment's view
+      resetEnvironmentState();
       activeScVersion = card.dataset.version;
-      // Restore active profile for the new version
       lastRestoredBackupId = lastRestoredPerVersion[activeScVersion] || null;
-      selectedBindingSource = null;
-      bindingFilter = '';
-      bindingCategory = 'all';
       renderEnvironments(document.getElementById('content'));
     });
   });
@@ -4805,7 +4865,11 @@ function attachProfilesEventListeners() {
   // Toggle changes detail panel + file diff — delegated on document so the listener
   // survives renderEnvironments() rebuilding the DOM (btn-toggle-changes and
   // .profile-changes-panel live inside #content which is fully replaced on each render).
-  document.addEventListener('click', async (e) => {
+  // Remove previous registration first to prevent accumulation across re-renders.
+  if (_profilesDelegatedClickHandler) {
+    document.removeEventListener('click', _profilesDelegatedClickHandler);
+  }
+  _profilesDelegatedClickHandler = async (e) => {
     if (e.target.closest('#btn-toggle-changes')) {
       showChangesPanel = !showChangesPanel;
       renderEnvironments(document.getElementById('content'));
@@ -4826,18 +4890,25 @@ function attachProfilesEventListeners() {
     } catch (err) {
       console.error('Failed to load diff:', err);
     }
-  });
+  };
+  document.addEventListener('click', _profilesDelegatedClickHandler);
 
   // Apply to SC button
   document.getElementById('btn-apply-to-sc')?.addEventListener('click', async () => {
     if (!config?.install_path || !activeScVersion || !lastRestoredBackupId) return;
     try {
-      await invoke('apply_profile_to_sc', {
+      const corrections = await invoke('apply_profile_to_sc', {
         gp: config.install_path,
         v: activeScVersion,
         profileId: lastRestoredBackupId,
       });
       showNotification(t('environments:notification.profileApplied'), 'success');
+      if (corrections > 0) {
+        showNotification(
+          t('environments:notification.bindingsSanitized', { count: corrections }),
+          'warning'
+        );
+      }
       await loadBackups();
       await loadProfileStatus();
       renderEnvironments(document.getElementById('content'));

@@ -309,6 +309,7 @@
   "notification.revertFailed": "Zuruecksetzen fehlgeschlagen: {{error}}",
   "notification.profileApplied": "Profil auf Star Citizen angewendet",
   "notification.applyFailed": "Anwenden fehlgeschlagen: {{error}}",
+  "notification.bindingsSanitized": "{{count}} Binding-Problem(e) automatisch behoben",
   "notification.aliasSetFailed": "Alias konnte nicht gesetzt werden: {{error}}",
   "notification.renameFailed": "Umbenennen fehlgeschlagen: {{error}}",
   "notification.unsavedVersionSwitch": "Du hast ungespeicherte USER.cfg Aenderungen. Beim Versionswechsel gehen diese verloren.",
