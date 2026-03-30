@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-03-30
+
+### Fixed
+- **Environments freeze on HOTFIX tab** — The page skeleton no longer blocks all interaction during loading. The version selector is rendered immediately from already-loaded data, and version-tab clicks are handled even while content is still fetching.
+- **Copy modal invisible** — The Data.p4k copy progress modal was being added to the DOM but never shown because the required `.show` CSS class was missing from `modal-overlay`.
+- **Spurious "No P4K" error on HOTFIX** — `get_profile_bindings` now returns empty bindings gracefully when a version has no `Data.p4k` (e.g. a freshly created empty environment with a previously saved profile), instead of propagating an error and logging noise on every page load.
+- **Extra skeleton flash after version switch** — The localization-labels background callback no longer triggers a full re-render when there are no bindings to display with the new labels.
+- **Unsaved USER.cfg changes silently discarded** — Version-card click listeners attached during the skeleton loading phase now include the unsaved-changes confirmation dialog, matching the behavior of the full post-render listeners.
+- **Panic on malformed master bindings** — `get_profile_bindings` now returns a clean error instead of panicking when `defaultprofile.xml` in `Data.p4k` parses to zero profiles.
+
+### Changed
+- **Redundant double data-loading removed** — The version card click handler no longer pre-loads all data before calling `renderEnvironments`; the render function handles the load itself, halving the number of backend calls per tab switch.
+- **Profile-tab switches are now instant** — Switching between Profile / UserCfg / Localization / Storage tabs uses `rerenderFromState()` (synchronous, no skeleton, no backend calls) instead of a full async `renderEnvironments`.
+- **Log noise reduced** — File logger (`debug.log`) is now at Info level. Terminal logger suppresses `reqwest::connect`, `reqwest::async_impl::client`, `gilrs_core`, and `gilrs::gamepad` debug spam while preserving warn/error output from all modules. Binding-capture `[CAPTURE]` messages downgraded to trace.
+- **`detect_sc_versions` debug logging removed** — The function previously emitted 9+ lines per call on every page render; all intermediate debug lines removed.
+
+### Added
+- **`penguin-citizen-helper.exe` documented** — `CONTRIBUTING.md` now explains what the Wine DirectInput helper is, why it must be committed to the repository (CI cannot cross-compile it), and how to rebuild it after changes to `dinput_helper.c`. `README.md` mentions the helper in the Controller & Bindings feature description. The release workflow (`release.yml`) now fails fast with a clear message if the binary is missing.
+
 ## [0.4.6] - 2026-03-28
 
 ### Added
