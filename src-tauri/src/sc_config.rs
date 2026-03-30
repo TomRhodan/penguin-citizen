@@ -1217,11 +1217,7 @@ pub async fn write_user_cfg(gp: String, v: String, c: String) -> Result<(), Stri
 /// as the folder structure can vary depending on the installation method.
 #[tauri::command]
 pub async fn detect_sc_versions(gp: String) -> Result<Vec<ScVersionInfo>, String> {
-    log::debug!("[detect_sc_versions] ========== START ==========");
-    log::debug!("[detect_sc_versions] Input game_path: '{}'", gp);
-
     let exp = expand_tilde(&gp);
-    log::debug!("[detect_sc_versions] Expanded path: '{}'", exp);
 
     // Try multiple possible paths
     let paths_to_try: Vec<PathBuf> = vec![
@@ -1234,18 +1230,13 @@ pub async fn detect_sc_versions(gp: String) -> Result<Vec<ScVersionInfo>, String
     ];
 
     for base in paths_to_try.iter() {
-        log::debug!("[detect_sc_versions] Checking path: {}", base.display());
-        log::debug!("[detect_sc_versions]   Exists: {}, IsDir: {}", base.exists(), base.is_dir());
-
         if base.exists() && base.is_dir() {
-            // List contents of directory for debugging
             if let Ok(entries) = fs::read_dir(base) {
                 let entry_names: Vec<String> = entries
                     .flatten()
                     .map(|e| e.file_name().to_string_lossy().to_string())
                     .take(10)
                     .collect();
-                log::debug!("[detect_sc_versions]   First 10 entries: {:?}", entry_names);
 
                 let has_version_folders: bool = entry_names.iter().any(|name| {
                     let n = name.to_lowercase();
@@ -1253,22 +1244,12 @@ pub async fn detect_sc_versions(gp: String) -> Result<Vec<ScVersionInfo>, String
                 });
 
                 if has_version_folders {
-                    log::debug!(
-                        "[detect_sc_versions] Found valid SC installation at: {}",
-                        base.display()
-                    );
                     return detect_sc_versions_from_path(base);
-                } else {
-                    log::debug!(
-                        "[detect_sc_versions]   No version folders found in this directory"
-                    );
                 }
             }
         }
     }
 
-    // Return error with path info for debugging
-    log::debug!("[detect_sc_versions] ========== END - NOT FOUND ==========");
     Err(format!("StarCitizen directory not found. Game path: '{}'", gp))
 }
 
@@ -1277,7 +1258,6 @@ pub async fn detect_sc_versions(gp: String) -> Result<Vec<ScVersionInfo>, String
 /// Results are sorted by priority: LIVE > PTU > HOTFIX > other.
 fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, String> {
     let mut res = vec![];
-    log::debug!("[detect_sc_versions] Reading directory: {}", base.display());
 
     match fs::read_dir(base) {
         Ok(es) => {
@@ -1287,7 +1267,6 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
                     continue;
                 }
                 let n = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-                log::debug!("[detect_sc_versions] Found version folder: {}", n);
 
                 // Check profiles path
                 let profiles_path = path.join("user/client/0/Profiles/default");
@@ -1300,12 +1279,6 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
                     fs::read_dir(&d).is_ok_and(|mut es| es.any(|e| e.ok().is_some_and(|e| e.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("chf")))))
                 });
                 let has_data_p4k = path.join("Data.p4k").exists();
-                log::debug!(
-                    "[detect_sc_versions]   has_usercfg: {}, has_attributes: {}, has_actionmaps: {}",
-                    has_usercfg,
-                    has_attributes,
-                    has_actionmaps
-                );
                 res.push(ScVersionInfo {
                     version: n,
                     path: path.to_string_lossy().into_owned(),
@@ -1319,11 +1292,7 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
             }
         }
         Err(e) => {
-            log::debug!(
-                "[detect_sc_versions] Failed to read directory: {} - Error: {}",
-                base.display(),
-                e
-            );
+            log::warn!("detect_sc_versions: failed to read {}: {}", base.display(), e);
         }
     }
 
@@ -1335,7 +1304,6 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
             _ => 3,
         }
     });
-    log::debug!("[detect_sc_versions] Returning {} versions", res.len());
     Ok(res)
 }
 /// Lists available user profiles for an SC version.
@@ -1816,6 +1784,7 @@ fn derive_device_map(parsed: &ParsedActionMaps) -> Vec<DeviceMapping> {
                 sc_guid: dev.guid.clone(),
                 sc_instance: dev.instance,
                 alias: None,
+                axis_wine_map: std::collections::HashMap::new(),
             });
         }
     }
@@ -1862,9 +1831,23 @@ pub async fn get_profile_bindings(
         }
     }
 
-    // Get master bindings and localization labels
+    // Get master bindings and localization labels.
+    // If Data.p4k is missing (version has no game data yet), return empty bindings
+    // instead of propagating an error — same behaviour as "no actionmaps.xml".
     let labels = get_localization_labels(gp.clone(), v.clone(), None).await.unwrap_or_default();
-    let master = get_master_bindings(gp, v).await?;
+    let master = match get_master_bindings(gp, v.clone()).await {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("[get_profile_bindings] Master bindings unavailable for {}: {}", v, e);
+            return Ok(BindingListResponse {
+                bindings: vec![],
+                stats: BindingStats { total: 0, custom: 0 },
+            });
+        }
+    };
+    if master.profiles.is_empty() {
+        return Err(format!("Master bindings for {} contain no profiles", v));
+    }
     let master_profile = &master.profiles[0];
 
     let user_profile = user_parsed.profiles.iter()
@@ -2113,6 +2096,103 @@ fn mark_backup_dirty(bdir: &Path) -> Result<(), String> {
     save_backup_meta(bdir, &meta)
 }
 
+/// Updates the Wine axis name mappings in a profile's backup_meta.json.
+/// Called by the frontend after a binding capture session to persist
+/// the Linux→Wine axis name mappings learned during simultaneous capture.
+///
+/// `instance_mappings`: JSON object keys are sc_instance as string (e.g. "2"),
+/// values map Linux axis name → Wine axis name (e.g. "slider1" → "roty").
+#[tauri::command]
+pub async fn update_profile_device_wine_maps(
+    v: String,
+    profile_id: String,
+    instance_mappings: std::collections::HashMap<
+        String,
+        std::collections::HashMap<String, String>,
+    >,
+) -> Result<(), String> {
+    validate_backup_id(&profile_id)?;
+    let bdir = backup_version_dir(&v)?.join(&profile_id);
+    let meta_path = bdir.join("backup_meta.json");
+    let meta_json = fs::read_to_string(&meta_path).map_err(|e| e.to_string())?;
+    let mut info: BackupInfo = serde_json::from_str(&meta_json).map_err(|e| e.to_string())?;
+
+    for dm in &mut info.device_map {
+        // Only joystick devices can have axis mappings — skip keyboards, gamepads, etc.
+        if dm.device_type != "joystick" {
+            continue;
+        }
+        let key = dm.sc_instance.to_string();
+        if let Some(mappings) = instance_mappings.get(&key) {
+            for (linux_axis, wine_axis) in mappings {
+                dm.axis_wine_map.insert(linux_axis.clone(), wine_axis.clone());
+                log::info!(
+                    "[WINE MAP] Device '{}' (js{}): {} -> {}",
+                    dm.product_name,
+                    dm.sc_instance,
+                    linux_axis,
+                    wine_axis
+                );
+            }
+        }
+    }
+
+    save_backup_meta(&bdir, &info)
+}
+
+/// Translates a Linux/gilrs axis name in an SC input string to its Wine/DirectInput
+/// equivalent using the device's `axis_wine_map`. Returns the input unchanged if
+/// no mapping exists (buttons, hats, keyboard, or no entry found).
+///
+/// Examples:
+///   "js2_slider1"    → "js2_roty"    (mapping: slider1 → roty)
+///   "js2_slider1neg" → "js2_rotyneg" (direction suffix preserved)
+///   "js2_button5"    → "js2_button5" (buttons are not translated)
+///   "kb1_w"          → "kb1_w"       (keyboard inputs are not translated)
+fn translate_wine_axis(input: &str, device_map: &[DeviceMapping]) -> String {
+    let under = match input.find('_') {
+        Some(i) => i,
+        None => return input.to_string(),
+    };
+    let prefix = &input[..under];       // "js2"
+    let axis_part = &input[under + 1..]; // "slider1" or "slider1neg"
+
+    // Only translate joystick inputs
+    if !prefix.starts_with("js") {
+        return input.to_string();
+    }
+    let instance: u32 = match prefix[2..].parse() {
+        Ok(n) => n,
+        Err(_) => return input.to_string(),
+    };
+
+    // Strip optional neg/pos direction suffix
+    let (base_axis, suffix) = if let Some(base) = axis_part.strip_suffix("neg") {
+        (base, "neg")
+    } else if let Some(base) = axis_part.strip_suffix("pos") {
+        (base, "pos")
+    } else {
+        (axis_part, "")
+    };
+
+    // Only translate known SC axis names (not buttons, hats, or composites)
+    const AXIS_NAMES: &[&str] = &["x", "y", "z", "rotx", "roty", "rotz", "slider1", "slider2"];
+    if !AXIS_NAMES.contains(&base_axis) {
+        return input.to_string();
+    }
+
+    // Only match joystick devices — keyboards and gamepads share instance numbers
+    // but never have axis mappings.
+    if let Some(dm) = device_map.iter().find(|d| {
+        d.sc_instance == instance && d.device_type == "joystick"
+    }) {
+        if let Some(wine_axis) = dm.axis_wine_map.get(base_axis) {
+            return format!("{}_{}{}", prefix, wine_axis, suffix);
+        }
+    }
+    input.to_string()
+}
+
 /// Assigns a binding to an action in the actionmaps.xml of a saved profile.
 /// Operates on the backup folder, not on live SC files.
 /// Marks the profile as "dirty" afterwards.
@@ -2124,8 +2204,34 @@ pub async fn assign_profile_binding(
     action_name: String,
     new_input: String,
     old_input: Option<String>,
+    wine_axis_map: Option<std::collections::HashMap<String, std::collections::HashMap<String, String>>>,
 ) -> Result<(), String> {
     let bdir = backup_version_dir(&v)?.join(&profile_id);
+
+    // Load device_map from backup_meta.json to apply Wine axis name translation.
+    // Falls back to empty vec (no translation) if metadata is unavailable.
+    let mut device_map: Vec<DeviceMapping> = fs
+        ::read_to_string(bdir.join("backup_meta.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<BackupInfo>(&s).ok())
+        .map(|info| info.device_map)
+        .unwrap_or_default();
+
+    // Merge in session-level wine mappings (these take priority over stored ones,
+    // and are available even on the first binding before update_profile_device_wine_maps is called)
+    if let Some(ref wam) = wine_axis_map {
+        for dm in &mut device_map {
+            if dm.device_type != "joystick" { continue; }
+            let key = dm.sc_instance.to_string();
+            if let Some(mappings) = wam.get(&key) {
+                for (linux_axis, wine_axis) in mappings {
+                    dm.axis_wine_map.insert(linux_axis.clone(), wine_axis.clone());
+                }
+            }
+        }
+    }
+    let new_input = translate_wine_axis(&new_input, &device_map);
+
     let actionmaps_path = bdir.join("actionmaps.xml");
     if !actionmaps_path.exists() {
         return Err("Profile has no actionmaps.xml".into());
@@ -4152,6 +4258,113 @@ mod tests {
 
         assert_eq!(h1, h2, "Hashes must match despite changing LastPlayed in profile.xml");
         fs::remove_file(&file1).ok();
+    }
+}
+
+#[cfg(test)]
+mod wine_axis_tests {
+    use super::*;
+    use crate::action_definitions::DeviceMapping;
+    use std::collections::HashMap;
+
+    fn device_map(instance: u32, linux: &str, wine: &str) -> Vec<DeviceMapping> {
+        let mut axis_wine_map = HashMap::new();
+        axis_wine_map.insert(linux.to_string(), wine.to_string());
+        vec![DeviceMapping {
+            product_name: "Test".to_string(),
+            device_type: "joystick".to_string(),
+            sc_guid: None,
+            sc_instance: instance,
+            alias: None,
+            axis_wine_map,
+        }]
+    }
+
+    #[test]
+    fn test_translate_basic() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js2_slider1", &dm), "js2_roty");
+    }
+
+    #[test]
+    fn test_translate_with_neg_suffix() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js2_slider1neg", &dm), "js2_rotyneg");
+    }
+
+    #[test]
+    fn test_translate_with_pos_suffix() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js2_slider1pos", &dm), "js2_rotypos");
+    }
+
+    #[test]
+    fn test_no_mapping_returns_unchanged() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js2_x", &dm), "js2_x");
+    }
+
+    #[test]
+    fn test_button_unchanged() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js2_button5", &dm), "js2_button5");
+    }
+
+    #[test]
+    fn test_hat_unchanged() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js2_hat1_up", &dm), "js2_hat1_up");
+    }
+
+    #[test]
+    fn test_wrong_instance_unchanged() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("js3_slider1", &dm), "js3_slider1");
+    }
+
+    #[test]
+    fn test_keyboard_unchanged() {
+        let dm = device_map(2, "slider1", "roty");
+        assert_eq!(translate_wine_axis("kb1_w", &dm), "kb1_w");
+    }
+
+    #[test]
+    fn test_empty_device_map_unchanged() {
+        assert_eq!(translate_wine_axis("js2_slider1", &[]), "js2_slider1");
+    }
+
+    #[test]
+    fn test_non_joystick_same_instance_not_matched() {
+        // keyboard and gamepad with same instance must not block joystick mapping
+        let mut axis_wine_map = HashMap::new();
+        axis_wine_map.insert("slider1".to_string(), "roty".to_string());
+        let dm = vec![
+            DeviceMapping {
+                product_name: "Wine Keyboard".to_string(),
+                device_type: "keyboard".to_string(),
+                sc_guid: None,
+                sc_instance: 1,
+                alias: None,
+                axis_wine_map: HashMap::new(),
+            },
+            DeviceMapping {
+                product_name: "Controller".to_string(),
+                device_type: "gamepad".to_string(),
+                sc_guid: None,
+                sc_instance: 1,
+                alias: None,
+                axis_wine_map: HashMap::new(),
+            },
+            DeviceMapping {
+                product_name: "Warthog Throttle".to_string(),
+                device_type: "joystick".to_string(),
+                sc_guid: None,
+                sc_instance: 1,
+                alias: None,
+                axis_wine_map,
+            },
+        ];
+        assert_eq!(translate_wine_axis("js1_slider1", &dm), "js1_roty");
     }
 }
 

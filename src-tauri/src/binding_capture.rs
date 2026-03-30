@@ -20,10 +20,11 @@
 //! in a background thread. Captured button presses and axis movements
 //! are sent to the frontend to assign key bindings.
 
-use tauri::{ AppHandle, Emitter };
+use tauri::{ AppHandle, Emitter, Manager };
 use gilrs::{ Gilrs, Event, EventType, Button, Axis, GamepadId };
 use std::sync::atomic::{ AtomicBool, Ordering };
-use std::sync::Arc;
+use std::sync::{ Arc, Mutex };
+use std::collections::HashMap;
 use std::thread;
 use once_cell::sync::Lazy;
 use chrono::Local;
@@ -92,11 +93,30 @@ fn resolve_sc_instance(
 /// (start/stop from the frontend).
 static IS_CAPTURING: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
+/// Shared state for the parallel Wine DirectInput capture.
+/// The Wine reader thread pushes axis events; the gilrs thread reads them for
+/// time-window correlation to learn Linux→Wine axis name mappings.
+struct WineCaptureState {
+    /// Timestamped Wine axis events from the helper's stdout (time, axis_name, device_guid).
+    events: Vec<(std::time::Instant, String, String)>,
+    /// Learned mappings: sc_instance → { linux_axis → wine_axis }
+    axis_mappings: HashMap<u32, HashMap<String, String>>,
+    /// Maps Wine device GUID → product name (populated from DEVICE: lines)
+    device_names: HashMap<String, String>,
+}
+
+static WINE_CAPTURE: Lazy<Arc<Mutex<WineCaptureState>>> = Lazy::new(|| {
+    Arc::new(Mutex::new(WineCaptureState {
+        events: Vec::new(),
+        axis_mappings: HashMap::new(),
+        device_names: HashMap::new(),
+    }))
+});
+
 /// Helper function for logging capture messages with a timestamp.
-/// Uses the Rust logging framework at debug level.
 fn log_capture(msg: &str) {
     let now = Local::now();
-    log::debug!("[CAPTURE {}] {}", now.format("%H:%M:%S%.3f"), msg);
+    log::trace!("[CAPTURE {}] {}", now.format("%H:%M:%S%.3f"), msg);
 }
 
 /// Converts a gilrs UUID (16-byte array) into a hex string.
@@ -245,10 +265,12 @@ pub fn list_device_axes(device_map: Option<Vec<DeviceMapping>>) -> Result<Vec<Co
 /// The thread runs until `stop_input_capture()` is called.
 #[tauri::command]
 pub fn start_input_capture(
-    app: AppHandle, 
+    app: AppHandle,
     device_map: Option<Vec<DeviceMapping>>,
     target_instance: Option<u32>,
-    target_type: Option<String>
+    target_type: Option<String>,
+    install_path: Option<String>,
+    selected_runner: Option<String>,
 ) {
     // Prevent double start - if already capturing, return immediately
     if IS_CAPTURING.load(Ordering::SeqCst) {
@@ -256,6 +278,95 @@ pub fn start_input_capture(
     }
     IS_CAPTURING.store(true, Ordering::SeqCst);
     log_capture(">>> HARDWARE CAPTURE ENABLED <<<");
+
+    // Clear previous wine capture state for this session
+    if let Ok(mut state) = WINE_CAPTURE.lock() {
+        state.events.clear();
+        state.axis_mappings.clear();
+        state.device_names.clear();
+    }
+
+    // Spawn Wine DirectInput helper in parallel if wine environment is configured.
+    // Failures are logged but never surface as errors to the user (graceful fallback).
+    if let (Some(ref ip), Some(ref runner)) = (&install_path, &selected_runner) {
+        let wine_bin = format!("{}/runners/{}/bin/wine", ip, runner);
+        let wine_prefix = ip.clone();
+        let capturing_wine = IS_CAPTURING.clone();
+        let wine_state = WINE_CAPTURE.clone();
+
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            // Tauri 2 preserves the source directory structure when bundling resources.
+            // "resources/penguin-citizen-helper.exe" in tauri.conf.json -> resource_dir/resources/
+            // This holds for dev builds, .deb, AppImage, and the portable tarball.
+            let helper_exe = resource_dir.join("resources").join("penguin-citizen-helper.exe");
+
+            if std::path::Path::new(&wine_bin).exists() && helper_exe.exists() {
+                thread::spawn(move || {
+                    match std::process::Command::new(&wine_bin)
+                        .env("WINEPREFIX", &wine_prefix)
+                        .arg(helper_exe.to_string_lossy().as_ref())
+                        .stdout(std::process::Stdio::piped())
+                        .stdin(std::process::Stdio::piped())
+                        .spawn()
+                    {
+                        Ok(mut child) => {
+                            log_capture("[WINE] Helper process started");
+                            if let Some(stdout) = child.stdout.take() {
+                                use std::io::BufRead;
+                                let reader = std::io::BufReader::new(stdout);
+                                for line in reader.lines() {
+                                    if !capturing_wine.load(Ordering::SeqCst) {
+                                        break;
+                                    }
+                                    if let Ok(line) = line {
+                                        if line == "READY" {
+                                            log_capture("[WINE] Helper ready — DirectInput initialized");
+                                        } else if line.starts_with("AXIS:") {
+                                            // Format: AXIS:{GUID}:axisname:value
+                                            let parts: Vec<&str> = line.splitn(4, ':').collect();
+                                            if parts.len() >= 3 {
+                                                let guid = parts[1].to_string();
+                                                let axis = parts[2].to_string();
+                                                log_capture(&format!("[WINE] Axis event: {} ({})", axis, guid));
+                                                if let Ok(mut state) = wine_state.lock() {
+                                                    state.events.push((
+                                                        std::time::Instant::now(),
+                                                        axis,
+                                                        guid,
+                                                    ));
+                                                }
+                                            }
+                                        } else if line.starts_with("DEVICE:") {
+                                            // Format: DEVICE:{guid}:{product_name}
+                                            let parts: Vec<&str> = line.splitn(3, ':').collect();
+                                            if parts.len() >= 3 {
+                                                let guid = parts[1].to_string();
+                                                let name = parts[2].to_string();
+                                                log_capture(&format!("[WINE] Device: {} = {}", guid, name));
+                                                if let Ok(mut state) = wine_state.lock() {
+                                                    state.device_names.insert(guid, name);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = child.wait();
+                            log_capture("[WINE] Helper process exited");
+                        }
+                        Err(e) => {
+                            log_capture(&format!(
+                                "[WINE] Failed to start helper: {} — wine axis mapping disabled",
+                                e
+                            ));
+                        }
+                    }
+                });
+            } else {
+                log_capture("[WINE] Wine binary or helper exe not found — wine axis mapping disabled");
+            }
+        }
+    }
 
     // Clone AppHandle and capture flag for the new thread,
     // as the thread needs its own ownership
@@ -418,6 +529,55 @@ pub fn start_input_capture(
                                             }
                                         }
                                     };
+
+                                    // Correlate with Wine helper events (±500ms window).
+                                    // If the Wine helper saw an axis move at roughly the
+                                    // same time, we learn the Linux→Wine axis name mapping.
+                                    {
+                                        let now = std::time::Instant::now();
+                                        if let Ok(mut wine_state) = WINE_CAPTURE.try_lock() {
+                                            // Discard stale events older than 1 second
+                                            wine_state.events.retain(|(t, _, _)| {
+                                                now.duration_since(*t).as_millis() < 1000
+                                            });
+
+                                            // Find the product name of the Linux device being captured
+                                            let linux_product = device_map.as_ref()
+                                                .and_then(|dm| dm.iter().find(|d| d.sc_instance == instance && d.device_type == "joystick"))
+                                                .map(|d| d.product_name.to_lowercase());
+
+                                            // Find the Wine device GUID that matches this Linux device by product name
+                                            let wine_guid = linux_product.as_ref().and_then(|lp| {
+                                                wine_state.device_names.iter()
+                                                    .find(|(_, name)| {
+                                                        let wn = name.to_lowercase();
+                                                        wn.contains(lp.as_str()) || lp.contains(wn.as_str())
+                                                    })
+                                                    .map(|(guid, _)| guid.clone())
+                                            });
+
+                                            // Most recent Wine event within 500ms window, filtered to matching device if known
+                                            if let Some((_, wine_axis, _)) = wine_state.events.iter()
+                                                .rfind(|(t, _, guid)| {
+                                                    now.duration_since(*t).as_millis() < 500
+                                                        && wine_guid.as_ref().is_none_or(|wg| guid == wg)
+                                                })
+                                            {
+                                                let wine_axis = wine_axis.clone();
+                                                if wine_axis != axis_name {
+                                                    log_capture(&format!(
+                                                        "[WINE] Mapping learned: js{} {} -> {}",
+                                                        instance, axis_name, wine_axis
+                                                    ));
+                                                    wine_state.axis_mappings
+                                                        .entry(instance)
+                                                        .or_insert_with(HashMap::new)
+                                                        .insert(axis_name.clone(), wine_axis);
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     Some((axis_name, "axis".to_string()))
                                 } else {
                                     // Movement was too small (jitter)
@@ -512,4 +672,25 @@ fn format_gilrs_button(btn: Button) -> String {
         // Unknown/unmapped buttons: debug name as fallback
         _ => format!("button{:?}", btn).to_lowercase(),
     }
+}
+
+/// Returns all Wine/DirectInput axis name mappings learned during the last capture session.
+///
+/// Keys are sc_instance as string (e.g. "2"), values map linux_axis → wine_axis
+/// (e.g. {"slider1": "roty"}). Returns an empty map if no Wine helper was running
+/// or no axis mappings were detected.
+///
+/// The frontend calls this after stopping capture to persist the mappings
+/// via `update_profile_device_wine_maps`.
+#[tauri::command]
+pub fn get_wine_axis_mappings() -> HashMap<String, HashMap<String, String>> {
+    WINE_CAPTURE
+        .lock()
+        .map(|state| {
+            state.axis_mappings
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
 }

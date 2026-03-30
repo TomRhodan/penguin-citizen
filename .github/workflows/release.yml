@@ -56,6 +56,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-release-
 
+      - name: Verify pre-built helper binary is present
+        run: |
+          if [ ! -f src-tauri/resources/penguin-citizen-helper.exe ]; then
+            echo "ERROR: src-tauri/resources/penguin-citizen-helper.exe is missing."
+            echo "This binary must be committed to the repository -- CI cannot build it."
+            echo "Rebuild locally: x86_64-w64-mingw32-gcc -o src-tauri/resources/penguin-citizen-helper.exe src-tauri/helper/dinput_helper.c -ldinput8 -ldxguid -lole32 -Wall -O2"
+            exit 1
+          fi
+          echo "Helper binary present: $(ls -lh src-tauri/resources/penguin-citizen-helper.exe)"
+
       - name: Build Tauri application
         env:
           CFLAGS: "-march=x86-64-v2 -mtune=generic -O2"

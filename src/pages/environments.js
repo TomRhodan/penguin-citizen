@@ -564,26 +564,67 @@ export async function renderEnvironments(container) {
   if (config?.install_path && activeScVersion && !localizationLoaded && !localizationLoading) {
     loadLocalizationLabels().then((loaded) => {
       if (loaded) {
-        // Re-render if on profile tab with bindings visible
+        // Re-render only if we're on the profile tab with actual binding data to display.
+        // Skipping the re-render when bindings are empty (e.g. version has no Data.p4k)
+        // avoids an unnecessary skeleton flash that swallows click events.
         const content = document.getElementById('content');
         if (content && activeProfileTab === 'profile' && lastRestoredBackupId) {
-          loadCompleteBindingList().then(() => renderEnvironments(content));
+          loadCompleteBindingList().then(() => {
+            if (completeBindingList.length > 0) {
+              renderEnvironments(content);
+            }
+          });
         }
       }
     }).catch(e => console.error('Failed to load localization labels:', e));
   }
 
-  // Show loading skeleton while data is being loaded
+  // Show loading skeleton while data is being loaded.
+  // config and scVersions are already available here, so we can render the version
+  // selector immediately — the user can see (and click) version tabs during loading.
   container.innerHTML = `
-    <div class="profiles-loading-skeleton">
-      <div class="dash-skeleton">
-        <div class="dash-skeleton-line medium"></div>
-        <div class="dash-skeleton-line short"></div>
-        <div class="dash-skeleton-block" style="height: 120px;"></div>
-        <div class="dash-skeleton-block" style="height: 200px;"></div>
+    <div class="page-header">
+      <h1>${t('environments:title')}</h1>
+      <p class="page-subtitle">${t('environments:subtitle')}</p>
+    </div>
+    <div class="sc-settings">
+      ${scVersions.length > 0 ? renderVersionSelector() : ''}
+      <div class="profiles-loading-skeleton">
+        <div class="dash-skeleton">
+          <div class="dash-skeleton-line medium"></div>
+          <div class="dash-skeleton-line short"></div>
+          <div class="dash-skeleton-block" style="height: 120px;"></div>
+          <div class="dash-skeleton-block" style="height: 200px;"></div>
+        </div>
       </div>
     </div>
   `;
+  // Attach version card listeners so tabs respond while content is loading.
+  // Mirrors the full listener in attachProfilesEventListeners(), including the
+  // unsaved-changes guard so USER.cfg edits are not silently discarded.
+  document.querySelectorAll('.sc-version-card').forEach(card => {
+    card.addEventListener('click', async () => {
+      if (card.dataset.version === activeScVersion) return;
+      if (hasUnsavedChanges()) {
+        const proceed = await confirm(t('environments:notification.unsavedVersionSwitch'), {
+          title: t('environments:notification.unsavedTitle'),
+          kind: 'warning',
+          okLabel: t('environments:notification.switchAnyway'),
+          cancelLabel: t('environments:notification.stay'),
+        });
+        if (!proceed) return;
+      }
+      if (activeScVersion && lastRestoredBackupId) {
+        lastRestoredPerVersion[activeScVersion] = lastRestoredBackupId;
+      }
+      activeScVersion = card.dataset.version;
+      lastRestoredBackupId = lastRestoredPerVersion[activeScVersion] || null;
+      selectedBindingSource = null;
+      bindingFilter = '';
+      bindingCategory = 'all';
+      renderEnvironments(document.getElementById('content'));
+    });
+  });
 
   // Load active profile per version from disk
   try {
@@ -627,6 +668,35 @@ export async function renderEnvironments(container) {
   attachProfilesEventListeners();
 
   // Restore scroll position
+  if (scrollPos > 0) {
+    requestAnimationFrame(() => {
+      container.scrollTop = scrollPos;
+    });
+  }
+}
+
+
+/**
+ * Re-renders the page instantly from current module state without fetching new data.
+ * Used for tab switches (Profile / UserCfg / Localization / Storage) where the
+ * underlying data has not changed and no skeleton is needed.
+ * @returns {void}
+ */
+function rerenderFromState() {
+  const container = document.getElementById('content');
+  if (!container) return;
+  const scrollPos = container.scrollTop;
+  container.innerHTML = `
+    <div class="page-header">
+      <h1>${t('environments:title')}</h1>
+      <p class="page-subtitle">${t('environments:subtitle')}</p>
+    </div>
+    <div class="sc-settings">
+      ${renderVersionSelector()}
+      ${renderMainContent()}
+    </div>
+  `;
+  attachProfilesEventListeners();
   if (scrollPos > 0) {
     requestAnimationFrame(() => {
       container.scrollTop = scrollPos;
@@ -1724,6 +1794,42 @@ function attachBindingEventListeners() {
   if (!tbody) return;
 
   tbody.addEventListener('click', async (e) => {
+    // remove-binding-direct — must be checked BEFORE matrix-assign because the remove
+    // button lives inside a <td data-action="matrix-assign"> and would otherwise trigger
+    // the cell-level assign handler instead of the per-pill remove handler.
+    const removeDirectBtn = e.target.closest('[data-action="remove-binding-direct"]');
+    if (removeDirectBtn) {
+      e.stopPropagation();
+      const actionName = removeDirectBtn.dataset.actionName;
+      const category   = removeDirectBtn.dataset.category;
+      const input      = removeDirectBtn.dataset.input || '';
+      if (!lastRestoredBackupId) {
+        showNotification(t('environments:notification.noProfileLoaded'), 'error');
+        return;
+      }
+      const confirmed = await confirm(
+        t('environments:binding.removeConfirm', { action: actionName }),
+        { title: t('environments:binding.removeTitle'), kind: 'warning' }
+      );
+      if (confirmed) {
+        try {
+          await invoke('remove_profile_binding', {
+            v: activeScVersion,
+            profileId: lastRestoredBackupId,
+            actionMap: category,
+            actionName: actionName,
+            input: input || null,
+          });
+          showNotification(t('environments:notification.bindingRemoved'), 'success');
+          await loadProfileStatus();
+          renderEnvironments(document.getElementById('content'));
+        } catch (err) {
+          showNotification(t('environments:notification.removeBindingFailed', { error: err }), 'error');
+        }
+      }
+      return;
+    }
+
     // add-binding
     const addBtn = e.target.closest('[data-action="add-binding"]');
     if (addBtn) {
@@ -1732,9 +1838,11 @@ function attachBindingEventListeners() {
       return;
     }
 
-    // matrix-assign
+    // matrix-assign — the <td> itself carries this data-action, so clicks on any child
+    // (pill buttons: edit-binding, open-tuning) would match. Guard: skip if the click
+    // originated inside a .binding-pill so pill-internal handlers get priority.
     const matrixBtn = e.target.closest('[data-action="matrix-assign"]');
-    if (matrixBtn) {
+    if (matrixBtn && !e.target.closest('.binding-pill')) {
       e.stopPropagation();
       const targetInstance = matrixBtn.dataset.targetInstance ? parseInt(matrixBtn.dataset.targetInstance, 10) : null;
       const deviceType = matrixBtn.dataset.deviceType || 'joystick';
@@ -1786,8 +1894,8 @@ function attachBindingEventListeners() {
       return;
     }
 
-    // remove-binding / remove-binding-direct
-    const removeBtn = e.target.closest('[data-action="remove-binding"], [data-action="remove-binding-direct"]');
+    // remove-binding (modal delete button — remove-binding-direct is handled earlier)
+    const removeBtn = e.target.closest('[data-action="remove-binding"]');
     if (removeBtn) {
       e.stopPropagation();
       const actionName = removeBtn.dataset.actionName;
@@ -2744,21 +2852,42 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
   window.addEventListener('mousedown', handleMouseDownCapture);
 
 
-  // Start hardware capture in the backend (joystick events via gilrs)
-  // We pass targetInstance and targetType to ensure the backend only listens to the device 
+  // Start hardware capture in the backend (joystick events via gilrs).
+  // We pass targetInstance and targetType to ensure the backend only listens to the device
   // corresponding to the column clicked (Rock-Solid Target Filtering).
+  // installPath + selectedRunner enable the parallel Wine DirectInput helper for axis
+  // name mapping (Linux name shown in UI, Wine name written to actionmaps.xml).
   console.log(`[EDITOR] Starting hardware capture: targetInstance=${targetInstance}, targetType=${bindingEditorDevice}`);
-  invoke('start_input_capture', { 
-    deviceMap: profileDeviceMap,
-    targetInstance: targetInstance,
-    targetType: bindingEditorDevice
-  }).catch(err => {
-    console.error('[EDITOR] Backend capture start failed:', err);
-    showNotification(t('environments:notification.captureError', { error: err }), 'error');
+  invoke('load_config').catch(() => null).then(cfg => {
+    invoke('start_input_capture', {
+      deviceMap: profileDeviceMap,
+      targetInstance: targetInstance,
+      targetType: bindingEditorDevice,
+      installPath: cfg?.install_path ?? null,
+      selectedRunner: cfg?.selected_runner ?? null,
+    }).catch(err => {
+      console.error('[EDITOR] Backend capture start failed:', err);
+      showNotification(t('environments:notification.captureError', { error: err }), 'error');
+    });
   });
 
   const cleanupAndClose = () => {
     invoke('stop_input_capture');
+    // Persist any Wine axis name mappings learned during this capture session.
+    // If the Wine helper was running and saw axis movements, we store the
+    // Linux→Wine axis name mapping in the profile so future bindings are
+    // written with the correct Wine axis name (e.g. "roty" instead of "slider1").
+    if (lastRestoredBackupId && activeScVersion) {
+      invoke('get_wine_axis_mappings').then(mappings => {
+        if (Object.keys(mappings).length > 0) {
+          invoke('update_profile_device_wine_maps', {
+            v: activeScVersion,
+            profileId: lastRestoredBackupId,
+            instanceMappings: mappings,
+          }).catch(e => console.warn('[WINE] Failed to persist axis mappings:', e));
+        }
+      }).catch(() => {});
+    }
     if (inputCapturedUnlisten) inputCapturedUnlisten();
     window.removeEventListener('keydown', handleKeyDownCapture);
     window.removeEventListener('mousedown', handleMouseDownCapture);
@@ -2889,6 +3018,8 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
         }
       }
 
+      const sessionWineMaps = await invoke('get_wine_axis_mappings').catch(() => ({}));
+
       await invoke('assign_profile_binding', {
         v: activeScVersion,
         profileId: lastRestoredBackupId,
@@ -2896,6 +3027,7 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
         actionName: actionName,
         newInput: newInput,
         oldInput,
+        wineAxisMap: Object.keys(sessionWineMaps).length > 0 ? sessionWineMaps : null,
       });
 
       showNotification(t('environments:notification.bindingSaved'), 'success');
@@ -3082,6 +3214,8 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
       return;
     }
     try {
+      const sessionWineMaps = await invoke('get_wine_axis_mappings').catch(() => ({}));
+
       await invoke('assign_profile_binding', {
         v: activeScVersion,
         profileId: lastRestoredBackupId,
@@ -3089,6 +3223,7 @@ async function openMouseBindingEditor(actionName, category, currentInput) {
         actionName: actionName,
         newInput: selectedCode,
         oldInput: currentInput || null,
+        wineAxisMap: Object.keys(sessionWineMaps).length > 0 ? sessionWineMaps : null,
       });
       showNotification(t('environments:notification.bindingSaved'), 'success');
       window.expandedBindingCategories?.add(category);
@@ -4279,7 +4414,7 @@ async function showDataP4kCopyProgressModal(sourceVersion, targetVersion) {
 
   const modal = document.createElement('div');
   modal.id = 'data-p4k-copy-modal';
-  modal.className = 'modal-overlay';
+  modal.className = 'modal-overlay show';
   modal.innerHTML = `
     <div class="modal-content data-p4k-copy-modal">
       <div class="modal-header">
@@ -4455,11 +4590,11 @@ async function showDataP4kCopyProgressModal(sourceVersion, targetVersion) {
  * drag-and-drop, USER.cfg controls, localization, and more.
  */
 function attachProfilesEventListeners() {
-  // Tab navigation
+  // Tab navigation — use rerenderFromState() to avoid full reload + skeleton flash
   document.querySelectorAll('.profile-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       activeProfileTab = tab.dataset.tab;
-      renderEnvironments(document.getElementById('content'));
+      rerenderFromState();
     });
   });
 
@@ -4483,6 +4618,8 @@ function attachProfilesEventListeners() {
   // Version cards: switch SC version on click
   document.querySelectorAll('.sc-version-card').forEach(card => {
     card.addEventListener('click', async () => {
+      // No-op if clicking the already-active version
+      if (card.dataset.version === activeScVersion) return;
       // Warn about unsaved USER.cfg changes
       if (hasUnsavedChanges()) {
         const proceed = await confirm(t('environments:notification.unsavedVersionSwitch'), {
@@ -4503,16 +4640,6 @@ function attachProfilesEventListeners() {
       selectedBindingSource = null;
       bindingFilter = '';
       bindingCategory = 'all';
-      await Promise.all([
-        loadDevicesAndBindings(),
-        loadCompleteBindingList(),
-        loadExportedLayouts(),
-        loadBackups(),
-        loadUserCfgSettings(),
-        loadLocalizationData(),
-        loadDeviceTuning(),
-      ]);
-      await loadProfileStatus();
       renderEnvironments(document.getElementById('content'));
     });
   });
@@ -4522,17 +4649,17 @@ function attachProfilesEventListeners() {
     const version = e.target.dataset.version;
     await createScVersion(version);
   });
-  
+
   document.getElementById('btn-link-p4k')?.addEventListener('click', async (e) => {
-    const version = e.target.dataset.version;
-    const source = document.getElementById('data-source-select').value;
-    await linkDataP4k(source, version);
+    const version = e.currentTarget.dataset.version;
+    const source = document.getElementById('data-source-select')?.value;
+    if (source) await linkDataP4k(source, version);
   });
-  
+
   document.getElementById('btn-copy-p4k')?.addEventListener('click', async (e) => {
-    const version = e.target.dataset.version;
-    const source = document.getElementById('data-source-select').value;
-    showDataP4kCopyProgressModal(source, version);
+    const version = e.currentTarget.dataset.version;
+    const source = document.getElementById('data-source-select')?.value;
+    if (source) showDataP4kCopyProgressModal(source, version);
   });
 
   // Device drag-and-drop (Pointer Events - works in WebKitGTK)
@@ -4675,14 +4802,16 @@ function attachProfilesEventListeners() {
     await deleteScVersion(version);
   });
 
-  // Toggle changes detail panel
-  document.getElementById('btn-toggle-changes')?.addEventListener('click', () => {
-    showChangesPanel = !showChangesPanel;
-    renderEnvironments(document.getElementById('content'));
-  });
-
-  document.querySelector('.profile-changes-panel')?.addEventListener('click', async (e) => {
-    const row = e.target.closest('.file-clickable');
+  // Toggle changes detail panel + file diff — delegated on document so the listener
+  // survives renderEnvironments() rebuilding the DOM (btn-toggle-changes and
+  // .profile-changes-panel live inside #content which is fully replaced on each render).
+  document.addEventListener('click', async (e) => {
+    if (e.target.closest('#btn-toggle-changes')) {
+      showChangesPanel = !showChangesPanel;
+      renderEnvironments(document.getElementById('content'));
+      return;
+    }
+    const row = e.target.closest('.profile-changes-panel .file-clickable');
     if (!row) return;
     const file = row.dataset.file;
     if (!file || !config?.install_path || !activeScVersion || !lastRestoredBackupId) return;

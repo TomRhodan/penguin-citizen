@@ -55,9 +55,43 @@ penguin-citizen/
     src/                  # Rust backend
       main.rs             # Application entry point
       lib.rs              # Library root, Tauri command definitions
+    helper/
+      dinput_helper.c     # Source for the Wine DirectInput axis helper (see below)
+    resources/
+      penguin-citizen-helper.exe  # Pre-built Windows binary (committed to repo)
     Cargo.toml            # Rust dependencies
     tauri.conf.json       # Tauri configuration
   package.json            # Node.js dependencies & scripts
+```
+
+### The Wine DirectInput Helper
+
+`src-tauri/resources/penguin-citizen-helper.exe` is a small Windows console program that
+runs **inside Wine** to enumerate joystick axes via the DirectInput 8 API. It reports each
+axis movement to stdout in a format the Rust backend can parse.
+
+**Why a `.exe`?** Linux kernel joystick devices expose raw axis indices, but not the semantic
+names that Star Citizen uses in `actionmaps.xml` (`x`, `y`, `rotx`, `roty`, etc.). The only
+reliable cross-vendor way to get that mapping is to ask DirectInput directly -- which requires
+running a Windows binary inside the same Wine environment as the game.
+
+**Why is the binary committed to the repository?** The GitHub Actions release workflow runs on
+Ubuntu and has no MinGW cross-compiler available, so the `.exe` cannot be built during CI.
+**Do not add `*.exe` to `.gitignore`.** The pre-built binary in `src-tauri/resources/` must be
+present for the Tauri build to succeed.
+
+**Rebuilding the helper** (only needed after changes to `dinput_helper.c`):
+
+```bash
+# Requires mingw-w64 cross-compiler
+sudo apt install gcc-mingw-w64-x86-64   # Debian/Ubuntu
+
+x86_64-w64-mingw32-gcc -o src-tauri/resources/penguin-citizen-helper.exe \
+  src-tauri/helper/dinput_helper.c \
+  -ldinput8 -ldxguid -lole32 -Wall -O2
+
+# Commit the updated binary together with your source change
+git add src-tauri/resources/penguin-citizen-helper.exe src-tauri/helper/dinput_helper.c
 ```
 
 ## Code Style

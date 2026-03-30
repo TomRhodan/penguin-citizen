@@ -12,7 +12,7 @@
 <p align="center">
   Built with <a href="https://tauri.app/">Tauri 2</a> and vanilla JavaScript.
   <br>
-  <strong>Version 0.4.6</strong>
+  <strong>Version 0.4.7</strong>
 </p>
 
 ---
@@ -76,7 +76,7 @@
 - **Command Center** - Live dashboard with RSI news, server status, and community funding stats.
 - **Launch Manager** - One-click start with performance options (ESync, FSync, DXVK Async, Wayland, HDR, FSR, MangoHUD).
 - **Environments Management** - Manage multiple Star Citizen channels (LIVE, PTU, EPTU) from a single interface.
-- **Controller & Bindings** - View connected devices, keybindings, reorder joystick instances, and manage profiles.
+- **Controller & Bindings** - View connected devices, keybindings, reorder joystick instances, and manage profiles. Axis detection uses a small bundled Windows helper (`penguin-citizen-helper.exe`) that runs inside Wine to query DirectInput -- this is the only reliable way to read raw axis data from joysticks on Linux/Wine.
 - **USER.cfg Editor** - Visual editor for all Star Citizen graphics, performance, and quality settings.
 - **Wine Runner Management** - Download and manage Wine/Proton runners from multiple sources (LUG, Kron4ek, RawFox, Mactan).
 - **DXVK Management** - Install and update DXVK versions with automatic DLL deployment.

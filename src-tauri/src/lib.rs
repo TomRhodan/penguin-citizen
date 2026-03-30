@@ -66,7 +66,7 @@ mod system_check;
 mod action_definitions;
 
 // simplelog is used for file-based logging (writes to ~/.config/penguin-citizen/logs/debug.log)
-use simplelog::{ CombinedLogger, WriteLogger, TermLogger, LevelFilter, Config, TerminalMode, ColorChoice };
+use simplelog::{ CombinedLogger, WriteLogger, TermLogger, LevelFilter, ConfigBuilder, TerminalMode, ColorChoice };
 use std::fs::File;
 
 /// Initializes the logging system with file output.
@@ -98,11 +98,24 @@ fn init_logging() {
         }
     };
 
-    // CombinedLogger allows multiple logger backends – here only file logging at debug level
+    // Filter out verbose third-party debug spam.
+    // Only the specific high-volume debug sub-modules are silenced; warn/error from reqwest
+    // (TLS failures, unexpected redirects) are NOT suppressed because we filter by exact
+    // module path rather than the top-level "reqwest" prefix.
+    // gilrs_core and gilrs::gamepad produce multi-KB per-device debug dumps on every connect.
+    let filter_config = ConfigBuilder::new()
+        .add_filter_ignore("reqwest::connect".to_string())
+        .add_filter_ignore("reqwest::async_impl::client".to_string())
+        .add_filter_ignore("gilrs_core".to_string())
+        .add_filter_ignore("gilrs::gamepad".to_string())
+        .build();
+
     let logger = CombinedLogger::init(
         vec![
-            TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-            WriteLogger::new(LevelFilter::Debug, Config::default(), log_file)
+            // Terminal: Debug — app debug output visible during development, no third-party noise.
+            TermLogger::new(LevelFilter::Debug, filter_config.clone(), TerminalMode::Mixed, ColorChoice::Auto),
+            // File: Info — only meaningful events land in debug.log.
+            WriteLogger::new(LevelFilter::Info, filter_config, log_file)
         ]
     );
 
@@ -560,6 +573,7 @@ pub fn run() {
                 sc_config::assign_profile_binding,
                 sc_config::remove_profile_binding,
                 sc_config::reset_profile_binding,
+                sc_config::update_profile_device_wine_maps,
                 sc_config::apply_profile_to_sc,
                 sc_config::set_profile_device_alias,
                 sc_config::migrate_binding_database,
@@ -601,6 +615,7 @@ pub fn run() {
                 binding_capture::stop_input_capture,
                 binding_capture::list_connected_devices,
                 binding_capture::list_device_axes,
+                binding_capture::get_wine_axis_mappings,
 
                 // Language pack management (e.g. German translation for Star Citizen)
                 localization::check_localization_update,
