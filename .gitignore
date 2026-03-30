@@ -62,3 +62,4 @@ src-tauri/squashfs-root/
 
 # Claude Code local settings (contains secrets)
 .claude/settings.local.json
+src-tauri/helper/penguin-citizen-helper.exe

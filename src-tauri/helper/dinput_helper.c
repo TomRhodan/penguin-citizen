@@ -15,9 +15,9 @@
  *
  * Exits when stdin is closed (parent closes its write end as a stop signal).
  *
- * Compile:
- *   x86_64-w64-mingw32-gcc -o penguin-citizen-helper.exe dinput_helper.c \
- *     -ldinput8 -ldxguid -lole32 -Wall -O2
+ * Compile (from project root penguin-citizen-app/):
+ *   x86_64-w64-mingw32-gcc -o src-tauri/resources/penguin-citizen-helper.exe \
+ *     src-tauri/helper/dinput_helper.c -ldinput8 -ldxguid -lole32 -Wall -O2
  */
 
 #define DIRECTINPUT_VERSION 0x0800
