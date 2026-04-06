@@ -204,14 +204,19 @@ export function renderLaunch(container) {
  * @param {HTMLElement} container - DOM container for re-rendering
  */
 async function loadAndCheck(container) {
-  // Detect monitors in parallel (does not block the main flow)
-  invoke('detect_monitors').then(monitors => {
+  // Detect monitors in parallel (does not block the main flow).
+  // If CLI-based detection returns no results (e.g. in AppImage sandboxes),
+  // fall back to Tauri's built-in monitor API via get_display_info.
+  invoke('detect_monitors').then(async (monitors) => {
     detectedMonitors = monitors || [];
+    if (detectedMonitors.length === 0) {
+      detectedMonitors = await detectMonitorsFallback();
+    }
     monitorsReady = true;
     renderPage(container);
-  }).catch(err => {
+  }).catch(async (err) => {
     console.warn('Monitor detection failed:', err);
-    detectedMonitors = [];
+    detectedMonitors = await detectMonitorsFallback();
     monitorsReady = true;
     renderPage(container);
   });
@@ -1188,6 +1193,30 @@ function cleanup() {
   if (unlistenLaunchLog) { unlistenLaunchLog(); unlistenLaunchLog = null; }
   if (unlistenLaunchStarted) { unlistenLaunchStarted(); unlistenLaunchStarted = null; }
   if (unlistenLaunchExited) { unlistenLaunchExited(); unlistenLaunchExited = null; }
+}
+
+// --- Monitor Detection Fallback ---
+
+/**
+ * Fallback monitor detection using Tauri's built-in monitor API.
+ * Used when CLI-based detection (kscreen-doctor, gnome-monitor-config, etc.)
+ * returns no results, e.g. in AppImage sandboxes where external tools may hang.
+ * @returns {Promise<Array>} Array of MonitorInfo-compatible objects
+ */
+async function detectMonitorsFallback() {
+  try {
+    const info = await invoke('get_display_info');
+    if (!info?.monitors?.length) return [];
+    return info.monitors.map((m, i) => ({
+      name: m.name || `Monitor-${i + 1}`,
+      resolution: m.width && m.height ? `${m.width}x${m.height}` : '',
+      primary: i === 0,
+      scale: m.scale_factor ?? null,
+    }));
+  } catch (e) {
+    console.warn('Fallback monitor detection failed:', e);
+    return [];
+  }
 }
 
 // --- Fractional Scaling ---

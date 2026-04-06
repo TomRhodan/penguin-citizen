@@ -32,6 +32,7 @@ use serde::{ Deserialize, Serialize };
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 /// Status result for individual system checks.
 ///
@@ -443,12 +444,42 @@ pub async fn detect_monitors() -> Result<Vec<MonitorInfo>, String> {
         .map_err(|e| format!("Task failed: {}", e))
 }
 
+/// Maximum time to wait for a monitor detection subprocess.
+const MONITOR_DETECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Runs a command with a timeout. Returns `None` if the command is not found,
+/// fails to start, times out, or exits with a non-zero status.
+fn run_with_timeout(mut cmd: Command) -> Option<std::process::Output> {
+    let mut child = cmd.spawn().ok()?;
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                // Process exited — collect output
+                return child.wait_with_output().ok().filter(|o| o.status.success());
+            }
+            Ok(None) => {
+                if start.elapsed() >= MONITOR_DETECT_TIMEOUT {
+                    log::warn!("Monitor detection command timed out, killing process");
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
 /// KDE Plasma Wayland: Monitor detection via `kscreen-doctor --outputs`.
 ///
 /// Parses the output of kscreen-doctor, which may contain ANSI escape sequences.
 /// Only enabled and connected outputs are considered.
 fn detect_monitors_kscreen() -> Option<Vec<MonitorInfo>> {
-    let output = Command::new("kscreen-doctor").arg("--outputs").env("LANG", "C").output().ok()?;
+    let mut cmd = Command::new("kscreen-doctor");
+    cmd.arg("--outputs").env("LANG", "C");
+    let output = run_with_timeout(cmd)?;
 
     if !output.status.success() {
         return None;
@@ -531,11 +562,9 @@ fn detect_monitors_kscreen() -> Option<Vec<MonitorInfo>> {
 ///   DP-1 []: 2560x1440@143.91 ...
 /// ```
 fn detect_monitors_gnome() -> Option<Vec<MonitorInfo>> {
-    let output = Command::new("gnome-monitor-config").arg("list").output().ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
+    let mut cmd = Command::new("gnome-monitor-config");
+    cmd.arg("list");
+    let output = run_with_timeout(cmd)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
@@ -599,11 +628,7 @@ fn detect_monitors_gnome() -> Option<Vec<MonitorInfo>> {
 /// Parses the output where monitor names appear at the beginning of lines (not indented)
 /// and mode lines are indented. The active resolution is marked with "(current)".
 fn detect_monitors_wlr_randr() -> Option<Vec<MonitorInfo>> {
-    let output = Command::new("wlr-randr").output().ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
+    let output = run_with_timeout(Command::new("wlr-randr"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
@@ -661,16 +686,14 @@ fn detect_monitors_wlr_randr() -> Option<Vec<MonitorInfo>> {
 /// Searches for lines with " connected" and finds the active resolution
 /// (marked with *) in the subsequent mode lines.
 fn detect_monitors_xrandr() -> Vec<MonitorInfo> {
-    let output = match Command::new("xrandr").arg("--query").output() {
-        Ok(o) => o,
-        Err(_) => {
-            return Vec::new();
-        }
+    let output = match run_with_timeout({
+        let mut cmd = Command::new("xrandr");
+        cmd.arg("--query");
+        cmd
+    }) {
+        Some(o) => o,
+        None => return Vec::new(),
     };
-
-    if !output.status.success() {
-        return Vec::new();
-    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
