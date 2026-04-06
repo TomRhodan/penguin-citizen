@@ -72,5 +72,55 @@
   "notification.localizationUpdated_other": "{{count}} translations updated.",
   "notification.localizationUpToDate": "Translations are up to date.",
 
-  "monitor.primary": "primary"
+  "monitor.primary": "primary",
+
+  "option.group.nvidia": "NVIDIA",
+  "option.group.amd": "AMD",
+  "option.group.troubleshooting": "Troubleshooting",
+  "option.group.gpuSelection": "GPU Selection",
+
+  "section.gamescope": "Gamescope",
+
+  "option.gamemode": "GameMode",
+  "option.nvidiaDlss": "DLSS 4.0",
+  "option.nvidiaSmoothMotion": "Smooth Motion",
+  "option.nvidiaGsync": "G-Sync Optimization",
+  "option.amdRadv": "Fix: Flickering",
+  "option.amdNogttspill": "Fix: Stutter",
+  "option.inProcessGpu": "--in-process-gpu",
+  "option.vulkanMailbox": "Vulkan Mailbox Mode",
+  "option.enableHdrWsi": "HDR WSI Layer",
+  "option.gamescopeEnable": "Enable Gamescope",
+  "option.gamescopeHdr": "HDR",
+  "option.gamescopeGrabCursor": "Force Grab Cursor",
+  "option.gamescopeKeyboard": "Keyboard Grab",
+
+  "tooltip.gamemode": "Feral GameMode - optimizes CPU governor and scheduler for gaming",
+  "tooltip.nvidiaDlss": "DLSS 4.0 with Super Resolution, Ray Reconstruction and Frame Generation",
+  "tooltip.nvidiaSmoothMotion": "Reduced latency rendering on compatible NVIDIA cards",
+  "tooltip.nvidiaGsync": "G-Sync latency optimization (__GL_GSYNC_ALLOWED + __GL_MaxFramesAllowed)",
+  "tooltip.amdRadv": "Fixes bright flickering lights at edges of in-game display panels (radv_zero_vram=true)",
+  "tooltip.amdNogttspill": "Addresses framerate drops and stuttering, especially with <8GB VRAM (RADV_PERFTEST=nogttspill)",
+  "tooltip.inProcessGpu": "Fixes black or white RSI Launcher window (--in-process-gpu flag)",
+  "tooltip.vulkanMailbox": "Resolves Vulkan assertion failures and swapchain crashes (MESA_VK_WSI_PRESENT_MODE=mailbox)",
+  "tooltip.enableHdrWsi": "HDR layer required for NVIDIA without a color manager (ENABLE_HDR_WSI=1)",
+  "tooltip.gamescopeEnable": "Launch inside the Gamescope compositor for HDR, resolution scaling and cursor capture",
+  "tooltip.gamescopeHdr": "Enable HDR pass-through in Gamescope (--hdr-enabled)",
+  "tooltip.gamescopeGrabCursor": "Force cursor grab to prevent escape (--force-grab-cursor)",
+  "tooltip.gamescopeKeyboard": "Capture keyboard input in Gamescope (-g)",
+
+  "label.gpuDetected": "Detected: {{name}}",
+  "label.noGpuDetected": "No {{vendor}} GPU detected",
+  "label.gpuAutomatic": "Automatic (default)",
+  "label.gpuFilterHint": "For hybrid GPU systems (laptops)",
+  "label.gamescopeNotInstalled": "Gamescope not installed",
+  "label.gamemodeNotInstalled": "gamemoderun not found - install gamemode package",
+  "label.gamescopeWidth": "Width",
+  "label.gamescopeHeight": "Height",
+  "label.cpuTopology": "CPU Topology",
+  "label.cpuTopologyPlaceholder": "e.g. 16:0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+
+  "badge.new": "NEW",
+  "badge.installed": "Installed",
+  "badge.notInstalled": "Not installed"
 }

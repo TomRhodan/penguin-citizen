@@ -72,5 +72,55 @@
   "notification.localizationUpdated_other": "{{count}} Uebersetzungen aktualisiert.",
   "notification.localizationUpToDate": "Uebersetzungen sind aktuell.",
 
-  "monitor.primary": "primaer"
+  "monitor.primary": "primaer",
+
+  "option.group.nvidia": "NVIDIA",
+  "option.group.amd": "AMD",
+  "option.group.troubleshooting": "Fehlerbehebung",
+  "option.group.gpuSelection": "GPU-Auswahl",
+
+  "section.gamescope": "Gamescope",
+
+  "option.gamemode": "GameMode",
+  "option.nvidiaDlss": "DLSS 4.0",
+  "option.nvidiaSmoothMotion": "Smooth Motion",
+  "option.nvidiaGsync": "G-Sync Optimierung",
+  "option.amdRadv": "Fix: Flackern",
+  "option.amdNogttspill": "Fix: Ruckler",
+  "option.inProcessGpu": "--in-process-gpu",
+  "option.vulkanMailbox": "Vulkan Mailbox-Modus",
+  "option.enableHdrWsi": "HDR WSI Layer",
+  "option.gamescopeEnable": "Gamescope aktivieren",
+  "option.gamescopeHdr": "HDR",
+  "option.gamescopeGrabCursor": "Cursor erzwingen",
+  "option.gamescopeKeyboard": "Tastatur-Grab",
+
+  "tooltip.gamemode": "Feral GameMode - optimiert CPU-Governor und Scheduler fuer Spiele",
+  "tooltip.nvidiaDlss": "DLSS 4.0 mit Super Resolution, Ray Reconstruction und Frame Generation",
+  "tooltip.nvidiaSmoothMotion": "Reduzierte Latenz auf kompatiblen NVIDIA-Karten",
+  "tooltip.nvidiaGsync": "G-Sync Latenz-Optimierung (__GL_GSYNC_ALLOWED + __GL_MaxFramesAllowed)",
+  "tooltip.amdRadv": "Behebt helles Flackern an den Raendern von Anzeige-Panels im Spiel (radv_zero_vram=true)",
+  "tooltip.amdNogttspill": "Behebt Framerate-Einbrueche und Ruckler, besonders bei <8GB VRAM (RADV_PERFTEST=nogttspill)",
+  "tooltip.inProcessGpu": "Behebt schwarzes oder weisses RSI Launcher Fenster (--in-process-gpu Flag)",
+  "tooltip.vulkanMailbox": "Behebt Vulkan Assertion-Fehler und Swapchain-Crashes (MESA_VK_WSI_PRESENT_MODE=mailbox)",
+  "tooltip.enableHdrWsi": "HDR-Layer fuer NVIDIA ohne Color Manager (ENABLE_HDR_WSI=1)",
+  "tooltip.gamescopeEnable": "Im Gamescope-Compositor starten fuer HDR, Aufloesung und Cursor-Erfassung",
+  "tooltip.gamescopeHdr": "HDR-Durchleitung in Gamescope aktivieren (--hdr-enabled)",
+  "tooltip.gamescopeGrabCursor": "Cursor-Grab erzwingen um Flucht zu verhindern (--force-grab-cursor)",
+  "tooltip.gamescopeKeyboard": "Tastatureingaben in Gamescope erfassen (-g)",
+
+  "label.gpuDetected": "Erkannt: {{name}}",
+  "label.noGpuDetected": "Keine {{vendor}}-GPU erkannt",
+  "label.gpuAutomatic": "Automatisch (Standard)",
+  "label.gpuFilterHint": "Fuer Hybrid-GPU-Systeme (Laptops)",
+  "label.gamescopeNotInstalled": "Gamescope nicht installiert",
+  "label.gamemodeNotInstalled": "gamemoderun nicht gefunden - gamemode-Paket installieren",
+  "label.gamescopeWidth": "Breite",
+  "label.gamescopeHeight": "Hoehe",
+  "label.cpuTopology": "CPU-Topologie",
+  "label.cpuTopologyPlaceholder": "z.B. 16:0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
+
+  "badge.new": "NEU",
+  "badge.installed": "Installiert",
+  "badge.notInstalled": "Nicht installiert"
 }
