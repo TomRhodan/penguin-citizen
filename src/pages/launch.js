@@ -28,6 +28,8 @@
  * - Custom environment variables
  * - Real-time log output of the launch process
  *
+ * Layout: Compact launch bar + collapsible 3-column card grid + log output
+ *
  * @module pages/launch
  */
 
@@ -67,6 +69,10 @@ let vulkanDevices = [];
 let gamescopeInstalled = false;
 /** @type {boolean} Whether gamemoderun is installed on the system */
 let gamemodeInstalled = false;
+/** @type {Set<string>} Tracks which option cards are currently expanded */
+const expandedCards = new Set();
+/** @type {boolean} Whether the custom env vars section is expanded */
+let envVarsExpanded = false;
 
 /**
  * Returns available launch options, grouped by category.
@@ -104,6 +110,28 @@ function getLaunchOptions() {
       { key: 'vulkan_mailbox', label: t('launch:option.vulkanMailbox'), tooltip: t('launch:tooltip.vulkanMailbox') },
       { key: 'enable_hdr_wsi', label: t('launch:option.enableHdrWsi'), tooltip: t('launch:tooltip.enableHdrWsi') },
     ]},
+  ];
+}
+
+/**
+ * Card definitions for the 3x3 grid layout.
+ * Maps card keys to their display properties and content sources.
+ */
+function getCardDefinitions() {
+  const options = getLaunchOptions();
+  return [
+    // Row 1
+    { key: 'performance', title: t('launch:option.group.performance'), source: options[0] },
+    { key: 'display', title: t('launch:option.group.display'), source: options[1] },
+    { key: 'overlays', title: t('launch:option.group.overlays'), source: options[2] },
+    // Row 2
+    { key: 'nvidia', title: t('launch:option.group.nvidia'), source: options[3], gpuVendor: 'nvidia' },
+    { key: 'amd', title: t('launch:option.group.amd'), source: options[4], gpuVendor: 'amd' },
+    { key: 'troubleshooting', title: t('launch:option.group.troubleshooting'), source: options[5] },
+    // Row 3
+    { key: 'wayland', title: t('launch:section.wayland'), special: 'wayland' },
+    { key: 'gamescope', title: t('launch:section.gamescope'), special: 'gamescope' },
+    { key: 'gpu_cpu', title: t('launch:card.gpuCpu'), special: 'gpu_cpu' },
   ];
 }
 
@@ -270,26 +298,22 @@ function listenForExit(container) {
 
 /**
  * Re-renders the entire launch page:
- * Launch button, status display, info card, options grid, and log output.
+ * Compact launch bar, collapsible card grid, custom env vars, and log output.
  * Then binds all event listeners and scrolls the log to the bottom.
  */
 function renderPage(container) {
+  const disabled = launchStatus === 'launching' || launchStatus === 'running' || launchStatus === 'not_installed' || launchStatus === 'checking';
+
   container.innerHTML = `
     <div class="page-header">
       <h1>${t('launch:title')}</h1>
-      <p class="page-subtitle">${t('launch:subtitle')}</p>
     </div>
-    <div class="launch-section">
-      <div class="launch-center">
-        ${renderLaunchButton()}
-        ${renderLaunchStatus()}
-        ${renderLaunchInfo()}
-      </div>
-      <div class="launch-options card">
-        <h3>${t('launch:section.launchOptions')}</h3>
-        ${renderOptionsGrid()}
-      </div>
+    ${renderLaunchBar()}
+    ${renderLaunchStatusMessages()}
+    <div class="launch-card-grid">
+      ${renderOptionCards(disabled)}
     </div>
+    ${renderCustomEnvVarsCard(disabled)}
     <div class="card log-panel-flex">
       <h3>${t('launch:section.logOutput')}</h3>
       <pre class="log-output log-output-flex" id="launch-log-output"><code>${t('launch:status.waitingForLaunch')}</code></pre>
@@ -306,55 +330,82 @@ function renderPage(container) {
   scrollLog();
 }
 
-// --- Launch-Button ---
+// ── Launch Bar ────────────────────────────────────
 
 /**
- * Renders the launch/stop button depending on the current status.
- * In running state, a stop button is shown;
- * during launch, a spinner; otherwise a play icon.
+ * Renders the compact launch bar with button, runner, prefix, and status.
  */
-function renderLaunchButton() {
+function renderLaunchBar() {
   const spinning = launchStatus === 'launching';
   const running = launchStatus === 'running';
-
-  if (running) {
-    return `
-      <button class="btn-launch stop" id="btn-stop">
-        <svg class="launch-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-        <span>${t('launch:button.stop')}</span>
-      </button>
-    `;
-  }
-
   const disabled = launchStatus !== 'ready';
 
-  let label = t('launch:button.launch');
-  if (spinning) label = t('launch:button.launching');
-  if (launchStatus === 'checking') label = t('launch:button.checking');
+  const runner = launchConfig?.selected_runner || t('launch:label.none');
+  const prefix = launchConfig?.install_path || '?';
+  const showInfo = launchConfig && installStatus?.installed;
 
-  const iconSvg = spinning
-    ? '<div class="launch-spinner"></div>'
-    : '<svg class="launch-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  // Button
+  let buttonHtml;
+  if (running) {
+    buttonHtml = `
+      <button class="launch-bar-btn launch-bar-btn-stop" id="btn-stop">
+        <svg class="launch-bar-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        <span>${t('launch:button.stop')}</span>
+      </button>`;
+  } else {
+    let label = t('launch:button.launch');
+    if (spinning) label = t('launch:button.launching');
+    if (launchStatus === 'checking') label = t('launch:button.checking');
+
+    const iconSvg = spinning
+      ? '<div class="launch-bar-spinner"></div>'
+      : '<svg class="launch-bar-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+
+    buttonHtml = `
+      <button class="launch-bar-btn launch-bar-btn-play" id="btn-launch" ${disabled ? 'disabled' : ''}>
+        ${iconSvg}
+        <span>${label}</span>
+      </button>`;
+  }
+
+  // Status label
+  let statusLabel = t('launch:status.ready');
+  let statusClass = 'ready';
+  if (running) { statusLabel = t('launch:status.runningShort'); statusClass = 'running'; }
+  else if (spinning) { statusLabel = t('launch:button.launching'); statusClass = 'launching'; }
+  else if (launchStatus === 'checking') { statusLabel = t('launch:status.checking'); statusClass = 'checking'; }
+  else if (launchStatus === 'not_installed') { statusLabel = t('launch:error.notInstalled'); statusClass = 'error'; }
+  else if (launchStatus === 'error') { statusLabel = t('launch:error.generic'); statusClass = 'error'; }
 
   return `
-    <button class="btn-launch" id="btn-launch" ${disabled ? 'disabled' : ''}>
-      ${iconSvg}
-      <span>${label}</span>
-    </button>
+    <div class="launch-bar">
+      ${buttonHtml}
+      ${showInfo ? `
+        <div class="launch-bar-info">
+          <div class="launch-bar-meta">
+            <span class="launch-bar-label">${t('launch:label.runner')}</span>
+            <span class="launch-bar-value">${escapeHtml(runner)}</span>
+          </div>
+          <div class="launch-bar-meta">
+            <span class="launch-bar-label">${t('launch:label.prefix')}</span>
+            <span class="launch-bar-value launch-bar-mono">${escapeHtml(prefix)}</span>
+          </div>
+        </div>
+      ` : ''}
+      <div class="launch-bar-status launch-bar-status-${statusClass}">${escapeHtml(statusLabel)}</div>
+    </div>
   `;
 }
 
-// --- Status Display ---
-
 /**
- * Renders the context-dependent status message below the launch button.
- * Shows depending on state: installation hint, error message, running hint, or nothing.
+ * Renders status messages (not-installed, error) that need action buttons.
+ * Displayed between launch bar and card grid.
  */
-function renderLaunchStatus() {
+function renderLaunchStatusMessages() {
   if (launchStatus === 'not_installed') {
     const msg = installStatus?.message || t('launch:error.notInstalled');
     return `
-      <div class="launch-not-installed">
+      <div class="launch-status-message launch-status-not-installed">
         <p>${escapeHtml(msg)}</p>
         <button class="btn btn-primary btn-sm" id="btn-goto-install">${t('launch:button.gotoInstall')}</button>
       </div>
@@ -364,242 +415,254 @@ function renderLaunchStatus() {
   if (launchStatus === 'error') {
     const msg = installStatus?.message || t('launch:error.generic');
     return `
-      <div class="launch-status error">
+      <div class="launch-status-message launch-status-error">
         <p>${escapeHtml(msg)}</p>
         <button class="btn btn-sm" id="btn-retry-check">${t('launch:button.retry')}</button>
       </div>
     `;
   }
 
-  if (launchStatus === 'running') {
-    return `<div class="launch-status running">${t('launch:status.running')}</div>`;
-  }
-
-  if (launchStatus === 'checking') {
-    return `<div class="launch-status checking">${t('launch:status.checking')}</div>`;
-  }
-
   return '';
 }
 
-// --- Info Card ---
+// ── Collapsible Card Grid ─────────────────────────
 
 /**
- * Renders the info card with active configuration (runner name, prefix path).
- * Only displayed when SC is installed and configured.
+ * Renders the 3x3 card grid. Each card is collapsible: shows badges when
+ * collapsed and full options when expanded.
+ * @param {boolean} disabled - Whether inputs should be disabled
  */
-function renderLaunchInfo() {
-  if (!launchConfig || !installStatus?.installed) return '';
+function renderOptionCards(disabled) {
+  const cards = getCardDefinitions();
+  return cards.map(card => renderCard(card, disabled)).join('');
+}
 
-  const runner = launchConfig.selected_runner || t('launch:label.none');
-  const prefix = launchConfig.install_path || '?';
+/**
+ * Renders a single card (collapsed or expanded).
+ * @param {Object} card - Card definition
+ * @param {boolean} disabled - Whether inputs should be disabled
+ */
+function renderCard(card, disabled) {
+  const isExpanded = expandedCards.has(card.key);
+  const gpuMismatch = card.gpuVendor && detectedGpuVendor !== card.gpuVendor;
+  const arrow = isExpanded ? '\u25BC' : '\u25B6';
 
-  const runnerIcon = `<svg class="launch-runner-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`;
+  let cardClass = 'launch-card';
+  if (isExpanded) cardClass += ' expanded';
+  if (gpuMismatch) cardClass += ' gpu-disabled';
 
   return `
-    <div class="launch-info">
-      <div class="launch-info-card">
-        <div class="launch-info-card-title">${t('launch:label.infoCardTitle')}</div>
-        <div class="launch-info-row">
-          <span class="launch-info-label">${t('launch:label.runner')}</span>
-          <span class="launch-runner-badge">
-            ${runnerIcon}
-            ${escapeHtml(runner)}
-          </span>
-        </div>
-        <div class="launch-info-row">
-          <span class="launch-info-label">${t('launch:label.prefix')}</span>
-          <span class="launch-prefix-value">${escapeHtml(prefix)}</span>
-        </div>
+    <div class="${cardClass}" data-card="${card.key}">
+      <div class="launch-card-header" data-card="${card.key}">
+        <span class="launch-card-arrow">${arrow}</span>
+        <span class="launch-card-title">${escapeHtml(card.title)}</span>
+        ${card.gpuVendor && !gpuMismatch && detectedGpuName ? `<span class="launch-card-gpu-hint">${escapeHtml(detectedGpuName)}</span>` : ''}
+        ${gpuMismatch ? `<span class="launch-card-gpu-miss">${t('launch:label.noGpuDetected', { vendor: card.gpuVendor.toUpperCase() })}</span>` : ''}
       </div>
+      ${isExpanded
+    ? `<div class="launch-card-body">${renderCardBody(card, disabled)}</div>`
+    : `<div class="launch-card-badges">${renderCardBadges(card)}</div>`
+}
     </div>
   `;
 }
 
-// --- Options Grid ---
+/**
+ * Generates badge HTML for a collapsed card. Shows active options or "keine aktiv".
+ * @param {Object} card - Card definition
+ * @returns {string} HTML string of badges
+ */
+function renderCardBadges(card) {
+  const perf = launchConfig?.performance || {};
+  const badges = [];
+
+  if (card.source) {
+    // Standard toggle group
+    for (const opt of card.source.options) {
+      if (perf[opt.key]) {
+        badges.push(`<span class="launch-card-badge">${escapeHtml(opt.label)}</span>`);
+      }
+    }
+  } else if (card.special === 'wayland') {
+    if (perf.wayland) {
+      badges.push(`<span class="launch-card-badge">${t('launch:badge.active')}</span>`);
+      if (perf.primary_monitor) {
+        badges.push(`<span class="launch-card-badge">${escapeHtml(perf.primary_monitor)}</span>`);
+      }
+    }
+    if (hasFractionalScaling()) {
+      badges.push(`<span class="launch-card-badge launch-card-badge-warn">${t('launch:badge.fractionalBlocked')}</span>`);
+    }
+  } else if (card.special === 'gamescope') {
+    if (perf.gamescope?.enabled) {
+      badges.push(`<span class="launch-card-badge">${t('launch:badge.active')}</span>`);
+      if (perf.gamescope?.hdr) badges.push(`<span class="launch-card-badge">HDR</span>`);
+      if (perf.gamescope?.width && perf.gamescope?.height) {
+        badges.push(`<span class="launch-card-badge">${perf.gamescope.width}x${perf.gamescope.height}</span>`);
+      }
+    } else {
+      badges.push(`<span class="launch-card-badge launch-card-badge-muted">${t('launch:badge.disabled')}</span>`);
+    }
+    if (!gamescopeInstalled) {
+      badges.push(`<span class="launch-card-badge launch-card-badge-warn">${t('launch:badge.notInstalled')}</span>`);
+    }
+  } else if (card.special === 'gpu_cpu') {
+    if (perf.gpu_device_filter) {
+      badges.push(`<span class="launch-card-badge">${escapeHtml(perf.gpu_device_filter)}</span>`);
+    }
+    if (perf.wine_cpu_topology) {
+      badges.push(`<span class="launch-card-badge">CPU: ${escapeHtml(perf.wine_cpu_topology)}</span>`);
+    }
+  }
+
+  if (badges.length === 0) {
+    return `<span class="launch-card-inactive">${t('launch:badge.noneActive')}</span>`;
+  }
+  return badges.join('');
+}
 
 /**
- * Renders the complete options grid with performance, display, overlay toggles,
- * Wayland settings, and custom environment variables.
- * All options are disabled when the game is currently running or launching.
+ * Renders the expanded body content for a card.
+ * @param {Object} card - Card definition
+ * @param {boolean} disabled - Whether inputs should be disabled
+ * @returns {string} HTML for the card body
  */
-function renderOptionsGrid() {
-  // Disable all options when not in "ready" state
-  const disabled = launchStatus === 'launching' || launchStatus === 'running' || launchStatus === 'not_installed' || launchStatus === 'checking';
+function renderCardBody(card, disabled) {
   const perf = launchConfig?.performance || {};
-  const fractional = hasFractionalScaling();
 
-  const waylandTooltip = fractional
-    ? t('launch:tooltip.waylandFractional')
-    : t('launch:tooltip.wayland');
-
-  return `
-    <div class="launch-options-grid">
-      ${getLaunchOptions().map(group => {
-    const isGpuGroup = !!group.gpuVendor;
-    const gpuMismatch = isGpuGroup && detectedGpuVendor !== group.gpuVendor;
-    const groupClass = gpuMismatch ? 'launch-option-group gpu-disabled' : 'launch-option-group';
-
-    return `
-        <div class="${groupClass}">
-          <div class="launch-option-group-title">
-            ${group.group}
-            ${isGpuGroup && !gpuMismatch && detectedGpuName ? `<span class="gpu-detected-label">${t('launch:label.gpuDetected', { name: escapeHtml(detectedGpuName) })}</span>` : ''}
-            ${gpuMismatch ? `<span class="gpu-not-detected-label">${t('launch:label.noGpuDetected', { vendor: group.gpuVendor.toUpperCase() })}</span>` : ''}
-          </div>
-          ${group.options.map(opt => {
+  if (card.source) {
+    // Standard toggle group
+    const gpuMismatch = card.gpuVendor && detectedGpuVendor !== card.gpuVendor;
+    return card.source.options.map(opt => {
       const isGpuDisabled = gpuMismatch;
       const isToolMissing = opt.requiresTool === 'gamemode' && !gamemodeInstalled;
       const isDisabled = disabled || isGpuDisabled || isToolMissing;
       let tooltip = opt.tooltip || '';
       if (isToolMissing) tooltip = t('launch:label.gamemodeNotInstalled');
       return `
-              <label class="toggle-option${isGpuDisabled ? ' toggle-gpu-disabled' : ''}${isToolMissing ? ' toggle-tool-missing' : ''}" ${tooltip ? `data-tooltip="${tooltip}"` : ''}>
-                <input type="checkbox" data-key="${opt.key}"
-                  ${perf[opt.key] ? 'checked' : ''}
-                  ${isDisabled ? 'disabled' : ''} />
-                <span>${opt.label}</span>
-              </label>
-            `;
-    }).join('')}
-        </div>
+        <label class="toggle-option${isToolMissing ? ' toggle-tool-missing' : ''}" ${tooltip ? `data-tooltip="${tooltip}"` : ''}>
+          <input type="checkbox" data-key="${opt.key}"
+            ${perf[opt.key] ? 'checked' : ''}
+            ${isDisabled ? 'disabled' : ''} />
+          <span>${opt.label}</span>
+        </label>
       `;
-  }).join('')}
-    </div>
+    }).join('');
+  }
 
-    <div class="launch-gpu-selection-area">
-      <div class="launch-option-group-title">${t('launch:option.group.gpuSelection')}</div>
-      <div class="launch-gpu-filter-row">
-        <select class="input launch-gpu-filter-select" id="launch-gpu-filter" ${disabled ? 'disabled' : ''}>
-          <option value="">${t('launch:label.gpuAutomatic')}</option>
-          ${vulkanDevices.map(d => `<option value="${escapeHtml(d)}" ${perf.gpu_device_filter === d ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('')}
-        </select>
-        <span class="launch-gpu-filter-hint">${t('launch:label.gpuFilterHint')}</span>
+  if (card.special === 'wayland') {
+    return renderWaylandCardBody(disabled, perf);
+  }
+
+  if (card.special === 'gamescope') {
+    return renderGamescopeCardBody(disabled, perf);
+  }
+
+  if (card.special === 'gpu_cpu') {
+    return renderGpuCpuCardBody(disabled, perf);
+  }
+
+  return '';
+}
+
+/**
+ * Renders the Wayland card body content.
+ */
+function renderWaylandCardBody(disabled, perf) {
+  const fractional = hasFractionalScaling();
+  const waylandTooltip = fractional
+    ? t('launch:tooltip.waylandFractional')
+    : t('launch:tooltip.wayland');
+
+  return `
+    <p class="launch-card-desc">${t('launch:desc.waylandWarning')}</p>
+    <label class="toggle-option ${fractional ? 'toggle-blocked' : ''}" data-tooltip="${waylandTooltip}">
+      <input type="checkbox" data-key="wayland"
+        ${!fractional && perf.wayland ? 'checked' : ''}
+        ${disabled || fractional ? 'disabled' : ''} />
+      <span>${t('launch:label.enableWayland')}</span>
+    </label>
+    ${renderMonitorSelect(disabled, perf)}
+    ${fractional ? `<div class="launch-scaling-warning">${t('launch:desc.fractionalScalingWarning')}</div>` : ''}
+  `;
+}
+
+/**
+ * Renders the Gamescope card body content.
+ */
+function renderGamescopeCardBody(disabled, perf) {
+  return `
+    ${gamescopeInstalled
+    ? `<span class="badge-installed">${t('launch:badge.installed')}</span>`
+    : `<span class="badge-not-installed">${t('launch:badge.notInstalled')}</span>`}
+    <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeEnable')}">
+      <input type="checkbox" id="gamescope-enabled"
+        ${perf.gamescope?.enabled ? 'checked' : ''}
+        ${disabled || !gamescopeInstalled ? 'disabled' : ''} />
+      <span>${t('launch:option.gamescopeEnable')}</span>
+    </label>
+    <div class="launch-gamescope-options ${!perf.gamescope?.enabled ? 'gamescope-disabled' : ''}">
+      <div class="launch-gamescope-resolution">
+        <label>
+          <span>${t('launch:label.gamescopeWidth')}</span>
+          <input type="number" class="input gamescope-input" id="gamescope-width"
+            value="${perf.gamescope?.width || ''}" placeholder="2560"
+            ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+        </label>
+        <label>
+          <span>${t('launch:label.gamescopeHeight')}</span>
+          <input type="number" class="input gamescope-input" id="gamescope-height"
+            value="${perf.gamescope?.height || ''}" placeholder="1440"
+            ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+        </label>
       </div>
+      <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeHdr')}">
+        <input type="checkbox" id="gamescope-hdr"
+          ${perf.gamescope?.hdr ? 'checked' : ''}
+          ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+        <span>${t('launch:option.gamescopeHdr')}</span>
+      </label>
+      <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeGrabCursor')}">
+        <input type="checkbox" id="gamescope-grab-cursor"
+          ${perf.gamescope?.force_grab_cursor ? 'checked' : ''}
+          ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+        <span>${t('launch:option.gamescopeGrabCursor')}</span>
+      </label>
+      <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeKeyboard')}">
+        <input type="checkbox" id="gamescope-keyboard"
+          ${perf.gamescope?.keyboard_grab ? 'checked' : ''}
+          ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+        <span>${t('launch:option.gamescopeKeyboard')}</span>
+      </label>
     </div>
+    ${!gamescopeInstalled ? `<div class="launch-tool-not-installed">${t('launch:label.gamescopeNotInstalled')}</div>` : ''}
+  `;
+}
 
-    <div class="launch-troubleshooting-extras">
-      <div class="launch-option-group-title">${t('launch:label.cpuTopology')}</div>
+/**
+ * Renders the GPU & CPU card body content.
+ */
+function renderGpuCpuCardBody(disabled, perf) {
+  return `
+    <div class="launch-card-field">
+      <label class="launch-card-field-label">${t('launch:option.group.gpuSelection')}</label>
+      <select class="input launch-gpu-filter-select" id="launch-gpu-filter" ${disabled ? 'disabled' : ''}>
+        <option value="">${t('launch:label.gpuAutomatic')}</option>
+        ${vulkanDevices.map(d => `<option value="${escapeHtml(d)}" ${perf.gpu_device_filter === d ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('')}
+      </select>
+      <span class="launch-card-hint">${t('launch:label.gpuFilterHint')}</span>
+    </div>
+    <div class="launch-card-field">
+      <label class="launch-card-field-label">${t('launch:label.cpuTopology')}</label>
       <input type="text" class="input launch-cpu-topology-input" id="launch-cpu-topology"
         value="${escapeHtml(perf.wine_cpu_topology || '')}"
         placeholder="${t('launch:label.cpuTopologyPlaceholder')}"
         ${disabled ? 'disabled' : ''} />
     </div>
-
-    <div class="launch-wayland-area">
-      <div class="launch-wayland-header">
-        <h4>${t('launch:section.wayland')} <span class="badge-experimental">${t('launch:badge.experimental')}</span></h4>
-        <p class="wayland-warning-text">${t('launch:desc.waylandWarning')}</p>
-      </div>
-      <div class="launch-wayland-content">
-        <label class="toggle-option ${fractional ? 'toggle-blocked' : ''}" data-tooltip="${waylandTooltip}">
-          <input type="checkbox" data-key="wayland"
-            ${!fractional && perf.wayland ? 'checked' : ''}
-            ${disabled || fractional ? 'disabled' : ''} />
-          <span>${t('launch:label.enableWayland')}</span>
-        </label>
-        ${renderMonitorSelect(disabled, perf)}
-      </div>
-      ${fractional ? `<div class="launch-scaling-warning">${t('launch:desc.fractionalScalingWarning')}</div>` : ''}
-    </div>
-
-    <div class="launch-gamescope-area">
-      <div class="launch-gamescope-header">
-        <h4>${t('launch:section.gamescope')}
-          ${gamescopeInstalled
-    ? `<span class="badge-installed">${t('launch:badge.installed')}</span>`
-    : `<span class="badge-not-installed">${t('launch:badge.notInstalled')}</span>`}
-        </h4>
-      </div>
-      <div class="launch-gamescope-content">
-        <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeEnable')}">
-          <input type="checkbox" id="gamescope-enabled"
-            ${perf.gamescope?.enabled ? 'checked' : ''}
-            ${disabled || !gamescopeInstalled ? 'disabled' : ''} />
-          <span>${t('launch:option.gamescopeEnable')}</span>
-        </label>
-        <div class="launch-gamescope-options ${!perf.gamescope?.enabled ? 'gamescope-disabled' : ''}">
-          <div class="launch-gamescope-resolution">
-            <label>
-              <span>${t('launch:label.gamescopeWidth')}</span>
-              <input type="number" class="input gamescope-input" id="gamescope-width"
-                value="${perf.gamescope?.width || ''}" placeholder="2560"
-                ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
-            </label>
-            <label>
-              <span>${t('launch:label.gamescopeHeight')}</span>
-              <input type="number" class="input gamescope-input" id="gamescope-height"
-                value="${perf.gamescope?.height || ''}" placeholder="1440"
-                ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
-            </label>
-          </div>
-          <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeHdr')}">
-            <input type="checkbox" id="gamescope-hdr"
-              ${perf.gamescope?.hdr ? 'checked' : ''}
-              ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
-            <span>${t('launch:option.gamescopeHdr')}</span>
-          </label>
-          <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeGrabCursor')}">
-            <input type="checkbox" id="gamescope-grab-cursor"
-              ${perf.gamescope?.force_grab_cursor ? 'checked' : ''}
-              ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
-            <span>${t('launch:option.gamescopeGrabCursor')}</span>
-          </label>
-          <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeKeyboard')}">
-            <input type="checkbox" id="gamescope-keyboard"
-              ${perf.gamescope?.keyboard_grab ? 'checked' : ''}
-              ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
-            <span>${t('launch:option.gamescopeKeyboard')}</span>
-          </label>
-        </div>
-        ${!gamescopeInstalled ? `<div class="launch-tool-not-installed">${t('launch:label.gamescopeNotInstalled')}</div>` : ''}
-      </div>
-    </div>
-
-    ${renderCustomEnvVars(disabled)}
   `;
 }
 
-/**
- * Renders the list of custom environment variables.
- * Each variable has an on/off toggle, KEY=value input fields,
- * a delete button, and optionally a conflict warning indicator.
- * @param {boolean} disabled - Whether the inputs should be disabled
- */
-function renderCustomEnvVars(disabled) {
-  const vars = launchConfig?.performance?.custom_env_vars || [];
-  const rows = vars.map((v, i) => {
-    // Check if the variable name overrides a built-in variable
-    const isConflict = v.key && BUILTIN_ENV_VARS.has(v.key);
-    const disabledClass = !v.enabled ? ' env-var-disabled' : '';
-    return `
-      <div class="env-var-row${disabledClass}" data-env-index="${i}">
-        <input type="checkbox" class="env-var-toggle" data-env-index="${i}"
-          ${v.enabled ? 'checked' : ''} ${disabled ? 'disabled' : ''} />
-        <input type="text" class="input env-var-key" data-env-index="${i}"
-          value="${escapeHtml(v.key)}" placeholder="${t('launch:placeholder.envKey')}" ${disabled ? 'disabled' : ''} />
-        <span class="env-var-equals">=</span>
-        <input type="text" class="input env-var-value" data-env-index="${i}"
-          value="${escapeHtml(v.value)}" placeholder="${t('launch:placeholder.envValue')}" ${disabled ? 'disabled' : ''} />
-        ${isConflict ? `<span class="env-var-conflict" data-tooltip="${t('launch:tooltip.envVarConflict')}">⚠ ${t('launch:badge.override')}</span>` : ''}
-        <button class="btn-env-delete" data-env-index="${i}" ${disabled ? 'disabled' : ''} title="${t('launch:tooltip.removeVariable')}">✕</button>
-      </div>
-    `;
-  }).join('');
-
-  return `
-    <div class="launch-custom-env-area">
-      <div class="launch-custom-env-header">
-        <h4>${t('launch:section.customEnvVars')}</h4>
-        <p class="custom-env-hint">${t('launch:desc.customEnvHint')}</p>
-      </div>
-      <div class="launch-custom-env-content">
-        ${rows}
-        <button class="btn btn-sm btn-add-env" id="btn-add-env" ${disabled ? 'disabled' : ''}>${t('launch:button.addVariable')}</button>
-      </div>
-    </div>
-  `;
-}
+// ── Monitor Select ────────────────────────────────
 
 /**
  * Renders the Wayland monitor selection.
@@ -674,15 +737,70 @@ function bindMonitorSelectListener() {
   }
 }
 
-// --- Event-Handler ---
+// ── Custom Env Vars Card ──────────────────────────
+
+/**
+ * Renders the custom env vars as a collapsible row below the card grid.
+ * @param {boolean} disabled - Whether inputs should be disabled
+ */
+function renderCustomEnvVarsCard(disabled) {
+  const vars = launchConfig?.performance?.custom_env_vars || [];
+  const activeCount = vars.filter(v => v.enabled && v.key).length;
+  const arrow = envVarsExpanded ? '\u25BC' : '\u25B6';
+
+  let body = '';
+  if (envVarsExpanded) {
+    const rows = vars.map((v, i) => {
+      const isConflict = v.key && BUILTIN_ENV_VARS.has(v.key);
+      const disabledClass = !v.enabled ? ' env-var-disabled' : '';
+      return `
+        <div class="env-var-row${disabledClass}" data-env-index="${i}">
+          <input type="checkbox" class="env-var-toggle" data-env-index="${i}"
+            ${v.enabled ? 'checked' : ''} ${disabled ? 'disabled' : ''} />
+          <input type="text" class="input env-var-key" data-env-index="${i}"
+            value="${escapeHtml(v.key)}" placeholder="${t('launch:placeholder.envKey')}" ${disabled ? 'disabled' : ''} />
+          <span class="env-var-equals">=</span>
+          <input type="text" class="input env-var-value" data-env-index="${i}"
+            value="${escapeHtml(v.value)}" placeholder="${t('launch:placeholder.envValue')}" ${disabled ? 'disabled' : ''} />
+          ${isConflict ? `<span class="env-var-conflict" data-tooltip="${t('launch:tooltip.envVarConflict')}">⚠ ${t('launch:badge.override')}</span>` : ''}
+          <button class="btn-env-delete" data-env-index="${i}" ${disabled ? 'disabled' : ''} title="${t('launch:tooltip.removeVariable')}">✕</button>
+        </div>
+      `;
+    }).join('');
+
+    body = `
+      <div class="launch-envvars-body">
+        <p class="custom-env-hint">${t('launch:desc.customEnvHint')}</p>
+        ${rows}
+        <button class="btn btn-sm btn-add-env" id="btn-add-env" ${disabled ? 'disabled' : ''}>${t('launch:button.addVariable')}</button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="launch-envvars-card${envVarsExpanded ? ' expanded' : ''}">
+      <div class="launch-envvars-header" id="envvars-header">
+        <span class="launch-card-arrow">${arrow}</span>
+        <span class="launch-card-title">${t('launch:section.customEnvVars')}</span>
+        <span class="launch-envvars-count">${activeCount > 0 ? `${activeCount} ${t('launch:badge.activeCount')}` : ''}</span>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+// ── Event Handlers ────────────────────────────────
 
 /**
  * Binds all event listeners for the launch page:
  * - Launch/stop buttons
  * - "Go to installation" button when SC is missing
  * - Retry button on errors
- * - Toggle checkboxes for launch options (performance, display, overlays)
+ * - Card header clicks for expand/collapse
+ * - Toggle checkboxes for launch options
  * - Monitor selection for Wayland
+ * - Gamescope options
+ * - GPU filter, CPU topology
  * - Custom environment variables
  */
 function bindEvents(container) {
@@ -713,9 +831,35 @@ function bindEvents(container) {
     });
   }
 
+  // Card header click → toggle expanded state
+  container.querySelectorAll('.launch-card-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const cardKey = header.dataset.card;
+      const cardEl = header.closest('.launch-card');
+      // Don't expand GPU-disabled cards
+      if (cardEl && cardEl.classList.contains('gpu-disabled')) return;
+
+      if (expandedCards.has(cardKey)) {
+        expandedCards.delete(cardKey);
+      } else {
+        expandedCards.add(cardKey);
+      }
+      renderPage(container);
+    });
+  });
+
+  // Env vars header click → toggle expanded
+  const envHeader = document.getElementById('envvars-header');
+  if (envHeader) {
+    envHeader.addEventListener('click', () => {
+      envVarsExpanded = !envVarsExpanded;
+      renderPage(container);
+    });
+  }
+
   // Toggle listener: Updates the performance options in the configuration
-  container.querySelectorAll('.launch-options-grid input[type="checkbox"]').forEach(cb => {
-    if (!cb.dataset.key) return;
+  // (works for both card-body checkboxes and wayland checkbox)
+  container.querySelectorAll('.launch-card-body input[type="checkbox"][data-key]').forEach(cb => {
     cb.addEventListener('change', () => {
       if (launchConfig) {
         launchConfig.performance[cb.dataset.key] = cb.checked;
@@ -873,7 +1017,7 @@ function bindEnvVarEvents(container) {
             const badge = document.createElement('span');
             badge.className = 'env-var-conflict';
             badge.setAttribute('data-tooltip', t('launch:tooltip.envVarConflict'));
-            badge.textContent = '⚠ ' + t('launch:badge.override');
+            badge.textContent = '\u26A0 ' + t('launch:badge.override');
             const delBtn = row.querySelector('.btn-env-delete');
             row.insertBefore(badge, delBtn);
           } else if (!isConflict && existing) {
@@ -924,6 +1068,8 @@ function bindEnvVarEvents(container) {
     });
   }
 }
+
+// ── Launch / Stop ─────────────────────────────────
 
 /**
  * Starts the game process:
@@ -1226,5 +1372,3 @@ function saveConfigNow() {
   clearTimeout(_saveConfigTimer);
   invoke('save_config', { config: launchConfig }).catch(err => console.warn('Config save failed:', err));
 }
-
-

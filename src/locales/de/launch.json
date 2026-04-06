@@ -16,6 +16,8 @@
   "button.addVariable": "+ Variable hinzufuegen",
 
   "status.running": "RSI Launcher laeuft - zum Beenden Stopp druecken",
+  "status.runningShort": "Laeuft",
+  "status.ready": "Bereit",
   "status.checking": "Installation wird geprueft...",
   "status.waitingForLaunch": "Warte auf Start...",
 
@@ -53,6 +55,11 @@
 
   "badge.experimental": "Experimentell",
   "badge.override": "Ueberschreibung",
+  "badge.active": "aktiviert",
+  "badge.disabled": "deaktiviert",
+  "badge.noneActive": "keine aktiv",
+  "badge.activeCount": "aktiv",
+  "badge.fractionalBlocked": "Fraktionale Skalierung",
 
   "desc.waylandWarning": "Diese Einstellungen sind vollstaendig experimentell und haben je nach Runner moeglicherweise keine Wirkung.",
   "desc.customEnvHint": "Eigene Umgebungsvariablen fuer Wine/Proton-Starts hinzufuegen. Diese ueberschreiben eingebaute Variablen mit demselben Namen.",
@@ -80,6 +87,8 @@
   "option.group.gpuSelection": "GPU-Auswahl",
 
   "section.gamescope": "Gamescope",
+
+  "card.gpuCpu": "GPU & CPU",
 
   "option.gamemode": "GameMode",
   "option.nvidiaDlss": "DLSS 4.0",
