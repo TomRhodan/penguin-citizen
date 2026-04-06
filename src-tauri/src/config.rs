@@ -298,7 +298,8 @@ pub struct PathValidation {
 /// Information about a detected runner in the local installation directory.
 ///
 /// Created when scanning the `runners/` directory. A valid
-/// runner must contain a `bin/wine` executable.
+/// runner must contain a wine binary in a known layout
+/// (e.g. `bin/wine`, `files/bin/wine`, `dist/bin/wine`).
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DetectedRunner {
     /// Directory name of the runner (e.g. "wine-lug-9.0")
@@ -318,6 +319,7 @@ pub struct ScanRunnersResult {
     pub runners_dir: String,
 }
 
+use crate::runners::resolve_wine_bin;
 use crate::util::{expand_tilde, validate_env_var_key};
 
 /// Finds the first existing parent directory in a path.
@@ -523,7 +525,7 @@ pub async fn validate_install_path(path: String) -> Result<PathValidation, Strin
 
 /// Scans the `runners/` directory for locally installed Wine runners.
 ///
-/// A valid runner is detected if it contains a `bin/wine` executable.
+/// A valid runner is detected if it contains a wine binary in a known layout.
 /// Results are returned sorted alphabetically by name.
 #[tauri::command]
 pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, String> {
@@ -545,15 +547,14 @@ pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, String
                             continue;
                         }
 
-                        // Check if bin/wine exists - this is the identifying marker
-                        let wine_exe = entry_path.join("bin").join("wine");
-                        if wine_exe.exists() {
+                        // Check known wine binary locations (standard Wine + Proton layouts)
+                        if let Some(wine_exe) = resolve_wine_bin(&entry_path) {
                             let name = entry_path
                                 .file_name()
                                 .unwrap_or_default()
                                 .to_string_lossy()
                                 .into_owned();
-                            let bin_path = entry_path.join("bin").to_string_lossy().into_owned();
+                            let bin_path = wine_exe.parent().unwrap().to_string_lossy().into_owned();
                             let wine_executable = wine_exe.to_string_lossy().into_owned();
 
                             runners.push(DetectedRunner {

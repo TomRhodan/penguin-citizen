@@ -72,7 +72,11 @@
   "notification.runInstallationPrefix": "Fuehre zuerst die Installation aus, um Prefix-Werkzeuge zu nutzen.",
 
   "dialog.addSourceName": "Runner-Quellenname eingeben (z.B. \"LUG Experimental\"):",
-  "dialog.addSourceUrl": "GitHub API-URL eingeben:\n(z.B. https://api.github.com/repos/starcitizen-lug/lug-wine-experimental/releases)",
+  "dialog.addSourceTitle": "Runner-Quelle hinzufuegen",
+  "dialog.addSourceNamePlaceholder": "z.B. GE-Proton",
+  "dialog.addSourceUrl": "GitHub API-URL eingeben:",
+  "dialog.addSourceUrlTitle": "Quellen-URL",
+  "dialog.addSourceUrlPlaceholder": "https://api.github.com/repos/.../releases",
 
   "error.prefix": "Fehler: {{message}}",
   "error.failedAddSource": "Quelle konnte nicht hinzugefuegt werden: {{error}}",

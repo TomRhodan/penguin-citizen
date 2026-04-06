@@ -674,8 +674,9 @@ function renderStep2(body) {
     }
 
     if (fractionalScaling !== wasFractional) {
-      // Fully re-render Step 2 to show the blocked Wayland toggle
-      renderCurrentStep(body.closest('#content') || body.parentElement.parentElement);
+      // Targeted DOM update instead of full re-render to avoid destroying
+      // in-flight async work (runner fetch chain, path validation)
+      applyFractionalScalingBlock();
     } else {
       updateMonitorDropdown();
     }
@@ -691,6 +692,32 @@ function renderStep2(body) {
   } else {
     renderRunnerSection();
   }
+}
+
+/**
+ * Patches the Wayland toggle and monitor dropdown in-place when fractional
+ * scaling is detected for the first time. Replaces the normal toggle with
+ * the blocked variant and removes the monitor selection row.
+ *
+ * This avoids a full re-render of Step 2 via renderCurrentStep(), which
+ * would destroy in-flight async work (runner fetch chain, path validation).
+ */
+function applyFractionalScalingBlock() {
+  const waylandCb = document.querySelector('input[data-key="wayland"]');
+  if (!waylandCb) return;
+  const label = waylandCb.closest('.perf-toggle');
+  if (!label) return;
+
+  const temp = document.createElement('div');
+  temp.innerHTML = renderBlockedToggle(
+    'wayland',
+    t('installation:label.wayland'),
+    t('installation:tooltip.waylandBlocked')
+  );
+  label.replaceWith(temp.firstElementChild);
+
+  const monitorRow = document.getElementById('monitor-select-row');
+  if (monitorRow) monitorRow.remove();
 }
 
 /**

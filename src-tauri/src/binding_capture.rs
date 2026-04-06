@@ -30,6 +30,7 @@ use once_cell::sync::Lazy;
 use chrono::Local;
 use serde::{ Deserialize, Serialize };
 use crate::action_definitions::DeviceMapping;
+use crate::runners::resolve_wine_bin;
 
 /// Helper function to map a gilrs gamepad to Star Citizen's device type and instance number.
 /// It consumes elements from `used_mappings` so identical devices get distinct instances.
@@ -293,7 +294,8 @@ pub fn start_input_capture(
     // Spawn Wine DirectInput helper in parallel if wine environment is configured.
     // Failures are logged but never surface as errors to the user (graceful fallback).
     if let (Some(ref ip), Some(ref runner)) = (&install_path, &selected_runner) {
-        let wine_bin = format!("{}/runners/{}/bin/wine", ip, runner);
+        let runner_dir = std::path::PathBuf::from(format!("{}/runners/{}", ip, runner));
+        let wine_bin_path = resolve_wine_bin(&runner_dir);
         let wine_prefix = ip.clone();
         let capturing_wine = IS_CAPTURING.clone();
         let wine_state = WINE_CAPTURE.clone();
@@ -304,7 +306,7 @@ pub fn start_input_capture(
             // This holds for dev builds, .deb, AppImage, and the portable tarball.
             let helper_exe = resource_dir.join("resources").join("penguin-citizen-helper.exe");
 
-            if std::path::Path::new(&wine_bin).exists() && helper_exe.exists() {
+            if let (Some(wine_bin), true) = (wine_bin_path, helper_exe.exists()) {
                 thread::spawn(move || {
                     match std::process::Command::new(&wine_bin)
                         .env("WINEPREFIX", &wine_prefix)

@@ -25,7 +25,7 @@
 //! Supported archive formats: .tar.gz, .tar.xz, .tar.zst, .tar.zstd
 
 use serde::{ Deserialize, Serialize };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{ AtomicBool, Ordering };
 use tauri::{ AppHandle, Emitter };
 
@@ -213,6 +213,28 @@ fn is_archive(name: &str) -> bool {
         name.ends_with(".tar.xz") ||
         name.ends_with(".tar.zst") ||
         name.ends_with(".tar.zstd")
+}
+
+/// Known wine binary locations within runner directories, checked in order.
+const WINE_BIN_PATHS: &[&[&str]] = &[
+    &["bin", "wine"],           // Standard Wine (LUG, Kron4ek)
+    &["files", "bin", "wine"],  // GE-Proton, Valve Proton
+    &["dist", "bin", "wine"],   // Older Proton builds
+];
+
+/// Resolves the wine binary path for a runner directory by checking
+/// known layouts in priority order.
+pub(crate) fn resolve_wine_bin(runner_dir: &Path) -> Option<PathBuf> {
+    for segments in WINE_BIN_PATHS {
+        let mut path = runner_dir.to_path_buf();
+        for seg in *segments {
+            path.push(seg);
+        }
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 use crate::util::expand_tilde;
@@ -622,8 +644,8 @@ pub fn cancel_runner_install() -> bool {
 /// Deletes an installed runner.
 ///
 /// Performs a safety check before deletion: the directory must
-/// contain a `bin/wine` file to prevent accidental deletion of
-/// wrong directories.
+/// contain a wine binary (in any known layout) to prevent
+/// accidental deletion of wrong directories.
 #[tauri::command]
 pub async fn delete_runner(runner_name: String, base_path: String) -> Result<(), String> {
     let expanded = expand_tilde(&base_path);
@@ -633,12 +655,11 @@ pub async fn delete_runner(runner_name: String, base_path: String) -> Result<(),
         return Err(format!("Runner directory not found: {}", runner_path.display()));
     }
 
-    // Safety check: directory must contain bin/wine
+    // Safety check: directory must contain a wine binary
     // to prevent accidental deletion of other directories
-    let wine_bin = runner_path.join("bin").join("wine");
-    if !wine_bin.exists() {
+    if resolve_wine_bin(&runner_path).is_none() {
         return Err(
-            format!("Safety check failed: {} does not contain bin/wine", runner_path.display())
+            format!("Safety check failed: {} does not contain a wine binary", runner_path.display())
         );
     }
 

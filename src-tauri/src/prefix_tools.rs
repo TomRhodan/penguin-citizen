@@ -30,24 +30,23 @@ use std::path::Path;
 use std::process::{ Command, Stdio };
 use tauri::{ AppHandle, Emitter };
 
+use crate::runners::resolve_wine_bin;
 use crate::util::expand_tilde;
 
 /// Determines the paths for the Wine binary, runner bin directory, and prefix.
 ///
 /// Returns a tuple: (prefix path, Wine binary path, runner bin directory).
-/// Fails if the Wine binary is not found in the specified runner.
+/// Checks known wine binary layouts (standard Wine, GE-Proton, older Proton).
 fn get_wine_paths(
     base_path: &str,
     runner_name: &str
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), String> {
     let expanded = expand_tilde(base_path);
     let prefix = Path::new(&expanded);
-    let runner_bin = prefix.join("runners").join(runner_name).join("bin");
-    let wine = runner_bin.join("wine");
-
-    if !wine.exists() {
-        return Err(format!("Wine binary not found: {}", wine.display()));
-    }
+    let runner_dir = prefix.join("runners").join(runner_name);
+    let wine = resolve_wine_bin(&runner_dir)
+        .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
+    let runner_bin = wine.parent().unwrap().to_path_buf();
 
     Ok((prefix.to_path_buf(), wine, runner_bin))
 }

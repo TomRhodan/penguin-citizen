@@ -37,6 +37,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { escapeHtml } from '../utils.js';
 import { t } from '../i18n.js';
+import { prompt as customPrompt, showNotification } from '../utils/dialogs.js';
 
 /**
  * Sorts runner sources: LUG sources first (sorted by name length),
@@ -1043,10 +1044,16 @@ async function selectRunner(name, container) {
  * @param {HTMLElement} container - The container element
  */
 async function showAddSourceDialog(container) {
-  const name = prompt(t('runners:dialog.addSourceName'));
+  const name = await customPrompt(t('runners:dialog.addSourceName'), {
+    title: t('runners:dialog.addSourceTitle'),
+    placeholder: t('runners:dialog.addSourceNamePlaceholder')
+  });
   if (!name || !name.trim()) return;
 
-  const apiUrl = prompt(t('runners:dialog.addSourceUrl'));
+  const apiUrl = await customPrompt(t('runners:dialog.addSourceUrl'), {
+    title: t('runners:dialog.addSourceUrlTitle'),
+    placeholder: t('runners:dialog.addSourceUrlPlaceholder')
+  });
   if (!apiUrl || !apiUrl.trim()) return;
 
   try {
@@ -1056,7 +1063,7 @@ async function showAddSourceDialog(container) {
     });
 
     if (result.success) {
-      alert(result.message);
+      showNotification(result.message, 'success');
 
       // Reload config to get updated runner_sources
       const cfg = await invoke('load_config');
@@ -1090,10 +1097,10 @@ async function showAddSourceDialog(container) {
       patchSection('download-runners-slot', `<div class="runners-loading-state"><div class="runners-loading-spinner"></div><span>${t('runners:status.refreshing')}</span></div>`);
       fireDataFetches(container, true);
     } else {
-      alert(result.message);
+      showNotification(result.message, 'error');
     }
   } catch (err) {
-    alert(t('runners:error.failedAddSource', { error: err }));
+    showNotification(t('runners:error.failedAddSource', { error: err }), 'error');
   }
 }
 
@@ -1107,7 +1114,7 @@ async function importLugHelperSources(container) {
   try {
     const result = await invoke('import_lug_helper_sources');
 
-    alert(result.message);
+    showNotification(result.message, 'success');
 
     // Reload config for updated runner_sources
     const cfg = await invoke('load_config');
@@ -1141,7 +1148,7 @@ async function importLugHelperSources(container) {
     patchSection('download-runners-slot', `<div class="runners-loading-state"><div class="runners-loading-spinner"></div><span>${t('runners:status.refreshing')}</span></div>`);
     fireDataFetches(container, true);
   } catch (err) {
-    alert(t('runners:error.failedImportLug', { error: err }));
+    showNotification(t('runners:error.failedImportLug', { error: err }), 'error');
   }
 }
 
@@ -1364,7 +1371,7 @@ async function launchWineShell(container) {
     });
   } catch (err) {
     console.error('Failed to launch wine shell:', err);
-    alert(t('runners:error.failedLaunchWineShell', { error: err }));
+    showNotification(t('runners:error.failedLaunchWineShell', { error: err }), 'error');
   } finally {
     isRunningPrefixTool = false;
     patchSection('prefix-tools-slot', renderPrefixToolsContent());

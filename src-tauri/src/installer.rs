@@ -31,6 +31,7 @@
 //! 6. Launch the game
 
 use crate::config::{ AppConfig, PerformanceSettings };
+use crate::runners::resolve_wine_bin;
 use serde::{ Deserialize, Serialize };
 use std::io::{ BufRead, BufReader };
 use std::path::Path;
@@ -307,8 +308,8 @@ pub fn check_installation(config: AppConfig) -> InstallationStatus {
     // Check whether the selected runner actually exists as a wine binary
     let runner_name = config.selected_runner.clone();
     let has_runner = runner_name.as_ref().is_some_and(|name| {
-        let wine = Path::new(&install_path).join("runners").join(name).join("bin").join("wine");
-        wine.exists()
+        let runner_dir = Path::new(&install_path).join("runners").join(name);
+        resolve_wine_bin(&runner_dir).is_some()
     });
 
     // Check whether the RSI Launcher .exe exists at the expected path within the Wine prefix
@@ -362,14 +363,12 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     let log_level = config.log_level.as_str();
     let is_debug = log_level == "debug";
 
-    // Build paths to Wine binary and wineserver in the runner directory
-    let runner_bin = Path::new(&install_path).join("runners").join(runner_name).join("bin");
-    let wine = runner_bin.join("wine");
+    // Resolve Wine binary from the runner directory (supports standard Wine + Proton layouts)
+    let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
+    let wine = resolve_wine_bin(&runner_dir)
+        .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
+    let runner_bin = wine.parent().unwrap().to_path_buf();
     let wineserver = runner_bin.join("wineserver");
-
-    if !wine.exists() {
-        return Err(format!("Wine binary not found: {}", wine.to_string_lossy()));
-    }
 
     let launcher_exe = Path::new(&install_path)
         .join("drive_c")
@@ -547,13 +546,15 @@ pub async fn stop_game(app: AppHandle) -> Result<(), String> {
     let runner_dirs = std::fs::read_dir(Path::new(&install_path).join("runners")).ok();
     if let Some(dirs) = runner_dirs {
         for entry in dirs.flatten() {
-            let wineserver = entry.path().join("bin").join("wineserver");
-            if wineserver.exists() {
-                let _ = app.emit("launch-log", "> Killing wineserver...");
-                let _ = Command::new(wineserver.to_string_lossy().as_ref())
-                    .arg("-k")
-                    .env("WINEPREFIX", &install_path)
-                    .output();
+            if let Some(wine) = resolve_wine_bin(&entry.path()) {
+                let wineserver = wine.with_file_name("wineserver");
+                if wineserver.exists() {
+                    let _ = app.emit("launch-log", "> Killing wineserver...");
+                    let _ = Command::new(wineserver.to_string_lossy().as_ref())
+                        .arg("-k")
+                        .env("WINEPREFIX", &install_path)
+                        .output();
+                }
             }
         }
     }
@@ -585,12 +586,14 @@ pub fn cleanup_child_processes() {
         // Kill all wineservers to clean up Wine process trees
         if let Ok(dirs) = std::fs::read_dir(Path::new(&install_path).join("runners")) {
             for entry in dirs.flatten() {
-                let wineserver = entry.path().join("bin").join("wineserver");
-                if wineserver.exists() {
-                    let _ = Command::new(wineserver.to_string_lossy().as_ref())
-                        .arg("-k")
-                        .env("WINEPREFIX", &install_path)
-                        .output();
+                if let Some(wine) = resolve_wine_bin(&entry.path()) {
+                    let wineserver = wine.with_file_name("wineserver");
+                    if wineserver.exists() {
+                        let _ = Command::new(wineserver.to_string_lossy().as_ref())
+                            .arg("-k")
+                            .env("WINEPREFIX", &install_path)
+                            .output();
+                    }
                 }
             }
         }
@@ -659,13 +662,11 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
 
     let runner_name = config.selected_runner.as_deref().ok_or("No runner selected")?;
 
-    let runner_bin = Path::new(&install_path).join("runners").join(runner_name).join("bin");
-    let wine = runner_bin.join("wine");
+    let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
+    let wine = resolve_wine_bin(&runner_dir)
+        .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
+    let runner_bin = wine.parent().unwrap().to_path_buf();
     let wineserver = runner_bin.join("wineserver");
-
-    if !wine.exists() {
-        return Err(format!("Wine binary not found: {}", wine.to_string_lossy()));
-    }
 
     // ── Phase 1: Prepare environment (0–5%) ──
     // Note: In quick mode phases 1-4 + 6 are executed, phases 4/5 (RSI Launcher) are skipped
