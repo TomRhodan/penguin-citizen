@@ -498,6 +498,10 @@ pub fn run() {
                 system_check::fix_filelimit,
                 system_check::detect_monitors,
                 system_check::get_default_install_path,
+                system_check::detect_gpu_vendor,
+                system_check::detect_vulkan_devices,
+                system_check::check_gamescope_installed,
+                system_check::check_gamemode_installed,
 
                 // App configuration (setup, installation path, runner sources)
                 config::check_needs_setup,

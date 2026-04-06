@@ -893,3 +893,132 @@ pub async fn fix_filelimit() -> Result<FixResult, String> {
 pub async fn get_default_install_path() -> String {
     get_default_install_path_inner()
 }
+
+/// GPU vendor and device information.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct GpuInfo {
+    /// GPU vendor: "nvidia", "amd", "intel", or "unknown"
+    pub vendor: String,
+    /// Human-readable GPU name (e.g. "NVIDIA GeForce RTX 4070")
+    pub name: String,
+}
+
+/// Detects the primary GPU vendor by reading /sys/class/drm/.
+/// Falls back to `lspci` if sysfs is not available.
+#[tauri::command]
+pub async fn detect_gpu_vendor() -> Result<GpuInfo, String> {
+    tokio::task::spawn_blocking(|| {
+        // Try sysfs first: /sys/class/drm/card*/device/vendor
+        if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("card") || name.contains('-') {
+                    continue;
+                }
+                let vendor_path = entry.path().join("device/vendor");
+                if let Ok(vendor_id) = std::fs::read_to_string(&vendor_path) {
+                    let vendor_id = vendor_id.trim();
+                    let vendor = match vendor_id {
+                        "0x10de" => "nvidia",
+                        "0x1002" => "amd",
+                        "0x8086" => "intel",
+                        _ => continue,
+                    };
+                    let gpu_name = get_gpu_name_lspci().unwrap_or_else(|| vendor.to_uppercase());
+                    return Ok(GpuInfo {
+                        vendor: vendor.to_string(),
+                        name: gpu_name,
+                    });
+                }
+            }
+        }
+
+        // Fallback: lspci
+        if let Ok(output) = std::process::Command::new("lspci").output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("VGA") || line.contains("3D controller") {
+                    let lower = line.to_lowercase();
+                    let vendor = if lower.contains("nvidia") {
+                        "nvidia"
+                    } else if lower.contains("amd") || lower.contains("radeon") {
+                        "amd"
+                    } else if lower.contains("intel") {
+                        "intel"
+                    } else {
+                        continue
+                    };
+                    let name = line.split(':').nth(2).unwrap_or(line).trim().to_string();
+                    return Ok(GpuInfo {
+                        vendor: vendor.to_string(),
+                        name,
+                    });
+                }
+            }
+        }
+
+        Ok(GpuInfo {
+            vendor: "unknown".to_string(),
+            name: "Unknown GPU".to_string(),
+        })
+    })
+    .await
+    .map_err(|e| format!("GPU detection failed: {}", e))?
+}
+
+/// Helper: Extracts the GPU device name from lspci output.
+fn get_gpu_name_lspci() -> Option<String> {
+    let output = std::process::Command::new("lspci").output().ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.contains("VGA") || line.contains("3D controller") {
+            return Some(line.split(':').nth(2)?.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Returns a list of Vulkan device names from `vulkaninfo --summary`.
+/// Used to populate the GPU device filter dropdown.
+#[tauri::command]
+pub async fn detect_vulkan_devices() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        let output = std::process::Command::new("vulkaninfo")
+            .arg("--summary")
+            .output()
+            .map_err(|e| format!("vulkaninfo not found: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let devices: Vec<String> = stdout
+            .lines()
+            .filter(|line| line.contains("deviceName"))
+            .filter_map(|line| {
+                line.split('=').nth(1).map(|s| s.trim().to_string())
+            })
+            .collect();
+
+        Ok(devices)
+    })
+    .await
+    .map_err(|e| format!("Vulkan device detection failed: {}", e))?
+}
+
+/// Checks whether gamescope is installed and available in $PATH.
+#[tauri::command]
+pub async fn check_gamescope_installed() -> bool {
+    std::process::Command::new("which")
+        .arg("gamescope")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Checks whether gamemoderun (Feral GameMode) is installed and available in $PATH.
+#[tauri::command]
+pub async fn check_gamemode_installed() -> bool {
+    std::process::Command::new("which")
+        .arg("gamemoderun")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
