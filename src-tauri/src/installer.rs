@@ -233,6 +233,62 @@ fn configure_wine_env(
         vars.push(("DXVK_HUD".into(), "fps,compiler".into()));
     }
 
+    // --- NVIDIA: DLSS 4.0 ---
+    if perf.nvidia_dlss {
+        vars.push(("PROTON_ENABLE_NGX_UPDATER".into(), "1".into()));
+        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE".into(), "on".into()));
+        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE".into(), "on".into()));
+        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE".into(), "on".into()));
+        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION".into(), "RENDER_PRESET_K".into()));
+        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE_RENDER_PRESET_SELECTION".into(), "RENDER_PRESET_K".into()));
+    }
+
+    // --- NVIDIA: Smooth Motion ---
+    if perf.nvidia_smooth_motion {
+        vars.push(("NVPRESENT_ENABLE_SMOOTH_MOTION".into(), "1".into()));
+        vars.push(("NVPRESENT_QUEUE_FAMILY".into(), "1".into()));
+    }
+
+    // --- NVIDIA: G-Sync optimization ---
+    if perf.nvidia_gsync {
+        vars.push(("__GL_GSYNC_ALLOWED".into(), "1".into()));
+        vars.push(("__GL_MaxFramesAllowed".into(), "1".into()));
+    }
+
+    // --- AMD: Fix flickering lights on display panels ---
+    if perf.amd_radv_zero_vram {
+        vars.push(("radv_zero_vram".into(), "true".into()));
+    }
+
+    // --- AMD: Fix framerate drops / stuttering ---
+    if perf.amd_nogttspill {
+        vars.push(("RADV_PERFTEST".into(), "nogttspill".into()));
+    }
+
+    // --- GPU Selection: Force specific Vulkan device ---
+    if let Some(ref device) = perf.gpu_device_filter {
+        if !device.is_empty() {
+            vars.push(("DXVK_FILTER_DEVICE_NAME".into(), device.clone()));
+        }
+    }
+
+    // --- Troubleshooting: Vulkan mailbox present mode ---
+    if perf.vulkan_mailbox {
+        vars.push(("MESA_VK_WSI_PRESENT_MODE".into(), "mailbox".into()));
+    }
+
+    // --- Troubleshooting: HDR WSI layer ---
+    if perf.enable_hdr_wsi {
+        vars.push(("ENABLE_HDR_WSI".into(), "1".into()));
+    }
+
+    // --- Troubleshooting: CPU topology for multi-die CPUs ---
+    if let Some(ref topology) = perf.wine_cpu_topology {
+        if !topology.is_empty() {
+            vars.push(("WINE_CPU_TOPOLOGY".into(), topology.clone()));
+        }
+    }
+
     // Shader cache settings: Store compiled shaders on disk
     // so they don't need to be recompiled on the next launch.
     // Large cache size (10 GB) and no automatic cleanup because
@@ -413,10 +469,53 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
         .env("WINEPREFIX", &install_path)
         .output();
 
-    // --- Build Wine command ---
-    let mut cmd = Command::new(wine.to_string_lossy().as_ref());
-    // Use Windows path since Wine resolves it internally
-    cmd.arg("C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe");
+    // --- Build launch command (gamescope → gamemoderun → wine → launcher) ---
+    let perf_settings = &config.performance;
+    let launcher_path = "C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe";
+
+    let mut cmd = if perf_settings.gamescope.enabled {
+        let mut c = Command::new("gamescope");
+        if let Some(w) = perf_settings.gamescope.width {
+            c.arg("-W").arg(w.to_string());
+        }
+        if let Some(h) = perf_settings.gamescope.height {
+            c.arg("-H").arg(h.to_string());
+        }
+        if perf_settings.gamescope.hdr {
+            c.arg("--hdr-enabled");
+        }
+        if perf_settings.gamescope.force_grab_cursor {
+            c.arg("--force-grab-cursor");
+        }
+        if perf_settings.gamescope.keyboard_grab {
+            c.arg("-g");
+        }
+        c.arg("--");
+        if perf_settings.gamemode {
+            c.arg("gamemoderun");
+        }
+        c.arg(wine.to_string_lossy().as_ref());
+        c.arg(launcher_path);
+        if perf_settings.in_process_gpu {
+            c.arg("--in-process-gpu");
+        }
+        c
+    } else if perf_settings.gamemode {
+        let mut c = Command::new("gamemoderun");
+        c.arg(wine.to_string_lossy().as_ref());
+        c.arg(launcher_path);
+        if perf_settings.in_process_gpu {
+            c.arg("--in-process-gpu");
+        }
+        c
+    } else {
+        let mut c = Command::new(wine.to_string_lossy().as_ref());
+        c.arg(launcher_path);
+        if perf_settings.in_process_gpu {
+            c.arg("--in-process-gpu");
+        }
+        c
+    };
 
     let env_log = configure_wine_env(&mut cmd, &install_path, &config.performance, log_level);
 
@@ -450,8 +549,50 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
         "launch-log",
         &format!("  MangoHUD={}, DXVK HUD={}", perf.mangohud, perf.dxvk_hud)
     );
+    if perf.gamemode {
+        let _ = app.emit("launch-log", "  GameMode=true");
+    }
+    if perf.nvidia_dlss {
+        let _ = app.emit("launch-log", "  NVIDIA DLSS 4.0=true");
+    }
+    if perf.nvidia_smooth_motion {
+        let _ = app.emit("launch-log", "  NVIDIA Smooth Motion=true");
+    }
+    if perf.nvidia_gsync {
+        let _ = app.emit("launch-log", "  NVIDIA G-Sync Optimization=true");
+    }
+    if perf.amd_radv_zero_vram {
+        let _ = app.emit("launch-log", "  AMD radv_zero_vram=true");
+    }
+    if perf.amd_nogttspill {
+        let _ = app.emit("launch-log", "  AMD RADV_PERFTEST=nogttspill");
+    }
+    if let Some(ref device) = perf.gpu_device_filter {
+        let _ = app.emit("launch-log", &format!("  GPU Filter={}", device));
+    }
+    if perf.in_process_gpu {
+        let _ = app.emit("launch-log", "  --in-process-gpu=true");
+    }
+    if perf.vulkan_mailbox {
+        let _ = app.emit("launch-log", "  Vulkan Mailbox Mode=true");
+    }
+    if perf.enable_hdr_wsi {
+        let _ = app.emit("launch-log", "  HDR WSI Layer=true");
+    }
+    if let Some(ref topology) = perf.wine_cpu_topology {
+        let _ = app.emit("launch-log", &format!("  CPU Topology={}", topology));
+    }
     if let Some(ref monitor) = perf.primary_monitor {
         let _ = app.emit("launch-log", &format!("  Primary Monitor={}", monitor));
+    }
+    if perf.gamescope.enabled {
+        let mut gs_flags = vec!["enabled".to_string()];
+        if let Some(w) = perf.gamescope.width { gs_flags.push(format!("-W {}", w)); }
+        if let Some(h) = perf.gamescope.height { gs_flags.push(format!("-H {}", h)); }
+        if perf.gamescope.hdr { gs_flags.push("--hdr-enabled".into()); }
+        if perf.gamescope.force_grab_cursor { gs_flags.push("--force-grab-cursor".into()); }
+        if perf.gamescope.keyboard_grab { gs_flags.push("-g".into()); }
+        let _ = app.emit("launch-log", &format!("  Gamescope: {}", gs_flags.join(", ")));
     }
 
     // --- Log: Custom environment variables (if present) ---
@@ -469,11 +610,22 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     // --- Log: Output full command only in debug mode ---
     if is_debug {
         let _ = app.emit("launch-log", "");
+        let cmd_prefix = if perf.gamescope.enabled {
+            "gamescope [flags] --"
+        } else if perf.gamemode {
+            "gamemoderun"
+        } else {
+            ""
+        };
+        let in_proc = if perf.in_process_gpu { " --in-process-gpu" } else { "" };
         let _ = app.emit(
             "launch-log",
             &format!(
-                "> Command: {} \"C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe\"",
-                wine.to_string_lossy()
+                "> Command: {} {} \"{}\"{}",
+                cmd_prefix,
+                wine.to_string_lossy(),
+                launcher_path,
+                in_proc
             )
         );
     }
