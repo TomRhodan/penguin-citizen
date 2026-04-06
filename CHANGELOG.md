@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] - 2026-04-06
+
+### Added
+- **Advanced Launch Options** — GPU-aware start options sourced from the LUG wiki: NVIDIA DLSS 4.0, Smooth Motion, G-Sync; AMD radv_zero_vram and RADV nogttspill fixes; `--in-process-gpu` for black/white launcher window; Vulkan Mailbox Mode; HDR WSI Layer; CPU Topology; GPU device filter for hybrid systems.
+- **Gamescope integration** — Full Gamescope compositor support with resolution, HDR, cursor grab, and keyboard grab options.
+- **GameMode support** — `gamemoderun` launch prefix toggle.
+- **GPU auto-detection** — Automatically detects NVIDIA/AMD/Intel GPU and greys out irrelevant options.
+
+### Changed
+- **Launch page redesign** — Compact launch bar replaces the large play button. Options organized in a collapsible 3-column card grid with active-option badges. Log output gets remaining space via flex-grow.
+
 ## [0.4.7] - 2026-03-30
 
 ### Fixed
