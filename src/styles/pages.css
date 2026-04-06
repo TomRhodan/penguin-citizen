@@ -2606,6 +2606,135 @@
   align-self: flex-start;
 }
 
+/* ── Advanced Launch Options ── */
+
+/* GPU-disabled groups: greyed out when vendor doesn't match */
+.launch-option-group.gpu-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.gpu-detected-label,
+.gpu-not-detected-label {
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.gpu-detected-label {
+  color: var(--text-muted);
+}
+
+.gpu-not-detected-label {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.toggle-gpu-disabled,
+.toggle-tool-missing {
+  opacity: 0.5;
+}
+
+/* GPU Selection area */
+.launch-gpu-selection-area {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.launch-gpu-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.launch-gpu-filter-select {
+  flex: 1;
+  max-width: 400px;
+}
+
+.launch-gpu-filter-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Troubleshooting extras (CPU topology) */
+.launch-troubleshooting-extras {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.launch-cpu-topology-input {
+  margin-top: 8px;
+  font-family: monospace;
+  max-width: 500px;
+}
+
+/* Gamescope section */
+.launch-gamescope-area {
+  margin-top: 20px;
+}
+
+.launch-gamescope-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.launch-gamescope-options {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-card);
+  border-radius: 8px;
+}
+
+.launch-gamescope-options.gamescope-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.launch-gamescope-resolution {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.launch-gamescope-resolution label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.gamescope-input {
+  width: 100px;
+}
+
+.launch-tool-not-installed {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.badge-installed {
+  background: var(--success, #22c55e);
+  color: #000;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.badge-not-installed {
+  background: var(--text-muted);
+  color: #000;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
 /* Log Panel */
 .log-panel {
   min-height: 140px;
