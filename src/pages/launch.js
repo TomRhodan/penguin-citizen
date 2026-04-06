@@ -57,6 +57,16 @@ let unlistenLaunchLog = null;
 let unlistenLaunchStarted = null;
 /** @type {Function|null} Unlisten function for the "game exited" event */
 let unlistenLaunchExited = null;
+/** @type {string} Detected GPU vendor: 'nvidia', 'amd', 'intel', or 'unknown' */
+let detectedGpuVendor = 'unknown';
+/** @type {string} Detected GPU name for display */
+let detectedGpuName = '';
+/** @type {string[]} Vulkan device names for the GPU filter dropdown */
+let vulkanDevices = [];
+/** @type {boolean} Whether gamescope is installed on the system */
+let gamescopeInstalled = false;
+/** @type {boolean} Whether gamemoderun is installed on the system */
+let gamemodeInstalled = false;
 
 /**
  * Returns available launch options, grouped by category.
@@ -70,6 +80,7 @@ function getLaunchOptions() {
       { key: 'esync', label: t('launch:option.esync'), tooltip: t('launch:tooltip.esync') },
       { key: 'fsync', label: t('launch:option.fsync'), tooltip: t('launch:tooltip.fsync') },
       { key: 'dxvk_async', label: t('launch:option.dxvkAsync'), tooltip: t('launch:tooltip.dxvkAsync') },
+      { key: 'gamemode', label: t('launch:option.gamemode'), tooltip: t('launch:tooltip.gamemode'), requiresTool: 'gamemode' },
     ]},
     { group: t('launch:option.group.display'), options: [
       { key: 'hdr', label: t('launch:option.hdr'), tooltip: t('launch:tooltip.hdr') },
@@ -78,6 +89,20 @@ function getLaunchOptions() {
     { group: t('launch:option.group.overlays'), options: [
       { key: 'mangohud', label: t('launch:option.mangohud'), tooltip: t('launch:tooltip.mangohud') },
       { key: 'dxvk_hud', label: t('launch:option.dxvkHud'), tooltip: t('launch:tooltip.dxvkHud') },
+    ]},
+    { group: t('launch:option.group.nvidia'), gpuVendor: 'nvidia', options: [
+      { key: 'nvidia_dlss', label: t('launch:option.nvidiaDlss'), tooltip: t('launch:tooltip.nvidiaDlss') },
+      { key: 'nvidia_smooth_motion', label: t('launch:option.nvidiaSmoothMotion'), tooltip: t('launch:tooltip.nvidiaSmoothMotion') },
+      { key: 'nvidia_gsync', label: t('launch:option.nvidiaGsync'), tooltip: t('launch:tooltip.nvidiaGsync') },
+    ]},
+    { group: t('launch:option.group.amd'), gpuVendor: 'amd', options: [
+      { key: 'amd_radv_zero_vram', label: t('launch:option.amdRadv'), tooltip: t('launch:tooltip.amdRadv') },
+      { key: 'amd_nogttspill', label: t('launch:option.amdNogttspill'), tooltip: t('launch:tooltip.amdNogttspill') },
+    ]},
+    { group: t('launch:option.group.troubleshooting'), options: [
+      { key: 'in_process_gpu', label: t('launch:option.inProcessGpu'), tooltip: t('launch:tooltip.inProcessGpu') },
+      { key: 'vulkan_mailbox', label: t('launch:option.vulkanMailbox'), tooltip: t('launch:tooltip.vulkanMailbox') },
+      { key: 'enable_hdr_wsi', label: t('launch:option.enableHdrWsi'), tooltip: t('launch:tooltip.enableHdrWsi') },
     ]},
   ];
 }
@@ -96,6 +121,17 @@ const BUILTIN_ENV_VARS = new Set([
   '__GL_SHADER_DISK_CACHE', '__GL_SHADER_DISK_CACHE_SIZE',
   '__GL_SHADER_DISK_CACHE_PATH', '__GL_SHADER_DISK_CACHE_SKIP_CLEANUP',
   'MESA_SHADER_CACHE_DIR', 'MESA_SHADER_CACHE_MAX_SIZE',
+  // Advanced launch options
+  'PROTON_ENABLE_NGX_UPDATER',
+  'DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE', 'DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE',
+  'DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE',
+  'DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION',
+  'DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE_RENDER_PRESET_SELECTION',
+  'NVPRESENT_ENABLE_SMOOTH_MOTION', 'NVPRESENT_QUEUE_FAMILY',
+  '__GL_GSYNC_ALLOWED', '__GL_MaxFramesAllowed',
+  'radv_zero_vram', 'RADV_PERFTEST',
+  'DXVK_FILTER_DEVICE_NAME', 'MESA_VK_WSI_PRESENT_MODE',
+  'ENABLE_HDR_WSI', 'WINE_CPU_TOPOLOGY',
 ]);
 
 // --- Auto-Launch-Flag ---
@@ -150,6 +186,28 @@ async function loadAndCheck(container) {
       renderPage(container);
     }
   }).catch(err => { console.warn('Monitor detection failed:', err); detectedMonitors = []; });
+
+  // Detect GPU vendor for section greying
+  invoke('detect_gpu_vendor').then(gpu => {
+    detectedGpuVendor = gpu.vendor || 'unknown';
+    detectedGpuName = gpu.name || '';
+    renderPage(container);
+  }).catch(() => {});
+
+  // Detect Vulkan devices for GPU filter dropdown
+  invoke('detect_vulkan_devices').then(devices => {
+    vulkanDevices = devices || [];
+  }).catch(() => {});
+
+  // Check gamescope availability
+  invoke('check_gamescope_installed').then(installed => {
+    gamescopeInstalled = installed;
+  }).catch(() => {});
+
+  // Check gamemode availability
+  invoke('check_gamemode_installed').then(installed => {
+    gamemodeInstalled = installed;
+  }).catch(() => {});
 
   try {
     const config = await invoke('load_config');
@@ -377,23 +435,55 @@ function renderOptionsGrid() {
 
   return `
     <div class="launch-options-grid">
-      ${getLaunchOptions().map(group => `
-        <div class="launch-option-group">
-          <div class="launch-option-group-title">${group.group}</div>
-          ${group.options.map(opt => {
-    const isDisabled = disabled;
-    const tooltip = opt.tooltip || '';
+      ${getLaunchOptions().map(group => {
+    const isGpuGroup = !!group.gpuVendor;
+    const gpuMismatch = isGpuGroup && detectedGpuVendor !== group.gpuVendor;
+    const groupClass = gpuMismatch ? 'launch-option-group gpu-disabled' : 'launch-option-group';
+
     return `
-              <label class="toggle-option" ${tooltip ? `data-tooltip="${tooltip}"` : ''}>
+        <div class="${groupClass}">
+          <div class="launch-option-group-title">
+            ${group.group}
+            ${isGpuGroup && !gpuMismatch && detectedGpuName ? `<span class="gpu-detected-label">${t('launch:label.gpuDetected', { name: escapeHtml(detectedGpuName) })}</span>` : ''}
+            ${gpuMismatch ? `<span class="gpu-not-detected-label">${t('launch:label.noGpuDetected', { vendor: group.gpuVendor.toUpperCase() })}</span>` : ''}
+          </div>
+          ${group.options.map(opt => {
+      const isGpuDisabled = gpuMismatch;
+      const isToolMissing = opt.requiresTool === 'gamemode' && !gamemodeInstalled;
+      const isDisabled = disabled || isGpuDisabled || isToolMissing;
+      let tooltip = opt.tooltip || '';
+      if (isToolMissing) tooltip = t('launch:label.gamemodeNotInstalled');
+      return `
+              <label class="toggle-option${isGpuDisabled ? ' toggle-gpu-disabled' : ''}${isToolMissing ? ' toggle-tool-missing' : ''}" ${tooltip ? `data-tooltip="${tooltip}"` : ''}>
                 <input type="checkbox" data-key="${opt.key}"
                   ${perf[opt.key] ? 'checked' : ''}
                   ${isDisabled ? 'disabled' : ''} />
                 <span>${opt.label}</span>
               </label>
             `;
-  }).join('')}
+    }).join('')}
         </div>
-      `).join('')}
+      `;
+  }).join('')}
+    </div>
+
+    <div class="launch-gpu-selection-area">
+      <div class="launch-option-group-title">${t('launch:option.group.gpuSelection')}</div>
+      <div class="launch-gpu-filter-row">
+        <select class="input launch-gpu-filter-select" id="launch-gpu-filter" ${disabled ? 'disabled' : ''}>
+          <option value="">${t('launch:label.gpuAutomatic')}</option>
+          ${vulkanDevices.map(d => `<option value="${escapeHtml(d)}" ${perf.gpu_device_filter === d ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('')}
+        </select>
+        <span class="launch-gpu-filter-hint">${t('launch:label.gpuFilterHint')}</span>
+      </div>
+    </div>
+
+    <div class="launch-troubleshooting-extras">
+      <div class="launch-option-group-title">${t('launch:label.cpuTopology')}</div>
+      <input type="text" class="input launch-cpu-topology-input" id="launch-cpu-topology"
+        value="${escapeHtml(perf.wine_cpu_topology || '')}"
+        placeholder="${t('launch:label.cpuTopologyPlaceholder')}"
+        ${disabled ? 'disabled' : ''} />
     </div>
 
     <div class="launch-wayland-area">
@@ -412,6 +502,60 @@ function renderOptionsGrid() {
       </div>
       ${fractional ? `<div class="launch-scaling-warning">${t('launch:desc.fractionalScalingWarning')}</div>` : ''}
     </div>
+
+    <div class="launch-gamescope-area">
+      <div class="launch-gamescope-header">
+        <h4>${t('launch:section.gamescope')}
+          ${gamescopeInstalled
+    ? `<span class="badge-installed">${t('launch:badge.installed')}</span>`
+    : `<span class="badge-not-installed">${t('launch:badge.notInstalled')}</span>`}
+        </h4>
+      </div>
+      <div class="launch-gamescope-content">
+        <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeEnable')}">
+          <input type="checkbox" id="gamescope-enabled"
+            ${perf.gamescope?.enabled ? 'checked' : ''}
+            ${disabled || !gamescopeInstalled ? 'disabled' : ''} />
+          <span>${t('launch:option.gamescopeEnable')}</span>
+        </label>
+        <div class="launch-gamescope-options ${!perf.gamescope?.enabled ? 'gamescope-disabled' : ''}">
+          <div class="launch-gamescope-resolution">
+            <label>
+              <span>${t('launch:label.gamescopeWidth')}</span>
+              <input type="number" class="input gamescope-input" id="gamescope-width"
+                value="${perf.gamescope?.width || ''}" placeholder="2560"
+                ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+            </label>
+            <label>
+              <span>${t('launch:label.gamescopeHeight')}</span>
+              <input type="number" class="input gamescope-input" id="gamescope-height"
+                value="${perf.gamescope?.height || ''}" placeholder="1440"
+                ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+            </label>
+          </div>
+          <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeHdr')}">
+            <input type="checkbox" id="gamescope-hdr"
+              ${perf.gamescope?.hdr ? 'checked' : ''}
+              ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+            <span>${t('launch:option.gamescopeHdr')}</span>
+          </label>
+          <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeGrabCursor')}">
+            <input type="checkbox" id="gamescope-grab-cursor"
+              ${perf.gamescope?.force_grab_cursor ? 'checked' : ''}
+              ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+            <span>${t('launch:option.gamescopeGrabCursor')}</span>
+          </label>
+          <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeKeyboard')}">
+            <input type="checkbox" id="gamescope-keyboard"
+              ${perf.gamescope?.keyboard_grab ? 'checked' : ''}
+              ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+            <span>${t('launch:option.gamescopeKeyboard')}</span>
+          </label>
+        </div>
+        ${!gamescopeInstalled ? `<div class="launch-tool-not-installed">${t('launch:label.gamescopeNotInstalled')}</div>` : ''}
+      </div>
+    </div>
+
     ${renderCustomEnvVars(disabled)}
   `;
 }
@@ -597,6 +741,87 @@ function bindEvents(container) {
         const input = document.getElementById('launch-monitor-input');
         if (select) select.disabled = true;
         if (input) input.disabled = true;
+      }
+    });
+  }
+
+  // GPU device filter dropdown
+  const gpuFilter = document.getElementById('launch-gpu-filter');
+  if (gpuFilter) {
+    gpuFilter.addEventListener('change', () => {
+      if (launchConfig) {
+        launchConfig.performance.gpu_device_filter = gpuFilter.value || null;
+      }
+    });
+  }
+
+  // CPU topology input
+  const cpuTopology = document.getElementById('launch-cpu-topology');
+  if (cpuTopology) {
+    cpuTopology.addEventListener('input', () => {
+      if (launchConfig) {
+        launchConfig.performance.wine_cpu_topology = cpuTopology.value.trim() || null;
+        debouncedSaveConfig();
+      }
+    });
+  }
+
+  // Gamescope enable toggle
+  const gsEnabled = document.getElementById('gamescope-enabled');
+  if (gsEnabled) {
+    gsEnabled.addEventListener('change', () => {
+      if (launchConfig) {
+        if (!launchConfig.performance.gamescope) {
+          launchConfig.performance.gamescope = { enabled: false, hdr: false, force_grab_cursor: false, keyboard_grab: false };
+        }
+        launchConfig.performance.gamescope.enabled = gsEnabled.checked;
+        renderPage(container);
+      }
+    });
+  }
+
+  // Gamescope sub-options
+  const gsWidth = document.getElementById('gamescope-width');
+  if (gsWidth) {
+    gsWidth.addEventListener('input', () => {
+      if (launchConfig?.performance?.gamescope) {
+        const val = parseInt(gsWidth.value, 10);
+        launchConfig.performance.gamescope.width = isNaN(val) ? null : val;
+        debouncedSaveConfig();
+      }
+    });
+  }
+  const gsHeight = document.getElementById('gamescope-height');
+  if (gsHeight) {
+    gsHeight.addEventListener('input', () => {
+      if (launchConfig?.performance?.gamescope) {
+        const val = parseInt(gsHeight.value, 10);
+        launchConfig.performance.gamescope.height = isNaN(val) ? null : val;
+        debouncedSaveConfig();
+      }
+    });
+  }
+  const gsHdr = document.getElementById('gamescope-hdr');
+  if (gsHdr) {
+    gsHdr.addEventListener('change', () => {
+      if (launchConfig?.performance?.gamescope) {
+        launchConfig.performance.gamescope.hdr = gsHdr.checked;
+      }
+    });
+  }
+  const gsGrabCursor = document.getElementById('gamescope-grab-cursor');
+  if (gsGrabCursor) {
+    gsGrabCursor.addEventListener('change', () => {
+      if (launchConfig?.performance?.gamescope) {
+        launchConfig.performance.gamescope.force_grab_cursor = gsGrabCursor.checked;
+      }
+    });
+  }
+  const gsKeyboard = document.getElementById('gamescope-keyboard');
+  if (gsKeyboard) {
+    gsKeyboard.addEventListener('change', () => {
+      if (launchConfig?.performance?.gamescope) {
+        launchConfig.performance.gamescope.keyboard_grab = gsKeyboard.checked;
       }
     });
   }
