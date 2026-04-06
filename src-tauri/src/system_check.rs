@@ -542,12 +542,18 @@ fn detect_monitors_gnome() -> Option<Vec<MonitorInfo>> {
     let mut monitors = Vec::new();
 
     let mut current_primary;
+    let mut current_scale: Option<f64>;
     let mut i = 0;
     while i < lines.len() {
         let line = lines[i];
         if line.starts_with("Logical monitor") {
             // "PRIMARY" at the end of the line marks the main monitor
             current_primary = line.contains("PRIMARY");
+            // Parse scale from "scale=X" (e.g., "scale=1.5")
+            current_scale = line.split_whitespace()
+                .find(|token| token.starts_with("scale="))
+                .and_then(|token| token.strip_prefix("scale="))
+                .and_then(|val| val.parse::<f64>().ok());
             // Subsequent indented lines are the physical outputs
             i += 1;
             while i < lines.len() {
@@ -575,7 +581,7 @@ fn detect_monitors_gnome() -> Option<Vec<MonitorInfo>> {
                         name,
                         resolution,
                         primary: current_primary,
-                        scale: None,
+                        scale: current_scale,
                     });
                 }
                 i += 1;
@@ -605,6 +611,7 @@ fn detect_monitors_wlr_randr() -> Option<Vec<MonitorInfo>> {
 
     let mut current_name = String::new();
     let mut current_resolution = String::new();
+    let mut current_scale: Option<f64> = None;
 
     for line in &lines {
         let trimmed = line.trim();
@@ -617,17 +624,22 @@ fn detect_monitors_wlr_randr() -> Option<Vec<MonitorInfo>> {
                     resolution: current_resolution.clone(),
                     // The first monitor is considered primary (wlr-randr has no primary flag)
                     primary: monitors.is_empty(),
-                    scale: None,
+                    scale: current_scale,
                 });
             }
             current_name = trimmed.split_whitespace().next().unwrap_or("").to_string();
             current_resolution = String::new();
+            current_scale = None;
         } else if current_resolution.is_empty() && trimmed.contains("current") {
             // Indented line with "current" contains the active resolution
             // Format: "  2560x1440 px, 59.951 Hz (current)"
             if let Some(res) = trimmed.split_whitespace().next() {
                 current_resolution = res.to_string();
             }
+        } else if trimmed.starts_with("Scale:") {
+            // Format: "  Scale: 1.500000"
+            current_scale = trimmed.strip_prefix("Scale:")
+                .and_then(|val| val.trim().parse::<f64>().ok());
         }
     }
 
@@ -637,7 +649,7 @@ fn detect_monitors_wlr_randr() -> Option<Vec<MonitorInfo>> {
             name: current_name,
             resolution: current_resolution,
             primary: monitors.is_empty(),
-            scale: None,
+            scale: current_scale,
         });
     }
 

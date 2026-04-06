@@ -112,7 +112,7 @@ pub async fn fetch_dxvk_releases() -> Result<Vec<DxvkRelease>, String> {
 
     let client = reqwest::Client
         ::builder()
-        .user_agent("penguin-citizen/0.4.4")
+        .user_agent("penguin-citizen/0.4.9")
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -253,7 +253,7 @@ pub async fn install_dxvk(
     // --- Download phase ---
     let client = reqwest::Client
         ::builder()
-        .user_agent("penguin-citizen/0.4.4")
+        .user_agent("penguin-citizen/0.4.9")
         .connect_timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());

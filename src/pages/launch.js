@@ -53,6 +53,7 @@ let launchLog = [];
 let installStatus = null;
 /** @type {Array} Detected monitors for the Wayland monitor selection */
 let detectedMonitors = [];
+let monitorsReady = false;
 /** @type {Function|null} Unlisten function for log events from the backend */
 let unlistenLaunchLog = null;
 /** @type {Function|null} Unlisten function for the "game started" event */
@@ -144,7 +145,7 @@ const BUILTIN_ENV_VARS = new Set([
   'WINEESYNC', 'WINEFSYNC', 'DXVK_ASYNC',
   'PROTON_ENABLE_HDR', 'DXVK_HDR', 'PROTON_FSR4_UPGRADE',
   'MANGOHUD', 'DXVK_HUD',
-  'PROTON_ENABLE_WAYLAND', 'WAYLANDDRV_PRIMARY_MONITOR',
+  'PROTON_ENABLE_WAYLAND', 'WAYLANDDRV_PRIMARY_MONITOR', 'PROTON_WAYLAND_MONITOR',
   'WINEPREFIX', 'WINEDLLOVERRIDES', 'WINEDEBUG', 'DISPLAY',
   '__GL_SHADER_DISK_CACHE', '__GL_SHADER_DISK_CACHE_SIZE',
   '__GL_SHADER_DISK_CACHE_PATH', '__GL_SHADER_DISK_CACHE_SKIP_CLEANUP',
@@ -187,6 +188,7 @@ export function requestAutoLaunch() {
  */
 export function renderLaunch(container) {
   launchStatus = 'checking';
+  monitorsReady = false;
   // Carry over logs from the installation process, if available
   launchLog = window._starControlLaunchLogs ? [...window._starControlLaunchLogs] : [];
   // Clear stored logs after loading
@@ -205,15 +207,14 @@ async function loadAndCheck(container) {
   // Detect monitors in parallel (does not block the main flow)
   invoke('detect_monitors').then(monitors => {
     detectedMonitors = monitors || [];
-    updateMonitorSelect();
-    // Automatically disable Wayland when fractional scaling is detected
-    if (hasFractionalScaling()) {
-      if (launchConfig?.performance?.wayland) {
-        launchConfig.performance.wayland = false;
-      }
-      renderPage(container);
-    }
-  }).catch(err => { console.warn('Monitor detection failed:', err); detectedMonitors = []; });
+    monitorsReady = true;
+    renderPage(container);
+  }).catch(err => {
+    console.warn('Monitor detection failed:', err);
+    detectedMonitors = [];
+    monitorsReady = true;
+    renderPage(container);
+  });
 
   // Detect GPU vendor for section greying
   invoke('detect_gpu_vendor').then(gpu => {
@@ -569,6 +570,15 @@ function renderCardBody(card, disabled) {
  * Renders the Wayland card body content.
  */
 function renderWaylandCardBody(disabled, perf) {
+  if (!monitorsReady) {
+    return `
+      <div class="dash-skeleton">
+        <div class="dash-skeleton-line medium"></div>
+        <div class="dash-skeleton-line short"></div>
+      </div>
+    `;
+  }
+
   const fractional = hasFractionalScaling();
   const waylandTooltip = fractional
     ? t('launch:tooltip.waylandFractional')
@@ -676,14 +686,29 @@ function renderMonitorSelect(disabled, perf) {
 
   let selectHtml;
   if (detectedMonitors.length > 0) {
+    // Pre-select: saved value > primary monitor > first monitor
+    let preselected = perf.primary_monitor;
+    if (!preselected || !detectedMonitors.some(m => m.name === preselected)) {
+      const primary = detectedMonitors.find(m => m.primary);
+      preselected = primary ? primary.name : detectedMonitors[0].name;
+    }
     const options = detectedMonitors.map(m => {
       const label = `${m.name}${m.resolution ? ' (' + m.resolution : ''}${m.primary ? ', ' + t('launch:monitor.primary') + ')' : m.resolution ? ')' : ''}`;
-      const selected = perf.primary_monitor === m.name ? 'selected' : '';
+      const selected = preselected === m.name ? 'selected' : '';
       return `<option value="${escapeHtml(m.name)}" ${selected}>${escapeHtml(label)}</option>`;
     }).join('');
     selectHtml = `<select class="input launch-monitor-input" id="launch-monitor-select" ${!hasMonitor || disabled ? 'disabled' : ''}>${options}</select>`;
   } else {
-    selectHtml = `<input type="text" class="input launch-monitor-input" id="launch-monitor-input" value="${escapeHtml(perf.primary_monitor || '')}" placeholder="${t('launch:placeholder.monitorInput')}" ${!hasMonitor || disabled ? 'disabled' : ''} />`;
+    // No monitors detected — disabled dropdown with explanation + fallback input
+    selectHtml = `
+      <select class="input launch-monitor-input" disabled>
+        <option>${t('launch:label.monitorDetectionFailed')}</option>
+      </select>
+      <input type="text" class="input launch-monitor-input launch-monitor-fallback" id="launch-monitor-input"
+        value="${escapeHtml(perf.primary_monitor || '')}"
+        placeholder="${t('launch:placeholder.monitorInput')}"
+        ${!hasMonitor || disabled ? 'disabled' : ''} />
+    `;
   }
 
   return `
@@ -699,30 +724,9 @@ function renderMonitorSelect(disabled, perf) {
   `;
 }
 
-/**
- * Updates the monitor dropdown after asynchronous monitor detection.
- * Replaces the wrap content with the detected monitors.
- */
-function updateMonitorSelect() {
-  const wrap = document.getElementById('launch-monitor-wrap');
-  if (!wrap || detectedMonitors.length === 0) return;
-
-  const perf = launchConfig?.performance || {};
-  const hasMonitor = !!perf.primary_monitor;
-  const disabled = launchStatus === 'launching' || launchStatus === 'running' || launchStatus === 'not_installed' || launchStatus === 'checking';
-
-  const options = detectedMonitors.map(m => {
-    const label = `${m.name}${m.resolution ? ' (' + m.resolution : ''}${m.primary ? ', ' + t('launch:monitor.primary') + ')' : m.resolution ? ')' : ''}`;
-    const selected = perf.primary_monitor === m.name ? 'selected' : '';
-    return `<option value="${escapeHtml(m.name)}" ${selected}>${escapeHtml(label)}</option>`;
-  }).join('');
-
-  wrap.innerHTML = `<select class="input launch-monitor-input" id="launch-monitor-select" ${!hasMonitor || disabled ? 'disabled' : ''}>${options}</select>`;
-  bindMonitorSelectListener();
-}
-
-/** Binds change events to the monitor dropdown or input field */
-function bindMonitorSelectListener() {
+/** Binds change events to the monitor dropdown or fallback input field.
+ * Called from bindEvents() after each render. */
+function bindMonitorListeners() {
   const select = document.getElementById('launch-monitor-select');
   if (select) {
     select.addEventListener('change', () => {
@@ -889,6 +893,9 @@ function bindEvents(container) {
     });
   }
 
+  // Monitor dropdown / fallback input listeners
+  bindMonitorListeners();
+
   // GPU device filter dropdown
   const gpuFilter = document.getElementById('launch-gpu-filter');
   if (gpuFilter) {
@@ -970,7 +977,6 @@ function bindEvents(container) {
     });
   }
 
-  bindMonitorSelectListener();
   bindEnvVarEvents(container);
 }
 
@@ -1192,7 +1198,11 @@ function cleanup() {
  * @returns {boolean} true if at least one monitor uses fractional scaling
  */
 function hasFractionalScaling() {
-  return detectedMonitors.some(m => m.scale != null && Math.abs(m.scale - 1.0) > 0.01);
+  return detectedMonitors.some(m => {
+    if (m.scale == null || m.scale <= 0) return false;
+    // Integer scales (1.0, 2.0, 3.0) are fine; only fractional values (1.25, 1.5) block Wayland
+    return Math.abs(m.scale - Math.round(m.scale)) > 0.01;
+  });
 }
 
 // --- Pre-launch Localization Check ---

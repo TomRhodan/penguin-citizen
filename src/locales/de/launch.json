@@ -26,6 +26,7 @@
   "label.none": "Keiner",
   "label.enableWayland": "Wayland aktivieren",
   "label.waylandMonitor": "Wayland-Monitor",
+  "label.monitorDetectionFailed": "Erkennung fehlgeschlagen",
   "label.infoCardTitle": "Aktive Konfiguration",
 
   "tooltip.esync": "Eventfd-basierte Synchronisierung - reduziert CPU-Last in Wine",
@@ -36,7 +37,7 @@
   "tooltip.mangohud": "Bildschirm-Overlay fuer Leistungsdaten (FPS, CPU, GPU, RAM)",
   "tooltip.dxvkHud": "DXVK-spezifisches Overlay mit Draw Calls und Compiler-Aktivitaet",
   "tooltip.wayland": "Wayland-Protokollunterstuetzung in Wine aktivieren",
-  "tooltip.waylandFractional": "Fraktionale Skalierung erkannt - Wayland-Modus ist nicht kompatibel und wurde deaktiviert. Setze alle Monitore auf 100% Skalierung, um diese Option zu nutzen.",
+  "tooltip.waylandFractional": "Fraktionale Skalierung erkannt - Wayland-Modus ist nicht kompatibel mit fraktionaler Skalierung. Setze alle Monitore auf ganzzahlige Skalierung (100%, 200%), um diese Option zu nutzen.",
   "tooltip.waylandMonitor": "Spiel auf einen bestimmten Wayland-Ausgang erzwingen. Erfordert einen GE-Proton- oder Mactan-Runner mit WAYLANDDRV_PRIMARY_MONITOR-Unterstuetzung.",
   "tooltip.envVarConflict": "Diese Variable ueberschreibt eine eingebaute Einstellung",
   "tooltip.removeVariable": "Variable entfernen",
