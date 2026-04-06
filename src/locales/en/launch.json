@@ -39,6 +39,7 @@
   "tooltip.wayland": "Enable Wayland protocol support in Wine",
   "tooltip.waylandFractional": "Fractional scaling detected - Wayland mode is not compatible with fractional scaling. Set all monitors to integer scaling (100%, 200%) to use this option.",
   "tooltip.waylandMonitor": "Force game to a specific Wayland output. Requires a GE-Proton or Mactan runner with WAYLANDDRV_PRIMARY_MONITOR support.",
+  "tooltip.monitorRefresh": "Re-detect monitors",
   "tooltip.envVarConflict": "This variable overrides a built-in setting",
   "tooltip.removeVariable": "Remove variable",
 

@@ -188,7 +188,8 @@ export function requestAutoLaunch() {
  */
 export function renderLaunch(container) {
   launchStatus = 'checking';
-  monitorsReady = false;
+  // Keep monitorsReady true if we already have cached monitor data
+  if (detectedMonitors.length === 0) monitorsReady = false;
   // Carry over logs from the installation process, if available
   launchLog = window._starControlLaunchLogs ? [...window._starControlLaunchLogs] : [];
   // Clear stored logs after loading
@@ -204,22 +205,28 @@ export function renderLaunch(container) {
  * @param {HTMLElement} container - DOM container for re-rendering
  */
 async function loadAndCheck(container) {
-  // Detect monitors in parallel (does not block the main flow).
-  // If CLI-based detection returns no results (e.g. in AppImage sandboxes),
-  // fall back to Tauri's built-in monitor API via get_display_info.
-  invoke('detect_monitors').then(async (monitors) => {
-    detectedMonitors = monitors || [];
-    if (detectedMonitors.length === 0) {
+  // Reuse cached monitor data if available (survives page re-navigation).
+  // Only re-detect on first load or after app restart.
+  if (detectedMonitors.length > 0) {
+    monitorsReady = true;
+  } else {
+    // Detect monitors in parallel (does not block the main flow).
+    // If CLI-based detection returns no results (e.g. in AppImage sandboxes),
+    // fall back to Tauri's built-in monitor API via get_display_info.
+    invoke('detect_monitors').then(async (monitors) => {
+      detectedMonitors = monitors || [];
+      if (detectedMonitors.length === 0) {
+        detectedMonitors = await detectMonitorsFallback();
+      }
+      monitorsReady = true;
+      renderPage(container);
+    }).catch(async (err) => {
+      console.warn('Monitor detection failed:', err);
       detectedMonitors = await detectMonitorsFallback();
-    }
-    monitorsReady = true;
-    renderPage(container);
-  }).catch(async (err) => {
-    console.warn('Monitor detection failed:', err);
-    detectedMonitors = await detectMonitorsFallback();
-    monitorsReady = true;
-    renderPage(container);
-  });
+      monitorsReady = true;
+      renderPage(container);
+    });
+  }
 
   // Detect GPU vendor for section greying
   invoke('detect_gpu_vendor').then(gpu => {
@@ -725,6 +732,10 @@ function renderMonitorSelect(disabled, perf) {
       <div class="launch-monitor-select-wrap ${!hasMonitor ? 'disabled' : ''}" id="launch-monitor-wrap">
         ${selectHtml}
       </div>
+      <button class="btn-icon btn-monitor-refresh" id="btn-monitor-refresh"
+        ${disabled ? 'disabled' : ''}
+        data-tooltip="${t('launch:tooltip.monitorRefresh')}" data-tooltip-pos="bottom"
+        title="${t('launch:tooltip.monitorRefresh')}">&#x21bb;</button>
     </div>
   `;
 }
@@ -743,6 +754,10 @@ function bindMonitorListeners() {
     input.addEventListener('input', () => {
       if (launchConfig) launchConfig.performance.primary_monitor = input.value.trim() || null;
     });
+  }
+  const refreshBtn = document.getElementById('btn-monitor-refresh');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => refreshMonitors(refreshBtn));
   }
 }
 
@@ -1193,6 +1208,34 @@ function cleanup() {
   if (unlistenLaunchLog) { unlistenLaunchLog(); unlistenLaunchLog = null; }
   if (unlistenLaunchStarted) { unlistenLaunchStarted(); unlistenLaunchStarted = null; }
   if (unlistenLaunchExited) { unlistenLaunchExited(); unlistenLaunchExited = null; }
+}
+
+// --- Monitor Refresh ---
+
+/**
+ * Re-runs monitor detection (clears cache) and re-renders the Wayland card.
+ * Triggered by the refresh button next to the monitor dropdown.
+ * @param {HTMLElement} btn - The refresh button element (for spinner feedback)
+ */
+async function refreshMonitors(btn) {
+  const container = document.getElementById('content');
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  try {
+    let monitors = [];
+    try {
+      monitors = await invoke('detect_monitors') || [];
+    } catch (_) { /* ignore */ }
+    if (monitors.length === 0) {
+      monitors = await detectMonitorsFallback();
+    }
+    detectedMonitors = monitors;
+    monitorsReady = true;
+    if (container) renderPage(container);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('spinning');
+  }
 }
 
 // --- Monitor Detection Fallback ---
