@@ -44,6 +44,27 @@ pub struct CustomEnvVar {
     pub enabled: bool,
 }
 
+/// Gamescope compositor settings for wrapping the Wine launch command.
+///
+/// When enabled, the game is launched inside gamescope with the specified flags.
+/// Gamescope provides HDR support, resolution scaling, and cursor capture.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct GamescopeSettings {
+    /// Whether to wrap the launch command with gamescope
+    pub enabled: bool,
+    /// Output width (-W flag)
+    pub width: Option<u32>,
+    /// Output height (-H flag)
+    pub height: Option<u32>,
+    /// Enable HDR pass-through (--hdr-enabled)
+    pub hdr: bool,
+    /// Force cursor grab (--force-grab-cursor)
+    pub force_grab_cursor: bool,
+    /// Grab keyboard input (-g)
+    pub keyboard_grab: bool,
+}
+
 /// Performance settings for Wine/Star Citizen execution.
 ///
 /// These settings control various Wine features, overlays, and
@@ -71,6 +92,42 @@ pub struct PerformanceSettings {
     pub primary_monitor: Option<String>,
     /// Custom environment variables that are additionally set
     pub custom_env_vars: Vec<CustomEnvVar>,
+
+    // --- GPU Selection ---
+    /// DXVK_FILTER_DEVICE_NAME - force a specific GPU on hybrid systems
+    pub gpu_device_filter: Option<String>,
+
+    // --- NVIDIA ---
+    /// Enable DLSS 4.0 (sets 6 DXVK_NVAPI env vars)
+    pub nvidia_dlss: bool,
+    /// Enable Smooth Motion (NVPRESENT_ENABLE_SMOOTH_MOTION + QUEUE_FAMILY)
+    pub nvidia_smooth_motion: bool,
+    /// Enable G-Sync latency optimization (__GL_GSYNC_ALLOWED + __GL_MaxFramesAllowed)
+    pub nvidia_gsync: bool,
+
+    // --- AMD ---
+    /// Fix flickering lights on panel edges (radv_zero_vram=true)
+    pub amd_radv_zero_vram: bool,
+    /// Fix framerate drops on <8GB VRAM cards (RADV_PERFTEST=nogttspill)
+    pub amd_nogttspill: bool,
+
+    // --- Troubleshooting ---
+    /// Pass --in-process-gpu CLI arg to RSI Launcher (fixes black/white window)
+    pub in_process_gpu: bool,
+    /// Set MESA_VK_WSI_PRESENT_MODE=mailbox (fixes Vulkan assertion crashes)
+    pub vulkan_mailbox: bool,
+    /// Set ENABLE_HDR_WSI=1 (HDR layer for NVIDIA without color manager)
+    pub enable_hdr_wsi: bool,
+    /// WINE_CPU_TOPOLOGY for multi-die CPUs (e.g. "16:0,1,2,...,15")
+    pub wine_cpu_topology: Option<String>,
+
+    // --- Performance ---
+    /// Wrap launch command with gamemoderun (Feral GameMode)
+    pub gamemode: bool,
+
+    // --- Gamescope ---
+    /// Gamescope compositor settings
+    pub gamescope: GamescopeSettings,
 }
 
 /// Defaults: esync, fsync, dxvk_async, and Wayland are enabled,
@@ -88,6 +145,18 @@ impl Default for PerformanceSettings {
             fsr: false,
             primary_monitor: None,
             custom_env_vars: vec![],
+            gpu_device_filter: None,
+            nvidia_dlss: false,
+            nvidia_smooth_motion: false,
+            nvidia_gsync: false,
+            amd_radv_zero_vram: false,
+            amd_nogttspill: false,
+            in_process_gpu: false,
+            vulkan_mailbox: false,
+            enable_hdr_wsi: false,
+            wine_cpu_topology: None,
+            gamemode: false,
+            gamescope: GamescopeSettings::default(),
         }
     }
 }
