@@ -545,6 +545,9 @@ pub fn run() {
                 installer::is_game_running,
                 installer::launch_game,
                 installer::stop_game,
+                installer::repair_installation,
+                installer::check_repair_backup,
+                installer::delete_repair_backup,
 
                 // Star Citizen configuration and profile management
                 sc_config::read_user_cfg,

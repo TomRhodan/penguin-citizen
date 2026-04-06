@@ -33,6 +33,8 @@
   "button.openFolder": "Open Folder",
   "button.updateTranslation": "Update Translation",
   "button.manageRunners": "Manage Runners",
+  "button.repairInstallation": "Repair Installation",
+  "button.deleteBackup": "Delete Backup",
   "button.retry": "Retry",
   "button.period7d": "7d",
   "button.period30d": "30d",
@@ -47,5 +49,12 @@
   "server.operational": "Operational",
   "server.degraded": "Degraded",
   "server.majorOutage": "Major Outage",
-  "server.unknown": "Unknown"
+  "server.unknown": "Unknown",
+
+  "repair.confirmTitle": "Repair Installation",
+  "repair.confirmMessage": "This will create a fresh Wine environment and reinstall the RSI Launcher. Your Star Citizen game data (LIVE, PTU, etc.) will be preserved. The current installation will be kept as a backup until you delete it.\n\nThis process takes several minutes.",
+  "repair.backupBanner": "A repair backup exists at {{path}} ({{size}}). If everything works, you can delete it.",
+  "repair.deleteConfirm": "Are you sure you want to permanently delete this repair backup? This cannot be undone.",
+  "repair.moveWarning": "Could not move Star Citizen game data automatically. Please copy the StarCitizen folder manually from the backup.",
+  "repair.tooltip": "Creates a fresh Wine environment and reinstalls the RSI Launcher while preserving your game data"
 }

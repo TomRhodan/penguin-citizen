@@ -6051,6 +6051,32 @@
   padding-top: 10px;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Repair backup banner */
+.dash-repair-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
+  font-size: 0.85rem;
+}
+
+.dash-repair-banner-icon {
+  font-size: 1.2rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.dash-repair-banner-text {
+  flex: 1;
+  color: var(--text-secondary);
+  word-break: break-all;
 }
 
 /* Launch card */

@@ -34,7 +34,7 @@ use crate::config::{ AppConfig, PerformanceSettings };
 use crate::runners::resolve_wine_bin;
 use serde::{ Deserialize, Serialize };
 use std::io::{ BufRead, BufReader };
-use std::path::Path;
+use std::path::{ Path, PathBuf };
 use std::process::{ Command, Stdio };
 use std::sync::atomic::{ AtomicBool, Ordering };
 use std::sync::Mutex;
@@ -1590,4 +1590,235 @@ pub fn is_game_running() -> bool {
     GAME_PID.lock()
         .map(|guard| guard.is_some())
         .unwrap_or(false)
+}
+
+// ── Launcher Repair ──────────────────────────────────────────────────
+
+/// Information about an existing repair backup.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RepairBackupInfo {
+    /// Full path to the backup directory
+    pub path: String,
+    /// Total size in bytes (approximate, top-level only for speed)
+    pub size_bytes: u64,
+    /// Timestamp extracted from the folder name (e.g. "20260406_143022")
+    pub created: String,
+}
+
+/// Repairs a broken RSI Launcher installation by performing a
+/// rename-reinstall-move cycle:
+///
+/// 1. Kill wineserver to clean up orphaned processes
+/// 2. Rename the current Wine prefix to a timestamped backup
+/// 3. Run a full fresh installation in the original path
+/// 4. Move the Star Citizen game data from the backup into the new prefix
+///
+/// On failure during step 3, the backup is renamed back (rollback).
+/// Returns the backup path on success so the frontend can offer cleanup.
+#[tauri::command]
+pub async fn repair_installation(app: AppHandle) -> Result<String, String> {
+    // Load config to get install_path and runner
+    let config = crate::config::load_config().await
+        .map_err(|e| format!("Failed to load config: {}", e))?
+        .ok_or("No configuration found")?;
+
+    let install_path = expand_tilde(&config.install_path);
+
+    // ── Preconditions ──
+    if is_game_running() {
+        return Err("Cannot repair while the game is running. Please stop it first.".into());
+    }
+
+    let status = check_installation(config.clone());
+    if !status.installed {
+        return Err("No complete installation found to repair.".into());
+    }
+
+    // ── Step 1: Kill wineserver ──
+    emit_progress(&app, "repair-prepare", "Stopping Wine processes...", 0.0, "Killing wineserver...");
+    let runner_name = config.selected_runner.as_deref().ok_or("No runner selected")?;
+    let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
+    if let Some(wine) = resolve_wine_bin(&runner_dir) {
+        let wineserver = wine.with_file_name("wineserver");
+        if wineserver.exists() {
+            let _ = Command::new(wineserver.to_string_lossy().as_ref())
+                .arg("-k")
+                .env("WINEPREFIX", &install_path)
+                .output();
+        }
+    }
+
+    // ── Step 2: Rename prefix to backup ──
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let install_dir = PathBuf::from(&install_path);
+    let parent = install_dir.parent()
+        .ok_or("Cannot determine parent directory of install path")?;
+    let dir_name = install_dir.file_name()
+        .ok_or("Cannot determine directory name of install path")?
+        .to_string_lossy();
+    let backup_name = format!("{}_repair_backup_{}", dir_name, timestamp);
+    let backup_path = parent.join(&backup_name);
+
+    emit_progress(&app, "repair-rename", "Creating backup of current installation...", 2.0,
+        &format!("Renaming {} -> {}", install_dir.display(), backup_path.display()));
+
+    std::fs::rename(&install_dir, &backup_path)
+        .map_err(|e| format!("Failed to rename prefix to backup: {}", e))?;
+
+    // ── Step 3: Full reinstallation ──
+    emit_progress(&app, "repair-reinstall", "Starting fresh installation...", 5.0,
+        "Running full installation in original path...");
+
+    let install_result = run_installation(app.clone(), config.clone()).await;
+
+    if let Err(ref err) = install_result {
+        // Rollback: rename backup back to original path
+        emit_progress(&app, "repair-rollback", "Installation failed, rolling back...", 0.0,
+            &format!("Rolling back: {} -> {}", backup_path.display(), install_dir.display()));
+
+        if let Err(rollback_err) = std::fs::rename(&backup_path, &install_dir) {
+            return Err(format!(
+                "Installation failed: {}. Rollback also failed: {}. Backup is at: {}",
+                err, rollback_err, backup_path.display()
+            ));
+        }
+        return Err(format!("Installation failed (rolled back): {}", err));
+    }
+
+    // ── Step 4: Move Star Citizen game data ──
+    let sc_folder_name = "StarCitizen";
+    let rsi_base = PathBuf::from("drive_c")
+        .join("Program Files")
+        .join("Roberts Space Industries");
+    let sc_src = backup_path.join(&rsi_base).join(sc_folder_name);
+    let sc_dst = install_dir.join(&rsi_base).join(sc_folder_name);
+
+    if sc_src.exists() {
+        emit_progress(&app, "repair-move", "Restoring Star Citizen game data...", 98.0,
+            &format!("Moving {} -> {}", sc_src.display(), sc_dst.display()));
+
+        // Remove the empty SC dir in the new install if it exists
+        if sc_dst.exists() {
+            let _ = std::fs::remove_dir_all(&sc_dst);
+        }
+
+        if let Err(e) = std::fs::rename(&sc_src, &sc_dst) {
+            // Non-fatal: installation works, just game data needs manual move
+            log::warn!("Failed to move StarCitizen folder: {}. User must move manually from backup.", e);
+            emit_progress(&app, "repair-move", "Warning: Could not move game data automatically", 99.0,
+                &format!("Manual move needed from: {}", sc_src.display()));
+        } else {
+            emit_progress(&app, "repair-move", "Game data restored successfully", 99.0,
+                "StarCitizen folder moved to new installation");
+        }
+    } else {
+        emit_progress(&app, "repair-move", "No Star Citizen game data found in backup", 99.0,
+            "Skipping game data migration (no StarCitizen folder in backup)");
+    }
+
+    emit_progress(&app, "complete", "Repair completed successfully", 100.0,
+        &format!("Backup saved at: {}", backup_path.display()));
+
+    Ok(backup_path.to_string_lossy().to_string())
+}
+
+/// Checks whether a repair backup exists next to the installation directory.
+/// Returns info about the most recent backup if found.
+#[tauri::command]
+pub async fn check_repair_backup(install_path: String) -> Result<Option<RepairBackupInfo>, String> {
+    let install_path = expand_tilde(&install_path);
+    let install_dir = PathBuf::from(&install_path);
+    let parent = install_dir.parent()
+        .ok_or("Cannot determine parent directory")?;
+    let dir_name = install_dir.file_name()
+        .ok_or("Cannot determine directory name")?
+        .to_string_lossy();
+
+    let prefix = format!("{}_repair_backup_", dir_name);
+
+    let mut best: Option<RepairBackupInfo> = None;
+
+    if let Ok(entries) = std::fs::read_dir(parent) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with(&prefix) {
+                continue;
+            }
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let timestamp = name.strip_prefix(&prefix).unwrap_or("").to_string();
+
+            // Calculate approximate size (non-recursive for speed)
+            let size = dir_size_approx(&entry.path());
+
+            let info = RepairBackupInfo {
+                path: entry.path().to_string_lossy().to_string(),
+                size_bytes: size,
+                created: timestamp.clone(),
+            };
+
+            // Keep the most recent backup (lexicographic comparison on timestamp)
+            if best.as_ref().is_none_or(|b| timestamp > b.created) {
+                best = Some(info);
+            }
+        }
+    }
+
+    Ok(best)
+}
+
+/// Deletes a repair backup directory after validation.
+/// Safety checks prevent misuse (path must contain `_repair_backup_`
+/// and must be in the same parent directory as the install path).
+#[tauri::command]
+pub async fn delete_repair_backup(backup_path: String, install_path: String) -> Result<(), String> {
+    let install_path = expand_tilde(&install_path);
+    let backup = PathBuf::from(&backup_path);
+    let install_dir = PathBuf::from(&install_path);
+
+    // Validation: backup name must contain the marker
+    let backup_name = backup.file_name()
+        .ok_or("Invalid backup path")?
+        .to_string_lossy();
+    if !backup_name.contains("_repair_backup_") {
+        return Err("Invalid backup path: does not look like a repair backup.".into());
+    }
+
+    // Validation: same parent directory
+    let backup_parent = backup.parent().ok_or("Cannot determine backup parent")?;
+    let install_parent = install_dir.parent().ok_or("Cannot determine install parent")?;
+    if backup_parent != install_parent {
+        return Err("Invalid backup path: not in the same directory as the installation.".into());
+    }
+
+    // Validation: must exist and be a directory
+    if !backup.is_dir() {
+        return Err("Backup directory does not exist.".into());
+    }
+
+    log::info!("Deleting repair backup: {}", backup.display());
+    tokio::fs::remove_dir_all(&backup).await
+        .map_err(|e| format!("Failed to delete backup: {}", e))?;
+
+    Ok(())
+}
+
+/// Calculates the approximate size of a directory (recursive).
+/// Returns 0 on errors rather than failing.
+fn dir_size_approx(path: &Path) -> u64 {
+    let mut total: u64 = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let ft = entry.file_type();
+            if let Ok(ft) = ft {
+                if ft.is_file() {
+                    total += entry.metadata().map(|m| m.len()).unwrap_or(0);
+                } else if ft.is_dir() {
+                    total += dir_size_approx(&entry.path());
+                }
+            }
+        }
+    }
+    total
 }

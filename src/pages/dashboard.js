@@ -32,7 +32,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { router } from '../router.js';
 import { requestAutoLaunch } from './launch.js';
+import { setRepairMode } from './installation.js';
 import { escapeHtml } from '../utils.js';
+import { confirm } from '../utils/dialogs.js';
 import { t } from '../i18n.js';
 
 // ── Module-wide State ──────────────────────────────
@@ -47,6 +49,8 @@ let dashLocStatus = null;
 let dashLocUpdate = null;
 /** @type {string|null} Detected SC version (e.g., "LIVE", "PTU") */
 let dashScVersion = null;
+/** @type {Object|null} Repair backup info: { path, size_bytes, created } */
+let dashRepairBackup = null;
 
 /** @type {Array|null} Full community statistics history from backend (up to 30 days) */
 let statsHistoryData = null;
@@ -80,6 +84,7 @@ export function renderDashboard(container) {
       <h1>${t('dashboard:title')}</h1>
       <p class="page-subtitle">${t('dashboard:subtitle')}</p>
     </div>
+    <div id="dash-repair-banner"></div>
     <div class="dash-status-row" id="dash-status-row">
       ${renderStatusSkeleton()}
     </div>
@@ -269,7 +274,17 @@ async function loadLocalStatus() {
     }
   }
 
+  // Check for repair backups
+  if (dashConfig?.install_path) {
+    try {
+      dashRepairBackup = await invoke('check_repair_backup', { installPath: dashConfig.install_path });
+    } catch {
+      dashRepairBackup = null;
+    }
+  }
+
   renderStatusCards();
+  renderRepairBanner();
 
   // Cache local state when config loaded successfully — skip on failure
   if (dashConfig) {
@@ -302,6 +317,57 @@ function renderStatusCards() {
     renderLaunchCard({ installed });
 
   bindStatusCardEvents({ installed, installPath, runnerName });
+}
+
+/**
+ * Renders the repair backup banner if a backup exists.
+ * Shows the backup path, size, and a delete button.
+ */
+function renderRepairBanner() {
+  const banner = document.getElementById('dash-repair-banner');
+  if (!banner) return;
+
+  if (!dashRepairBackup) {
+    banner.innerHTML = '';
+    return;
+  }
+
+  const sizeGB = (dashRepairBackup.size_bytes / (1024 * 1024 * 1024)).toFixed(1);
+  const msg = t('dashboard:repair.backupBanner', {
+    path: dashRepairBackup.path,
+    size: `${sizeGB} GB`,
+  });
+
+  banner.innerHTML = `
+    <div class="dash-repair-banner">
+      <span class="dash-repair-banner-icon">&#9432;</span>
+      <span class="dash-repair-banner-text">${escapeHtml(msg)}</span>
+      <button class="btn btn-sm btn-danger" id="dash-delete-backup">${t('dashboard:button.deleteBackup')}</button>
+    </div>
+  `;
+
+  const deleteBtn = document.getElementById('dash-delete-backup');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      const ok = await confirm(t('dashboard:repair.deleteConfirm'), {
+        title: t('dashboard:button.deleteBackup'),
+        kind: 'danger',
+        okLabel: t('dashboard:button.deleteBackup'),
+      });
+      if (!ok) return;
+      deleteBtn.disabled = true;
+      try {
+        await invoke('delete_repair_backup', {
+          backupPath: dashRepairBackup.path,
+          installPath: dashConfig.install_path,
+        });
+        dashRepairBackup = null;
+        renderRepairBanner();
+      } catch (e) {
+        deleteBtn.disabled = false;
+      }
+    });
+  }
 }
 
 /**
@@ -359,6 +425,7 @@ function renderScCard({ installed, installPath }) {
       <div class="dash-card-actions">
         ${installPath ? `<button class="btn btn-sm" id="dash-open-folder">${t('dashboard:button.openFolder')}</button>` : ''}
         ${dashLocUpdate?.update_available ? `<button class="btn btn-sm dash-btn-update" id="dash-loc-update">${t('dashboard:button.updateTranslation')}</button>` : ''}
+        ${installed ? `<button class="btn btn-sm" id="dash-repair-install" title="${escapeHtml(t('dashboard:repair.tooltip'))}">${t('dashboard:button.repairInstallation')}</button>` : ''}
       </div>
     </div>`;
 }
@@ -465,6 +532,22 @@ function bindStatusCardEvents({ installed, installPath }) {
   const runnersBtn = document.getElementById('dash-manage-runners');
   if (runnersBtn) {
     runnersBtn.addEventListener('click', () => router.navigate('runners'));
+  }
+
+  // Repair installation: confirm, then navigate to installation page in repair mode
+  const repairBtn = document.getElementById('dash-repair-install');
+  if (repairBtn && installed) {
+    repairBtn.addEventListener('click', async () => {
+      const ok = await confirm(t('dashboard:repair.confirmMessage'), {
+        title: t('dashboard:repair.confirmTitle'),
+        kind: 'warning',
+        okLabel: t('dashboard:repair.confirmTitle'),
+      });
+      if (ok) {
+        setRepairMode(true);
+        router.navigate('installation');
+      }
+    });
   }
 
   // Perform localization update directly from the dashboard

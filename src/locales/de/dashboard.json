@@ -33,6 +33,8 @@
   "button.openFolder": "Ordner oeffnen",
   "button.updateTranslation": "Uebersetzung aktualisieren",
   "button.manageRunners": "Runner verwalten",
+  "button.repairInstallation": "Installation reparieren",
+  "button.deleteBackup": "Backup loeschen",
   "button.retry": "Erneut versuchen",
   "button.period7d": "7T",
   "button.period30d": "30T",
@@ -47,5 +49,12 @@
   "server.operational": "Betriebsbereit",
   "server.degraded": "Eingeschraenkt",
   "server.majorOutage": "Schwerer Ausfall",
-  "server.unknown": "Unbekannt"
+  "server.unknown": "Unbekannt",
+
+  "repair.confirmTitle": "Installation reparieren",
+  "repair.confirmMessage": "Dies erstellt eine frische Wine-Umgebung und installiert den RSI Launcher neu. Deine Star Citizen Spieldaten (LIVE, PTU, etc.) werden uebernommen. Die aktuelle Installation wird als Backup aufbewahrt, bis du es loeschst.\n\nDieser Vorgang dauert einige Minuten.",
+  "repair.backupBanner": "Ein Reparatur-Backup existiert unter {{path}} ({{size}}). Wenn alles funktioniert, kannst du es loeschen.",
+  "repair.deleteConfirm": "Bist du sicher, dass du dieses Reparatur-Backup unwiderruflich loeschen moechtest?",
+  "repair.moveWarning": "Die Star Citizen Spieldaten konnten nicht automatisch verschoben werden. Bitte kopiere den StarCitizen-Ordner manuell aus dem Backup.",
+  "repair.tooltip": "Erstellt eine frische Wine-Umgebung und installiert den RSI Launcher neu, wobei deine Spieldaten erhalten bleiben"
 }

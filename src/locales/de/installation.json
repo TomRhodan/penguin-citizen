@@ -119,6 +119,10 @@
   "phase.download": "RSI Launcher herunterladen",
   "phase.install": "RSI Launcher installieren",
   "phase.launch": "RSI Launcher starten",
+  "phase.repairPrepare": "Wine-Prozesse beenden",
+  "phase.repairRename": "Aktuelle Installation sichern",
+  "phase.repairReinstall": "Neuinstallation (frisch)",
+  "phase.repairMove": "Spieldaten wiederherstellen",
 
   "desc.installHint": "Dies erstellt ein Wine-Prefix, installiert erforderliche Komponenten (Winetricks, DXVK, PowerShell) und laedt den RSI Launcher herunter und installiert ihn.",
 
