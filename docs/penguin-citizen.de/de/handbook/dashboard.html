@@ -63,10 +63,21 @@
           <h2>Statuskarten</h2>
           <p>Die obere Reihe zeigt drei Statuskarten fuer einen schnellen Ueberblick:</p>
           <ul>
-            <li><strong>Star Citizen Installation</strong> - Zeigt deinen Installationspfad und die erkannte Sprache. Ein gelber Indikator bedeutet, dass ein Uebersetzungsupdate verfuegbar ist; gruen bedeutet, alles ist aktuell. Mit "Ordner oeffnen" gelangst du schnell zum Installationsverzeichnis.</li>
+            <li><strong>Star Citizen Installation</strong> - Zeigt deinen Installationspfad und die erkannte Sprache. Ein gelber Indikator bedeutet, dass ein Uebersetzungsupdate verfuegbar ist; gruen bedeutet, alles ist aktuell. Mit "Ordner oeffnen" gelangst du schnell zum Installationsverzeichnis. Der Button <strong>"Installation reparieren"</strong> startet die Reparaturfunktion (siehe unten).</li>
             <li><strong>Wine Runner</strong> - Zeigt den aktuell ausgewaehlten Wine/Proton Runner und seinen Status (bereit, nicht konfiguriert oder fehlend).</li>
             <li><strong>Start</strong> - Ein prominenter Button zum direkten Starten von Star Citizen vom Dashboard aus. Deaktiviert, wenn das Spiel nicht vollstaendig installiert ist.</li>
           </ul>
+
+          <h2>Installations-Reparatur</h2>
+          <p>Wenn der RSI Launcher nicht mehr korrekt startet oder beschaedigt ist, bietet Penguin Citizen eine Ein-Klick-Reparaturfunktion. Der Button "Installation reparieren" auf der Installations-Statuskarte fuehrt folgende Schritte aus:</p>
+          <ol>
+            <li>Der aktuelle Wine-Prefix wird in ein Backup umbenannt (z.B. <code>star_citizen_repair_backup_20260406_143022</code>).</li>
+            <li>Der Installations-Assistent wird gestartet, um eine frische Installation durchzufuehren.</li>
+            <li>Nach der Neuinstallation werden vorhandene Star Citizen-Spieldaten (der <code>StarCitizen</code>-Ordner) automatisch aus dem Backup wiederhergestellt.</li>
+          </ol>
+
+          <h3>Reparatur-Backup-Banner</h3>
+          <p>Wenn ein Reparatur-Backup existiert, erscheint ein Info-Banner oberhalb der Statuskarten. Es zeigt den Backup-Pfad und die Groesse an. Mit dem Button "Backup loeschen" kann das Backup nach erfolgreicher Reparatur entfernt werden, um Speicherplatz freizugeben. Vor dem Loeschen erscheint eine Sicherheitsabfrage.</p>
 
           <h2>RSI-News</h2>
           <p>Das News-Panel ruft aktuelle Artikel von der Roberts Space Industries Website ab. Jeder Artikel zeigt Titel, Kategorie, Zeitstempel und eine kurze Zusammenfassung. Klicke auf einen Artikel, um ihn im Browser zu oeffnen.</p>

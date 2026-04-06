@@ -85,9 +85,33 @@
           <ul>
             <li>Enable <strong>ESync</strong> and <strong>FSync</strong> on the <a href="launching.html">Launch page</a></li>
             <li>Enable <strong>DXVK Async</strong> to reduce shader compilation stuttering</li>
+            <li>Enable <strong>GameMode</strong> to automatically optimize CPU/GPU performance</li>
             <li>Use the <a href="usercfg.html">USER.cfg editor</a> to lower graphics settings</li>
             <li>Enable <strong>MangoHUD</strong> to monitor CPU/GPU usage and identify bottlenecks</li>
             <li>Ensure DXVK is installed and up to date (check <a href="wine-runners.html">Wine Runners</a>)</li>
+            <li>Use GPU-specific options: <strong>NVIDIA DLSS</strong> for frame generation or <strong>AMD RADV Zero VRAM</strong> / <strong>Nogttspill</strong> for AMD stability</li>
+          </ul>
+
+          <h3>RSI Launcher won't start or is corrupted</h3>
+          <p>Use the <strong>Repair function</strong> on the <a href="dashboard.html">Dashboard</a>. It renames the current Wine prefix, performs a fresh installation, and automatically restores game data. See <a href="dashboard.html">Dashboard - Installation Repair</a> for details.</p>
+          <p>If automatic repair doesn't help:</p>
+          <ul>
+            <li>Check the log output for specific error messages</li>
+            <li>Enable <strong>In-Process GPU</strong> on the <a href="launching.html">Launch page</a> if the launcher shows a black or white window</li>
+            <li>Try a different Wine runner</li>
+          </ul>
+
+          <h3>Gamescope issues</h3>
+          <ul>
+            <li><strong>Gamescope not installed</strong> - Install <code>gamescope</code> via your package manager (e.g., <code>sudo pacman -S gamescope</code> or <code>sudo apt install gamescope</code>). The Gamescope card on the Launch page shows a warning if it's not found.</li>
+            <li><strong>Black screen with Gamescope</strong> - Verify that the configured resolution is supported by your monitor. Try disabling HDR in Gamescope.</li>
+            <li><strong>HDR not working</strong> - HDR in Gamescope requires driver support. Ensure your GPU driver supports HDR and is up to date.</li>
+          </ul>
+
+          <h3>GameMode issues</h3>
+          <ul>
+            <li><strong>GameMode not installed</strong> - Install the <code>gamemode</code> package (e.g., <code>sudo pacman -S gamemode</code> or <code>sudo apt install gamemode</code>). The option is disabled with a warning on the Launch page if missing.</li>
+            <li><strong>GameMode has no effect</strong> - Make sure <code>gamemoded</code> (the daemon) is running. Test with <code>gamemoded -t</code>.</li>
           </ul>
 
           <h3>Keybindings on wrong device</h3>

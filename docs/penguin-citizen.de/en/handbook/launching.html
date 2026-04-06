@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Launching the Game - Penguin Citizen Handbook</title>
-    <meta name="description" content="Configure and launch Star Citizen with Penguin Citizen - performance options, Wayland, and custom environment variables." />
+    <meta name="description" content="Configure and launch Star Citizen with Penguin Citizen - GPU-specific options, Gamescope, GameMode, Wayland, and custom environment variables." />
     <link rel="icon" type="image/png" href="../../assets/logo.png" />
     <link rel="stylesheet" href="../../css/fonts.css" />
     <link rel="stylesheet" href="../../css/styles.css" />
@@ -52,51 +52,94 @@
 
           <header>
             <h1>Launching the Game</h1>
-            <p>Configure performance options and start Star Citizen with a single click.</p>
+            <p>Configure GPU-specific options, enable Gamescope and GameMode, and start Star Citizen with a single click.</p>
           </header>
 
           <figure class="handbook-screenshot">
             <img src="../../assets/screenshots/launch.png" alt="Penguin Citizen Launch Page" />
-            <figcaption>The Launch page with performance options, Wayland settings, and the real-time log output.</figcaption>
+            <figcaption>The Launch page with compact launch bar, collapsible option cards, and the real-time log output.</figcaption>
           </figure>
 
-          <h2>Launch Control</h2>
-          <p>The large launch button at the top starts Star Citizen. While the game is running, the button changes to a stop button that lets you terminate the process. An info card below shows the currently active Wine runner and prefix path.</p>
+          <h2>Launch Bar</h2>
+          <p>The compact launch bar at the top of the page shows the Play/Stop button, the currently active Wine runner, prefix path, and a color-coded status indicator (ready, running, error). While the game is running, the button switches to a Stop button.</p>
 
-          <h2>Performance Options</h2>
-          <p>Toggle these options to optimize Star Citizen's performance on your system:</p>
+          <h2>GPU Detection</h2>
+          <p>Penguin Citizen automatically detects your graphics card (NVIDIA, AMD, or Intel) when loading the launch page. GPU-specific option cards are only enabled for the detected GPU - non-matching cards are greyed out with a notice.</p>
 
-          <h3>ESync</h3>
-          <p>Eventfd-based synchronization for Wine. Reduces CPU overhead for synchronization primitives. Recommended to keep enabled for better performance.</p>
+          <h2>Option Cards</h2>
+          <p>All launch options are organized in a collapsible 3-column card grid. Each card shows badges with active options when collapsed. Click a card to expand it and adjust settings.</p>
 
-          <h3>FSync</h3>
-          <p>Futex-based synchronization (requires kernel 5.16+). More efficient than ESync when supported. If your kernel supports it, enable both ESync and FSync.</p>
-
-          <h3>DXVK Async</h3>
-          <p>Enables asynchronous shader compilation in DXVK. Reduces stuttering caused by shader compilation during gameplay. Highly recommended.</p>
-
-          <h3>HDR</h3>
-          <p>Enables High Dynamic Range output. Requires a HDR-capable monitor and compositor support (e.g., KDE Plasma 6 with HDR enabled).</p>
-
-          <h3>FSR (FidelityFX Super Resolution)</h3>
-          <p>AMD's upscaling technology. Renders the game at a lower resolution and upscales for better performance while maintaining visual quality.</p>
-
-          <h3>MangoHUD</h3>
-          <p>Displays a performance monitoring overlay showing FPS, CPU/GPU usage, temperatures, and frame times. Useful for troubleshooting performance issues.</p>
-
-          <h3>DXVK HUD</h3>
-          <p>Shows DXVK debug information overlay. Useful for developers and advanced users to diagnose rendering issues.</p>
-
-          <h2>Wayland Support</h2>
-          <p>Penguin Citizen includes experimental Wayland support for native Wayland compositors.</p>
+          <h3>Performance</h3>
           <ul>
-            <li><strong>Enable Wayland</strong> - Toggle to use Wayland instead of XWayland. Automatically disabled if fractional scaling is detected (which is currently incompatible).</li>
-            <li><strong>Primary Monitor</strong> - Select which monitor to use for the game. Penguin Citizen auto-detects connected monitors with their resolutions.</li>
+            <li><strong>ESync</strong> - Eventfd-based synchronization for Wine. Reduces CPU overhead. Recommended.</li>
+            <li><strong>FSync</strong> - Futex-based synchronization (requires kernel 5.16+). More efficient than ESync. Enable both if possible.</li>
+            <li><strong>DXVK Async</strong> - Asynchronous shader compilation. Reduces stuttering during gameplay. Highly recommended.</li>
+            <li><strong>GameMode</strong> - Launches the game with <code>gamemoderun</code> for optimized CPU/GPU performance. Requires the <code>gamemode</code> package on your system. If not installed, the option is disabled with a warning.</li>
+          </ul>
+
+          <h3>Display</h3>
+          <ul>
+            <li><strong>HDR</strong> - High Dynamic Range output. Requires an HDR-capable monitor and compositor support (e.g., KDE Plasma 6 with HDR enabled).</li>
+            <li><strong>FSR</strong> - AMD's FidelityFX Super Resolution. Renders at lower resolution and upscales for better performance.</li>
+          </ul>
+
+          <h3>Overlays</h3>
+          <ul>
+            <li><strong>MangoHUD</strong> - Performance overlay showing FPS, CPU/GPU usage, temperatures, and frame times.</li>
+            <li><strong>DXVK HUD</strong> - DXVK debug overlay for rendering diagnostics.</li>
+          </ul>
+
+          <h3>NVIDIA</h3>
+          <p>Only active when an NVIDIA GPU is detected.</p>
+          <ul>
+            <li><strong>DLSS 4.0</strong> - NVIDIA's AI-powered upscaling and frame generation for higher frame rates.</li>
+            <li><strong>Smooth Motion</strong> - Frame interpolation for smoother visuals.</li>
+            <li><strong>G-Sync</strong> - Synchronizes the monitor refresh rate with GPU output to eliminate tearing.</li>
+          </ul>
+
+          <h3>AMD</h3>
+          <p>Only active when an AMD GPU is detected.</p>
+          <ul>
+            <li><strong>RADV Zero VRAM</strong> - Sets <code>radv_zero_vram</code> to fix rendering artifacts on RADV drivers.</li>
+            <li><strong>Nogttspill</strong> - Disables GTT spillover. Can improve stability on AMD GPUs with limited VRAM.</li>
+          </ul>
+
+          <h3>Troubleshooting</h3>
+          <ul>
+            <li><strong>In-Process GPU</strong> - Sets <code>--in-process-gpu</code> to fix black or white launcher windows.</li>
+            <li><strong>Vulkan Mailbox</strong> - Enables the Vulkan mailbox present mode for lower latency.</li>
+            <li><strong>HDR WSI Layer</strong> - Enables the HDR WSI layer for extended HDR support via the Vulkan interface.</li>
+          </ul>
+
+          <h3>Wayland</h3>
+          <ul>
+            <li><strong>Enable Wayland</strong> - Toggle to use Wayland instead of XWayland. Automatically disabled if fractional scaling is detected.</li>
+            <li><strong>Primary Monitor</strong> - Select which monitor to use for the game. Connected monitors are auto-detected with their resolutions. A refresh button allows re-detecting monitors.</li>
           </ul>
 
           <div class="handbook-warning">
             Wayland support is experimental. If you experience issues, disable it to fall back to XWayland. Fractional scaling (e.g., 125%, 150%) is not compatible with native Wayland mode.
           </div>
+
+          <h3>Gamescope</h3>
+          <p>Gamescope is a standalone Wayland compositor by Valve that provides a controlled rendering environment for games. It is commonly used for HDR support, resolution management, and better fullscreen control.</p>
+          <ul>
+            <li><strong>Enable Gamescope</strong> - Launches the game inside Gamescope. Requires <code>gamescope</code> to be installed on your system. If not installed, the card displays an installation warning.</li>
+            <li><strong>Resolution</strong> - Width and height of the Gamescope output (default: 2560x1440).</li>
+            <li><strong>HDR</strong> - Enables HDR output within Gamescope.</li>
+            <li><strong>Force Grab Cursor</strong> - Forces mouse cursor capture inside the game window.</li>
+            <li><strong>Keyboard Grab</strong> - Captures keyboard input so system shortcuts don't interfere with the game.</li>
+          </ul>
+
+          <div class="handbook-tip">
+            When collapsed, the Gamescope card shows badges for the current status: "Active", "HDR", the configured resolution, or "Disabled" / "Not Installed".
+          </div>
+
+          <h3>GPU &amp; CPU</h3>
+          <ul>
+            <li><strong>GPU Device Filter</strong> - Select a specific Vulkan device for launching. Useful for hybrid systems (e.g., laptop with integrated and dedicated GPU). Available devices are auto-detected.</li>
+            <li><strong>CPU Topology</strong> - Sets the Wine CPU topology (e.g., core and thread mapping) for optimized game performance.</li>
+          </ul>
 
           <h2>Custom Environment Variables</h2>
           <p>For advanced users, you can define custom environment variables that will be set when launching Star Citizen. Each variable has:</p>

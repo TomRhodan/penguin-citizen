@@ -63,10 +63,21 @@
           <h2>Status Cards</h2>
           <p>The top row displays three status cards that give you a quick overview:</p>
           <ul>
-            <li><strong>Star Citizen Installation</strong> - Shows your install path and detected language. A yellow indicator means a translation update is available; green means everything is current. Use the "Open Folder" button to quickly access the installation directory.</li>
+            <li><strong>Star Citizen Installation</strong> - Shows your install path and detected language. A yellow indicator means a translation update is available; green means everything is current. Use the "Open Folder" button to quickly access the installation directory. The <strong>"Repair Installation"</strong> button starts the repair function (see below).</li>
             <li><strong>Wine Runner</strong> - Displays the currently selected Wine/Proton runner and its status (ready, not configured, or missing).</li>
             <li><strong>Launch</strong> - A prominent button to start Star Citizen directly from the Dashboard. Disabled when the game is not fully installed.</li>
           </ul>
+
+          <h2>Installation Repair</h2>
+          <p>If the RSI Launcher no longer starts correctly or is corrupted, Penguin Citizen offers a one-click repair function. The "Repair Installation" button on the installation status card performs the following steps:</p>
+          <ol>
+            <li>The current Wine prefix is renamed to a backup (e.g., <code>star_citizen_repair_backup_20260406_143022</code>).</li>
+            <li>The installation wizard is launched to perform a fresh installation.</li>
+            <li>After reinstallation, existing Star Citizen game data (the <code>StarCitizen</code> folder) is automatically restored from the backup.</li>
+          </ol>
+
+          <h3>Repair Backup Banner</h3>
+          <p>When a repair backup exists, an info banner appears above the status cards. It shows the backup path and size. Use the "Delete Backup" button to remove the backup after a successful repair to free up disk space. A confirmation dialog appears before deletion.</p>
 
           <h2>RSI News Feed</h2>
           <p>The news panel fetches live articles from the Roberts Space Industries website. Each article shows a title, category, timestamp, and brief summary. Click any article to open it in your browser.</p>

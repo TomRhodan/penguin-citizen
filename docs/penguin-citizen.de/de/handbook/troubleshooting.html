@@ -85,9 +85,33 @@
           <ul>
             <li>Aktiviere <strong>ESync</strong> und <strong>FSync</strong> auf der <a href="launching.html">Startseite</a></li>
             <li>Aktiviere <strong>DXVK Async</strong>, um Ruckler durch Shader-Kompilierung zu reduzieren</li>
+            <li>Aktiviere <strong>GameMode</strong>, um CPU/GPU-Leistung automatisch zu optimieren</li>
             <li>Verwende den <a href="usercfg.html">USER.cfg-Editor</a>, um Grafikeinstellungen zu senken</li>
             <li>Aktiviere <strong>MangoHUD</strong>, um CPU/GPU-Auslastung zu ueberwachen und Engpaesse zu identifizieren</li>
             <li>Stelle sicher, dass DXVK installiert und aktuell ist (pruefe <a href="wine-runners.html">Wine Runners</a>)</li>
+            <li>Nutze GPU-spezifische Optionen: <strong>NVIDIA DLSS</strong> fuer Frame-Generierung oder <strong>AMD RADV Zero VRAM</strong> / <strong>Nogttspill</strong> fuer AMD-Stabilitaet</li>
+          </ul>
+
+          <h3>RSI Launcher startet nicht oder ist beschaedigt</h3>
+          <p>Verwende die <strong>Reparaturfunktion</strong> auf dem <a href="dashboard.html">Dashboard</a>. Sie benennt den aktuellen Wine-Prefix um, fuehrt eine Neuinstallation durch und stellt Spieldaten automatisch wieder her. Siehe <a href="dashboard.html">Dashboard - Installations-Reparatur</a> fuer Details.</p>
+          <p>Wenn die automatische Reparatur nicht hilft:</p>
+          <ul>
+            <li>Pruefe die Logausgabe auf spezifische Fehlermeldungen</li>
+            <li>Aktiviere <strong>In-Process GPU</strong> auf der <a href="launching.html">Startseite</a>, wenn der Launcher ein schwarzes oder weisses Fenster zeigt</li>
+            <li>Probiere einen anderen Wine Runner</li>
+          </ul>
+
+          <h3>Gamescope-Probleme</h3>
+          <ul>
+            <li><strong>Gamescope nicht installiert</strong> - Installiere <code>gamescope</code> ueber deinen Paketmanager (z.B. <code>sudo pacman -S gamescope</code> oder <code>sudo apt install gamescope</code>). Die Gamescope-Karte auf der Startseite zeigt eine Warnung, wenn es nicht gefunden wird.</li>
+            <li><strong>Schwarzer Bildschirm mit Gamescope</strong> - Pruefe, ob die eingestellte Aufloesung von deinem Monitor unterstuetzt wird. Versuche, HDR in Gamescope zu deaktivieren.</li>
+            <li><strong>HDR funktioniert nicht</strong> - HDR in Gamescope erfordert Treiberunterstuetzung. Stelle sicher, dass dein GPU-Treiber HDR unterstuetzt und aktuell ist.</li>
+          </ul>
+
+          <h3>GameMode-Probleme</h3>
+          <ul>
+            <li><strong>GameMode nicht installiert</strong> - Installiere das <code>gamemode</code>-Paket (z.B. <code>sudo pacman -S gamemode</code> oder <code>sudo apt install gamemode</code>). Die Option wird auf der Startseite mit einer Warnung deaktiviert, wenn es fehlt.</li>
+            <li><strong>GameMode hat keinen Effekt</strong> - Stelle sicher, dass <code>gamemoded</code> (der Daemon) laeuft. Teste mit <code>gamemoded -t</code>.</li>
           </ul>
 
           <h3>Tastenbelegungen auf falschem Geraet</h3>
