@@ -534,7 +534,7 @@ function bindStatusCardEvents({ installed, installPath }) {
     runnersBtn.addEventListener('click', () => router.navigate('runners'));
   }
 
-  // Repair installation: confirm, then navigate to installation page in repair mode
+  // Repair installation: confirm, rename prefix, then navigate to installation wizard
   const repairBtn = document.getElementById('dash-repair-install');
   if (repairBtn && installed) {
     repairBtn.addEventListener('click', async () => {
@@ -543,9 +543,16 @@ function bindStatusCardEvents({ installed, installPath }) {
         kind: 'warning',
         okLabel: t('dashboard:repair.confirmTitle'),
       });
-      if (ok) {
-        setRepairMode(true);
+      if (!ok) return;
+
+      repairBtn.disabled = true;
+      try {
+        const backupPath = await invoke('repair_installation');
+        setRepairMode(backupPath);
         router.navigate('installation');
+      } catch (e) {
+        repairBtn.disabled = false;
+        await confirm(String(e), { title: 'Error', kind: 'danger', okLabel: 'OK' });
       }
     });
   }

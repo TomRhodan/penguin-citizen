@@ -546,6 +546,7 @@ pub fn run() {
                 installer::launch_game,
                 installer::stop_game,
                 installer::repair_installation,
+                installer::restore_sc_data,
                 installer::check_repair_backup,
                 installer::delete_repair_backup,
 

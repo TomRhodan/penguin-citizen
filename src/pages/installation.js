@@ -55,15 +55,16 @@ function getCheckItems() {
 
 // --- Repair mode ---
 
-/** @type {boolean} Whether we are in repair mode (skip wizard, go straight to install) */
-let repairMode = false;
+/** @type {string|null} When set, holds the backup path from repair_installation. Null = normal mode. */
+let repairBackupPath = null;
 
 /**
- * Sets the repair mode flag. Called from the dashboard before navigating here.
- * @param {boolean} value
+ * Sets repair mode. Pass the backup path to activate, or null to deactivate.
+ * Called from the dashboard after repair_installation renames the prefix.
+ * @param {string|null} backupPath
  */
-export function setRepairMode(value) {
-  repairMode = value;
+export function setRepairMode(backupPath) {
+  repairBackupPath = backupPath;
 }
 
 // --- Wizard state ---
@@ -145,20 +146,7 @@ let logRafPending = false;
  * @returns {Array<{id: string, label: string}>}
  */
 function getInstallPhases() {
-  if (repairMode) {
-    return [
-      { id: 'repair-prepare', label: t('installation:phase.repairPrepare') },
-      { id: 'repair-rename', label: t('installation:phase.repairRename') },
-      { id: 'prepare', label: t('installation:phase.prepare') },
-      { id: 'winetricks', label: t('installation:phase.winetricks') },
-      { id: 'dxvk', label: t('installation:phase.dxvk') },
-      { id: 'registry', label: t('installation:phase.registry') },
-      { id: 'download', label: t('installation:phase.download') },
-      { id: 'install', label: t('installation:phase.install') },
-      { id: 'launch', label: t('installation:phase.launch') },
-      { id: 'repair-move', label: t('installation:phase.repairMove') },
-    ];
-  }
+
 
   return [
     { id: 'prepare', label: t('installation:phase.prepare') },
@@ -211,12 +199,6 @@ export async function renderInstallation(container) {
     // Ignore config load errors
   }
 
-  // In repair mode, skip the wizard and go straight to the repair process
-  if (repairMode) {
-    renderRepairProcess(container);
-    return;
-  }
-
   renderCurrentStep(container);
 
   // If no install path is set, load the default from the backend
@@ -225,89 +207,6 @@ export async function renderInstallation(container) {
       configState.installPath = path;
     }).catch(e => console.error('Failed to load default install path:', e));
   }
-}
-
-/**
- * Renders the repair process view — skips the wizard entirely.
- * Shows phase list, log window, and progress bar, then invokes repair_installation.
- * @param {HTMLElement} container
- */
-function renderRepairProcess(container) {
-  container.innerHTML = `
-    <div class="page-header">
-      <h1>${t('installation:title')}</h1>
-      <p class="page-subtitle">${t('dashboard:repair.confirmTitle')}</p>
-    </div>
-    <div class="wizard">
-      <div class="wizard-content card" id="wizard-body"></div>
-    </div>
-  `;
-
-  const body = document.getElementById('wizard-body');
-  renderStep3Process(body);
-  startRepairInstallation();
-}
-
-/**
- * Starts the repair installation process.
- * Similar to startInstallation but invokes repair_installation instead.
- */
-async function startRepairInstallation() {
-  installPhase = 'running';
-  installLog = [];
-  pendingLogLines = [];
-  logRafPending = false;
-  installError = null;
-  currentPhaseId = null;
-  currentPercent = 0;
-  completedPhases.clear();
-
-  const cancelBtn = document.getElementById('btn-cancel-install');
-  const backBtn = document.getElementById('btn-back3');
-  const progressWrapper = document.getElementById('install-progress-wrapper');
-  const logContainer = document.getElementById('install-log-container');
-
-  if (cancelBtn) cancelBtn.style.display = '';
-  if (backBtn) backBtn.disabled = true;
-  if (progressWrapper) progressWrapper.style.display = '';
-  if (logContainer) logContainer.style.display = '';
-
-  if (unlistenInstall) { unlistenInstall(); unlistenInstall = null; }
-
-  try {
-    unlistenInstall = await listen('install-progress', (event) => {
-      handleInstallProgress(event.payload);
-    });
-  } catch (e) {
-    // listen failed
-  }
-
-  try {
-    await invoke('repair_installation');
-    onRepairComplete();
-  } catch (err) {
-    onInstallError(String(err));
-  }
-
-  if (unlistenInstall) { unlistenInstall(); unlistenInstall = null; }
-}
-
-/**
- * Called when the repair completes successfully.
- * Marks all phases as completed, resets repair mode, and navigates to dashboard.
- */
-function onRepairComplete() {
-  installPhase = 'complete';
-  if (currentPhaseId) completedPhases.add(currentPhaseId);
-  getInstallPhases().forEach(p => completedPhases.add(p.id));
-  currentPhaseId = null;
-
-  // Reset repair mode
-  repairMode = false;
-
-  // Update sidebar and navigate to dashboard
-  router.updateSidebar(true);
-  router.navigate('dashboard');
 }
 
 /**
@@ -1504,13 +1403,8 @@ function renderStep3Process(body) {
   // Back button (only active when installation is not running)
   document.getElementById('btn-back3').addEventListener('click', () => {
     if (installPhase === 'running') return;
-    if (repairMode) {
-      repairMode = false;
-      router.navigate('dashboard');
-    } else {
-      currentStep = 2;
-      renderCurrentStep(body.closest('#content') || body.parentElement.parentElement);
-    }
+    currentStep = 2;
+    renderCurrentStep(body.closest('#content') || body.parentElement.parentElement);
   });
 
   // Cancel installation
@@ -1526,12 +1420,7 @@ function renderStep3Process(body) {
     currentPhaseId = null;
     currentPercent = 0;
     completedPhases.clear();
-    if (repairMode) {
-      renderStep3Process(body);
-      startRepairInstallation();
-    } else {
-      renderStep3(body);
-    }
+    renderStep3(body);
   });
 
   // Restore UI state if the page is revisited
@@ -1704,15 +1593,25 @@ function updatePhaseList() {
  * Marks all phases as completed, updates the sidebar,
  * and automatically navigates to the launch page.
  */
-function onInstallComplete() {
+async function onInstallComplete() {
   installPhase = 'complete';
   if (currentPhaseId) completedPhases.add(currentPhaseId);
-  // Mark all phases as completed
   getInstallPhases().forEach(p => completedPhases.add(p.id));
   currentPhaseId = null;
 
-  // Update sidebar (now shows full navigation)
-  // and navigate to the launch page
+  // If in repair mode, restore Star Citizen game data from the backup
+  if (repairBackupPath) {
+    try {
+      await invoke('restore_sc_data', {
+        backupPath: repairBackupPath,
+        installPath: configState.installPath,
+      });
+    } catch (e) {
+      console.warn('Failed to restore SC data:', e);
+    }
+    repairBackupPath = null;
+  }
+
   router.updateSidebar(true);
   router.navigate('launch');
 }

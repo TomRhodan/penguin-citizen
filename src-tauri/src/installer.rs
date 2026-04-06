@@ -221,6 +221,7 @@ fn configure_wine_env(
     // Set primary monitor for the Wine Wayland driver (e.g. "DP-1")
     if let Some(ref monitor) = perf.primary_monitor {
         vars.push(("WAYLANDDRV_PRIMARY_MONITOR".into(), monitor.clone()));
+        vars.push(("PROTON_WAYLAND_MONITOR".into(), monitor.clone()));
     }
 
     // Overlay options for performance monitoring during gameplay
@@ -1605,50 +1606,42 @@ pub struct RepairBackupInfo {
     pub created: String,
 }
 
-/// Repairs a broken RSI Launcher installation by performing a
-/// rename-reinstall-move cycle:
+/// Prepares a repair by renaming the current Wine prefix to a timestamped backup.
 ///
-/// 1. Kill wineserver to clean up orphaned processes
-/// 2. Rename the current Wine prefix to a timestamped backup
-/// 3. Run a full fresh installation in the original path
-/// 4. Move the Star Citizen game data from the backup into the new prefix
+/// After this, the frontend navigates the user through the normal installation
+/// wizard (pick runner, install). Once installation completes, the frontend
+/// calls `restore_sc_data` to move game data from the backup into the new prefix.
 ///
-/// On failure during step 3, the backup is renamed back (rollback).
-/// Returns the backup path on success so the frontend can offer cleanup.
+/// Returns the backup path on success.
 #[tauri::command]
 pub async fn repair_installation(app: AppHandle) -> Result<String, String> {
-    // Load config to get install_path and runner
     let config = crate::config::load_config().await
         .map_err(|e| format!("Failed to load config: {}", e))?
         .ok_or("No configuration found")?;
 
     let install_path = expand_tilde(&config.install_path);
 
-    // ── Preconditions ──
     if is_game_running() {
         return Err("Cannot repair while the game is running. Please stop it first.".into());
     }
 
-    let status = check_installation(config.clone());
-    if !status.installed {
-        return Err("No complete installation found to repair.".into());
-    }
-
-    // ── Step 1: Kill wineserver ──
-    emit_progress(&app, "repair-prepare", "Stopping Wine processes...", 0.0, "Killing wineserver...");
-    let runner_name = config.selected_runner.as_deref().ok_or("No runner selected")?;
-    let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
-    if let Some(wine) = resolve_wine_bin(&runner_dir) {
-        let wineserver = wine.with_file_name("wineserver");
-        if wineserver.exists() {
-            let _ = Command::new(wineserver.to_string_lossy().as_ref())
-                .arg("-k")
-                .env("WINEPREFIX", &install_path)
-                .output();
+    // Kill wineserver to clean up orphaned processes
+    log::info!("Repair: killing wineserver...");
+    let runner_name = config.selected_runner.as_deref();
+    if let Some(name) = runner_name {
+        let runner_dir = Path::new(&install_path).join("runners").join(name);
+        if let Some(wine) = resolve_wine_bin(&runner_dir) {
+            let wineserver = wine.with_file_name("wineserver");
+            if wineserver.exists() {
+                let _ = Command::new(wineserver.to_string_lossy().as_ref())
+                    .arg("-k")
+                    .env("WINEPREFIX", &install_path)
+                    .output();
+            }
         }
     }
 
-    // ── Step 2: Rename prefix to backup ──
+    // Rename prefix to backup
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
     let install_dir = PathBuf::from(&install_path);
     let parent = install_dir.parent()
@@ -1659,67 +1652,52 @@ pub async fn repair_installation(app: AppHandle) -> Result<String, String> {
     let backup_name = format!("{}_repair_backup_{}", dir_name, timestamp);
     let backup_path = parent.join(&backup_name);
 
-    emit_progress(&app, "repair-rename", "Creating backup of current installation...", 2.0,
-        &format!("Renaming {} -> {}", install_dir.display(), backup_path.display()));
-
+    log::info!("Repair: renaming {} -> {}", install_dir.display(), backup_path.display());
     std::fs::rename(&install_dir, &backup_path)
         .map_err(|e| format!("Failed to rename prefix to backup: {}", e))?;
 
-    // ── Step 3: Full reinstallation ──
-    emit_progress(&app, "repair-reinstall", "Starting fresh installation...", 5.0,
-        "Running full installation in original path...");
+    let _ = app.emit("repair-backup-created", backup_path.to_string_lossy().to_string());
+    log::info!("Repair: prefix renamed to backup. User can now run a fresh installation.");
 
-    let install_result = run_installation(app.clone(), config.clone()).await;
+    Ok(backup_path.to_string_lossy().to_string())
+}
 
-    if let Err(ref err) = install_result {
-        // Rollback: rename backup back to original path
-        emit_progress(&app, "repair-rollback", "Installation failed, rolling back...", 0.0,
-            &format!("Rolling back: {} -> {}", backup_path.display(), install_dir.display()));
+/// Restores Star Citizen game data from a repair backup into the current installation.
+///
+/// Called by the frontend after a successful fresh installation completes.
+/// Moves the `StarCitizen` folder from the backup's RSI directory into the
+/// new installation's RSI directory.
+#[tauri::command]
+pub async fn restore_sc_data(backup_path: String, install_path: String) -> Result<(), String> {
+    let install_path = expand_tilde(&install_path);
+    let backup = PathBuf::from(&backup_path);
+    let install_dir = PathBuf::from(&install_path);
 
-        if let Err(rollback_err) = std::fs::rename(&backup_path, &install_dir) {
-            return Err(format!(
-                "Installation failed: {}. Rollback also failed: {}. Backup is at: {}",
-                err, rollback_err, backup_path.display()
-            ));
-        }
-        return Err(format!("Installation failed (rolled back): {}", err));
-    }
-
-    // ── Step 4: Move Star Citizen game data ──
     let sc_folder_name = "StarCitizen";
     let rsi_base = PathBuf::from("drive_c")
         .join("Program Files")
         .join("Roberts Space Industries");
-    let sc_src = backup_path.join(&rsi_base).join(sc_folder_name);
+    let sc_src = backup.join(&rsi_base).join(sc_folder_name);
     let sc_dst = install_dir.join(&rsi_base).join(sc_folder_name);
 
-    if sc_src.exists() {
-        emit_progress(&app, "repair-move", "Restoring Star Citizen game data...", 98.0,
-            &format!("Moving {} -> {}", sc_src.display(), sc_dst.display()));
-
-        // Remove the empty SC dir in the new install if it exists
-        if sc_dst.exists() {
-            let _ = std::fs::remove_dir_all(&sc_dst);
-        }
-
-        if let Err(e) = std::fs::rename(&sc_src, &sc_dst) {
-            // Non-fatal: installation works, just game data needs manual move
-            log::warn!("Failed to move StarCitizen folder: {}. User must move manually from backup.", e);
-            emit_progress(&app, "repair-move", "Warning: Could not move game data automatically", 99.0,
-                &format!("Manual move needed from: {}", sc_src.display()));
-        } else {
-            emit_progress(&app, "repair-move", "Game data restored successfully", 99.0,
-                "StarCitizen folder moved to new installation");
-        }
-    } else {
-        emit_progress(&app, "repair-move", "No Star Citizen game data found in backup", 99.0,
-            "Skipping game data migration (no StarCitizen folder in backup)");
+    if !sc_src.exists() {
+        log::info!("No StarCitizen folder found in backup, skipping restore");
+        return Ok(());
     }
 
-    emit_progress(&app, "complete", "Repair completed successfully", 100.0,
-        &format!("Backup saved at: {}", backup_path.display()));
+    // Remove the empty SC dir in the new install if it exists
+    if sc_dst.exists() {
+        let _ = std::fs::remove_dir_all(&sc_dst);
+    }
 
-    Ok(backup_path.to_string_lossy().to_string())
+    log::info!("Restoring StarCitizen data: {} -> {}", sc_src.display(), sc_dst.display());
+    std::fs::rename(&sc_src, &sc_dst)
+        .map_err(|e| format!(
+            "Failed to move StarCitizen folder: {}. Please copy manually from: {}",
+            e, sc_src.display()
+        ))?;
+
+    Ok(())
 }
 
 /// Checks whether a repair backup exists next to the installation directory.
