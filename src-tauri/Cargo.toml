@@ -33,7 +33,6 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "sync", "macros"] }
 quick-xml = "0.37"
 chrono = { version = "0.4", features = ["serde"] }
-zip = { version = "0.6", default-features = false, features = [] }
 encoding_rs = "0.8"
 memmap2 = "0.9"
 once_cell = "1"
@@ -46,7 +45,7 @@ base64 = "0.22"
 
 [features]
 devtools = ["tauri/devtools"]
-default = ["devtools"]
+default = []
 
 [[bin]]
 name = "penguin-citizen"

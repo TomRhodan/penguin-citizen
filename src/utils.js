@@ -38,3 +38,14 @@ export function escapeHtml(str) {
     .replace(/\\n/g, ' ')         // Escaped line breaks (\n as literal) → spaces
     .replace(/\n/g, ' ');          // Actual line breaks → spaces
 }
+
+/**
+ * Escapes a string for safe use in HTML attributes (prevents XSS).
+ *
+ * @param {string} str - The string to escape.
+ * @returns {string} The escaped string, safe for HTML attribute output.
+ */
+export function escapeAttr(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}

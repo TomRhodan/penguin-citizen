@@ -33,7 +33,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { router } from '../router.js';
 import { requestAutoLaunch } from './launch.js';
 import { setRepairMode } from './installation.js';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, escapeAttr } from '../utils.js';
 import { confirm } from '../utils/dialogs.js';
 import { t } from '../i18n.js';
 
@@ -956,9 +956,3 @@ function renderError(message, retryFn) {
     </div>`;
 }
 
-
-/** Escapes a string for safe use in HTML attributes (prevents XSS) */
-function escapeAttr(str) {
-  if (!str) return '';
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}

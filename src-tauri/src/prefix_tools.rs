@@ -46,7 +46,9 @@ fn get_wine_paths(
     let runner_dir = prefix.join("runners").join(runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
-    let runner_bin = wine.parent().unwrap().to_path_buf();
+    let runner_bin = wine.parent()
+        .ok_or_else(|| "Wine binary has no parent directory".to_string())?
+        .to_path_buf();
 
     Ok((prefix.to_path_buf(), wine, runner_bin))
 }

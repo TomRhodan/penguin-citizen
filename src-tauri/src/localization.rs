@@ -218,8 +218,8 @@ pub struct LocalizationUpdateCheck {
 ///
 /// Star Citizen expects translation files in the directory:
 /// `{game_path}/{version}/data/Localization/{language_code}/global.ini`
-fn sc_localization_dir(game_path: &str, version: &str, language_code: &str) -> PathBuf {
-    sc_base_dir(game_path, version).join("data").join("Localization").join(language_code)
+fn sc_localization_dir(game_path: &str, version: &str, language_code: &str) -> Result<PathBuf, String> {
+    Ok(sc_base_dir(game_path, version)?.join("data").join("Localization").join(language_code))
 }
 
 /// Returns the directory where localization metadata is stored.
@@ -292,7 +292,7 @@ fn update_user_cfg_language(
     version: &str,
     language_code: &str
 ) -> Result<(), String> {
-    let cfg_path = sc_base_dir(game_path, version).join("USER.cfg");
+    let cfg_path = sc_base_dir(game_path, version)?.join("USER.cfg");
 
     // Read existing file or start with empty content
     let content = if cfg_path.exists() {
@@ -345,7 +345,7 @@ fn update_user_cfg_language(
 /// Filters out all lines that set `g_language` or `g_languageAudio`,
 /// so that Star Citizen uses the default language (English) again.
 fn remove_user_cfg_language(game_path: &str, version: &str) -> Result<(), String> {
-    let cfg_path = sc_base_dir(game_path, version).join("USER.cfg");
+    let cfg_path = sc_base_dir(game_path, version)?.join("USER.cfg");
 
     if !cfg_path.exists() {
         return Ok(());
@@ -729,7 +729,7 @@ pub async fn get_localization_status(
     let expanded = expand_tilde(&game_path);
 
     // Read USER.cfg to determine the current language settings
-    let cfg_path = sc_base_dir(&expanded, &version).join("USER.cfg");
+    let cfg_path = sc_base_dir(&expanded, &version)?.join("USER.cfg");
     let (cfg_language, cfg_language_audio) = if cfg_path.exists() {
         let content = fs::read_to_string(&cfg_path).unwrap_or_default();
         (parse_cfg_value(&content, "g_language"), parse_cfg_value(&content, "g_languageAudio"))
@@ -739,7 +739,7 @@ pub async fn get_localization_status(
 
     // Primary check: metadata present -> translation was installed via Penguin Citizen
     if let Some(meta) = load_meta(&version) {
-        let ini_path = sc_localization_dir(&expanded, &version, &meta.language_code).join(
+        let ini_path = sc_localization_dir(&expanded, &version, &meta.language_code)?.join(
             "global.ini"
         );
 
@@ -771,7 +771,7 @@ pub async fn get_localization_status(
     // Fallback: g_language is set in USER.cfg but no metadata exists
     // This detects manually installed translations (e.g., by other tools)
     if let Some(ref lang) = cfg_language {
-        let ini_path = sc_localization_dir(&expanded, &version, lang).join("global.ini");
+        let ini_path = sc_localization_dir(&expanded, &version, lang)?.join("global.ini");
         if ini_path.exists() {
             let file_size = fs
                 ::metadata(&ini_path)
@@ -874,7 +874,7 @@ pub async fn install_localization(
     });
 
     // Create target directory and save translation file
-    let loc_dir = sc_localization_dir(&expanded, &version, &language_code);
+    let loc_dir = sc_localization_dir(&expanded, &version, &language_code)?;
     fs
         ::create_dir_all(&loc_dir)
         .map_err(|e| format!("Failed to create localization directory: {}", e))?;
@@ -1008,7 +1008,7 @@ pub async fn remove_localization(game_path: String, version: String) -> Result<(
         meta.language_code
     } else {
         // Fallback: read from USER.cfg
-        let cfg_path = sc_base_dir(&expanded, &version).join("USER.cfg");
+        let cfg_path = sc_base_dir(&expanded, &version)?.join("USER.cfg");
         if cfg_path.exists() {
             let content = fs::read_to_string(&cfg_path).unwrap_or_default();
             parse_cfg_value(&content, "g_language").ok_or_else(||
@@ -1020,13 +1020,13 @@ pub async fn remove_localization(game_path: String, version: String) -> Result<(
     };
 
     // Delete translation file
-    let ini_path = sc_localization_dir(&expanded, &version, &language_code).join("global.ini");
+    let ini_path = sc_localization_dir(&expanded, &version, &language_code)?.join("global.ini");
     if ini_path.exists() {
         fs::remove_file(&ini_path).map_err(|e| format!("Failed to delete global.ini: {}", e))?;
     }
 
     // Remove language directory if empty (error is ignored if not empty)
-    let lang_dir = sc_localization_dir(&expanded, &version, &language_code);
+    let lang_dir = sc_localization_dir(&expanded, &version, &language_code)?;
     if lang_dir.exists() {
         let _ = fs::remove_dir(&lang_dir); // Ignore error if not empty
     }

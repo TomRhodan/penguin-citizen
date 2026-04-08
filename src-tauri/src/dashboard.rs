@@ -719,7 +719,8 @@ async fn fetch_stats_history_inner(
 ) -> Result<Vec<StatsDataPoint>, Box<dyn std::error::Error + Send + Sync>> {
     // Check cache - return immediately if cache is still valid (< 1 hour old)
     {
-        let cache = STATS_HISTORY_CACHE.lock().unwrap();
+        let cache = STATS_HISTORY_CACHE.lock()
+            .map_err(|e| format!("Cache lock poisoned: {}", e))?;
         if let Some(ref cached) = *cache {
             if cached.fetched_at.elapsed() < std::time::Duration::from_secs(3600) {
                 // Cache is still valid - only trim to the requested time range
@@ -771,7 +772,8 @@ async fn fetch_stats_history_inner(
 
     // Update cache with all available data
     {
-        let mut cache = STATS_HISTORY_CACHE.lock().unwrap();
+        let mut cache = STATS_HISTORY_CACHE.lock()
+            .map_err(|e| format!("Cache lock poisoned: {}", e))?;
         *cache = Some(CachedHistory {
             data: data_points.clone(),
             fetched_at: std::time::Instant::now(),

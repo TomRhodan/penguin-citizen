@@ -66,23 +66,32 @@ pub async fn capture_app_window(window: Window, filename: String) -> Result<(), 
         // Short delay to ensure UI has finished rendering and focus is set
         std::thread::sleep(std::time::Duration::from_millis(500));
 
+        let path_str = target_path.to_str()
+            .ok_or_else(|| "Screenshot path contains invalid UTF-8".to_string())?;
+
         // KDE Spectacle: -a (active window), -b (background), -n (non-interactive), -o (output)
-        let spectacle = std::process::Command::new("spectacle")
-            .args(["-a", "-b", "-n", "-o", target_path.to_str().unwrap()])
-            .status();
-        if spectacle.is_ok() && spectacle.unwrap().success() { return Ok(()); }
+        if let Ok(status) = std::process::Command::new("spectacle")
+            .args(["-a", "-b", "-n", "-o", path_str])
+            .status()
+        {
+            if status.success() { return Ok(()); }
+        }
 
         // Fallback: GNOME Screenshot
-        let gnome = std::process::Command::new("gnome-screenshot")
-            .args(["-w", "-f", target_path.to_str().unwrap()])
-            .status();
-        if gnome.is_ok() && gnome.unwrap().success() { return Ok(()); }
+        if let Ok(status) = std::process::Command::new("gnome-screenshot")
+            .args(["-w", "-f", path_str])
+            .status()
+        {
+            if status.success() { return Ok(()); }
+        }
 
         // Fallback: Grim (Wayland Generic)
-        let grim = std::process::Command::new("grim")
-            .args([target_path.to_str().unwrap()])
-            .status();
-        if grim.is_ok() && grim.unwrap().success() { return Ok(()); }
+        if let Ok(status) = std::process::Command::new("grim")
+            .args([path_str])
+            .status()
+        {
+            if status.success() { return Ok(()); }
+        }
 
         Err("No screenshot tool found. Please install spectacle or gnome-screenshot.".into())
     }

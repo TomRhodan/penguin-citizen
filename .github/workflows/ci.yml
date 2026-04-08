@@ -44,6 +44,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Security audit
+        run: |
+          cargo install cargo-audit --quiet
+          cargo audit --file src-tauri/Cargo.lock
+
       - name: Run clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 

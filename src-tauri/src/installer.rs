@@ -81,7 +81,7 @@ pub struct InstallationStatus {
     pub message: String,
 }
 
-use crate::util::expand_tilde;
+use crate::util::{expand_tilde, validate_env_var_key};
 
 /// Sends a progress message as an event to the frontend.
 /// The frontend receives these via the "install-progress" event listener
@@ -308,6 +308,10 @@ fn configure_wine_env(
         if !custom.enabled || custom.key.trim().is_empty() {
             continue;
         }
+        if validate_env_var_key(&custom.key).is_err() {
+            log::warn!("Skipping blocked environment variable: {}", custom.key);
+            continue;
+        }
         let key = custom.key.clone();
         let value = custom.value.clone();
         // Remove existing variable with the same key so that the
@@ -424,7 +428,9 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
-    let runner_bin = wine.parent().unwrap().to_path_buf();
+    let runner_bin = wine.parent()
+        .ok_or_else(|| "Wine binary has no parent directory".to_string())?
+        .to_path_buf();
     let wineserver = runner_bin.join("wineserver");
 
     let launcher_exe = Path::new(&install_path)
@@ -818,7 +824,9 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
     let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
-    let runner_bin = wine.parent().unwrap().to_path_buf();
+    let runner_bin = wine.parent()
+        .ok_or_else(|| "Wine binary has no parent directory".to_string())?
+        .to_path_buf();
     let wineserver = runner_bin.join("wineserver");
 
     // ── Phase 1: Prepare environment (0–5%) ──

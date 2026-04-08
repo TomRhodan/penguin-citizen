@@ -293,15 +293,27 @@ static MASTER_BINDINGS_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 pub(crate) use crate::util::expand_tilde;
 
+/// Validates a version string to prevent path traversal attacks.
+/// Blocks empty strings, path separators, and parent directory references.
+fn validate_version(v: &str) -> Result<(), String> {
+    if v.is_empty() || v.contains('/') || v.contains('\\') || v.contains("..") {
+        return Err("Invalid version ID".into());
+    }
+    Ok(())
+}
+
 /// Constructs the base path to an SC version folder within the Wine prefix.
 /// Example: /path/to/prefix/drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE
-pub fn sc_base_dir(gp: &str, v: &str) -> PathBuf {
-    Path::new(gp).join("drive_c/Program Files/Roberts Space Industries/StarCitizen").join(v)
+///
+/// Returns an error if the version string contains path traversal characters.
+pub fn sc_base_dir(gp: &str, v: &str) -> Result<PathBuf, String> {
+    validate_version(v)?;
+    Ok(Path::new(gp).join("drive_c/Program Files/Roberts Space Industries/StarCitizen").join(v))
 }
 
 /// Returns the path to the Data.p4k archive file, if it exists.
 fn sc_p4k_path(gp: &str, v: &str) -> Result<PathBuf, String> {
-    let p = sc_base_dir(gp, v).join("Data.p4k");
+    let p = sc_base_dir(gp, v)?.join("Data.p4k");
     if p.exists() {
         Ok(p)
     } else {
@@ -1189,7 +1201,7 @@ fn parse_cryxmlb_full(data: &[u8]) -> Result<ParsedActionMaps, String> {
 /// Returns an empty string if the file does not exist.
 #[tauri::command]
 pub async fn read_user_cfg(gp: String, v: String) -> Result<String, String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join("USER.cfg");
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join("USER.cfg");
     if !p.exists() {
         return Ok("".into());
     }
@@ -1200,7 +1212,7 @@ pub async fn read_user_cfg(gp: String, v: String) -> Result<String, String> {
 /// during crashes while writing.
 #[tauri::command]
 pub async fn write_user_cfg(gp: String, v: String, c: String) -> Result<(), String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join("USER.cfg");
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join("USER.cfg");
     if let Some(parent) = p.parent() {
         fs::create_dir_all(parent).ok();
     }
@@ -1311,7 +1323,7 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
 /// The "frontend" profile is skipped as it is an SC-internal profile.
 #[tauri::command]
 pub async fn list_profiles(gp: String, v: String) -> Result<Vec<ScProfile>, String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join("user/client/0/Profiles");
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join("user/client/0/Profiles");
     if !p.is_dir() {
         return Ok(vec![]);
     }
@@ -1340,7 +1352,7 @@ pub async fn list_profiles(gp: String, v: String) -> Result<Vec<ScProfile>, Stri
 /// Exports the default profile (actionmaps, attributes, profile) to a target directory.
 #[tauri::command]
 pub async fn export_profile(gp: String, v: String, dp: String) -> Result<(), String> {
-    let src = sc_base_dir(&expand_tilde(&gp), &v).join("user/client/0/Profiles/default");
+    let src = sc_base_dir(&expand_tilde(&gp), &v)?.join("user/client/0/Profiles/default");
     let dest = Path::new(&dp);
     if !dest.is_absolute() {
         return Err("Destination path must be absolute".into());
@@ -1356,7 +1368,7 @@ pub async fn export_profile(gp: String, v: String, dp: String) -> Result<(), Str
 /// Imports profile files from a source directory into the default profile.
 #[tauri::command]
 pub async fn import_profile(gp: String, v: String, sp: String) -> Result<(), String> {
-    let dest = sc_base_dir(&expand_tilde(&gp), &v).join("user/client/0/Profiles/default");
+    let dest = sc_base_dir(&expand_tilde(&gp), &v)?.join("user/client/0/Profiles/default");
     let src = Path::new(&sp);
     if !src.is_absolute() {
         return Err("Source path must be absolute".into());
@@ -1374,7 +1386,7 @@ pub async fn import_profile(gp: String, v: String, sp: String) -> Result<(), Str
 /// since the file structure is very simple and predictable.
 #[tauri::command]
 pub async fn read_attributes(gp: String, v: String) -> Result<ScAttributes, String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join(
         "user/client/0/Profiles/default/attributes.xml"
     );
     if !p.exists() {
@@ -1418,7 +1430,7 @@ pub fn parse_attributes_str(c: &str) -> ScAttributes {
 /// Writes attributes back to the attributes.xml of the default profile.
 #[tauri::command]
 pub async fn write_attributes(gp: String, v: String, attrs: ScAttributes) -> Result<(), String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join(
         "user/client/0/Profiles/default/attributes.xml"
     );
     if let Some(parent) = p.parent() {
@@ -1436,7 +1448,7 @@ pub async fn write_attributes(gp: String, v: String, attrs: ScAttributes) -> Res
 /// Used by the frontend settings tab to read attributes-target settings.
 #[tauri::command]
 pub async fn read_attributes_map(gp: String, v: String) -> Result<HashMap<String, String>, String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join(
         "user/client/0/Profiles/default/attributes.xml"
     );
     if !p.exists() {
@@ -1454,7 +1466,7 @@ pub async fn read_attributes_map(gp: String, v: String) -> Result<HashMap<String
 pub async fn write_attributes_partial(
     gp: String, v: String, changes: HashMap<String, String>
 ) -> Result<(), String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join(
         "user/client/0/Profiles/default/attributes.xml"
     );
     if let Some(parent) = p.parent() {
@@ -1490,7 +1502,7 @@ pub async fn write_attributes_partial(
 /// so that only meaningful setting changes affect the hash.
 #[tauri::command]
 pub async fn get_attributes_hash(gp: String, v: String) -> Result<String, String> {
-    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+    let p = sc_base_dir(&expand_tilde(&gp), &v)?.join(
         "user/client/0/Profiles/default/attributes.xml"
     );
     if !p.exists() {
@@ -1514,8 +1526,8 @@ pub async fn parse_actionmaps(
 ) -> Result<ParsedActionMaps, String> {
     let exp = expand_tilde(&gp);
     let p = match source {
-        Some(f) => sc_base_dir(&exp, &v).join("user/client/0/controls/mappings").join(f),
-        None => sc_base_dir(&exp, &v).join("user/client/0/Profiles/default/actionmaps.xml"),
+        Some(f) => sc_base_dir(&exp, &v)?.join("user/client/0/controls/mappings").join(f),
+        None => sc_base_dir(&exp, &v)?.join("user/client/0/Profiles/default/actionmaps.xml"),
     };
     if !p.exists() {
         return Err("Not found".into());
@@ -1559,7 +1571,7 @@ pub async fn get_master_bindings(gp: String, v: String) -> Result<ParsedActionMa
     let _g = MASTER_BINDINGS_LOCK.lock().await;
     let res: Result<ParsedActionMaps, String> = tokio::task
         ::spawn_blocking(move || {
-            let p4k = sc_base_dir(&gp, &v).join("Data.p4k");
+            let p4k = sc_base_dir(&gp, &v)?.join("Data.p4k");
             if !p4k.exists() {
                 return Err("No P4K file found".into());
             }
@@ -1727,7 +1739,7 @@ pub async fn get_complete_binding_list(
     let labels = get_localization_labels(gp.clone(), v.clone(), None).await.unwrap_or_default();
     let master = get_master_bindings(gp.clone(), v.clone()).await?;
     let master_profile = &master.profiles[0];
-    let user_p = sc_base_dir(&expand_tilde(&gp), &v).join(
+    let user_p = sc_base_dir(&expand_tilde(&gp), &v)?.join(
         "user/client/0/Profiles/default/actionmaps.xml"
     );
     let user_parsed = if user_p.exists() {
@@ -2050,7 +2062,7 @@ pub struct AssignBindingArgs {
 /// If old_input is specified, the existing binding is replaced; otherwise a new one is added.
 #[tauri::command]
 pub async fn assign_binding(args: AssignBindingArgs) -> Result<(), String> {
-    let p = sc_base_dir(&expand_tilde(&args.game_path), &args.version).join(
+    let p = sc_base_dir(&expand_tilde(&args.game_path), &args.version)?.join(
         "user/client/0/Profiles/default/actionmaps.xml"
     );
     let mut parsed = if p.exists() {
@@ -2131,7 +2143,7 @@ pub struct RemoveBindingArgs {
 /// Removes a specific input binding of an action from the user's actionmaps.xml.
 #[tauri::command]
 pub async fn remove_binding(args: RemoveBindingArgs) -> Result<(), String> {
-    let p = sc_base_dir(&expand_tilde(&args.game_path), &args.version).join(
+    let p = sc_base_dir(&expand_tilde(&args.game_path), &args.version)?.join(
         "user/client/0/Profiles/default/actionmaps.xml"
     );
     if !p.exists() {
@@ -2820,7 +2832,7 @@ pub async fn list_p4k(
     version: String,
     pattern: Option<String>
 ) -> Result<Vec<String>, String> {
-    let p = sc_base_dir(&game_path, &version).join("Data.p4k");
+    let p = sc_base_dir(&game_path, &version)?.join("Data.p4k");
     if !p.exists() {
         return Err("No P4K".into());
     }
@@ -2891,7 +2903,7 @@ pub async fn get_localization_ini(
 /// Looks for folders under "Data\Localization\" and extracts the language names.
 #[tauri::command]
 pub async fn list_localization_languages(gp: String, v: String) -> Result<Vec<String>, String> {
-    let p4k = sc_base_dir(&gp, &v).join("Data.p4k");
+    let p4k = sc_base_dir(&gp, &v)?.join("Data.p4k");
     if !p4k.exists() {
         return Err("No P4K".into());
     }
@@ -3452,7 +3464,7 @@ pub async fn import_version_as_profile(
     } else {
         // Copy from the source version's live SC files
         let expanded = expand_tilde(&gp);
-        let source_base = sc_base_dir(&expanded, &source_version).join("user/client/0");
+        let source_base = sc_base_dir(&expanded, &source_version)?.join("user/client/0");
         let pdir = source_base.join("Profiles/default");
         for f in &["actionmaps.xml", "attributes.xml", "profile.xml"] {
             let src = pdir.join(f);
@@ -3844,8 +3856,8 @@ pub async fn list_importable_versions(gp: String, target_version: String) -> Res
 #[tauri::command]
 pub async fn import_from_version(gp: String, source_version: String, target_version: String) -> Result<ImportResult, String> {
     let expanded = expand_tilde(&gp);
-    let source_base = sc_base_dir(&expanded, &source_version).join("user/client/0");
-    let target_base = sc_base_dir(&expanded, &target_version).join("user/client/0");
+    let source_base = sc_base_dir(&expanded, &source_version)?.join("user/client/0");
+    let target_base = sc_base_dir(&expanded, &target_version)?.join("user/client/0");
 
     // Save existing settings before they get overwritten by import
     let target_profiles = target_base.join("Profiles/default");
@@ -3915,7 +3927,7 @@ pub async fn list_exported_layouts(
     game_path: String,
     version: String
 ) -> Result<Vec<ExportedLayout>, String> {
-    let d = sc_base_dir(&expand_tilde(&game_path), &version).join(
+    let d = sc_base_dir(&expand_tilde(&game_path), &version)?.join(
         "user/client/0/controls/mappings"
     );
     if !d.is_dir() {
