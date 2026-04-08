@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-08
+
+### Added
+- **Unified Settings Routing** — Star Citizen settings are now routed to the correct config file based on whether they have an in-game menu equivalent. Settings like VSync, Quality, Motion Blur, and Resolution write to `attributes.xml` (synced with the game), while engine-only tweaks (threads, shaders, view distance) stay in `USER.cfg`. Eliminates the flip-flop where `USER.cfg` would override in-game changes on every restart.
+- **Bidirectional Sync** — Detects in-game settings changes after game exit and shows a conflict resolution UI (keep ours / accept in-game per setting).
+- **Per-Setting Badge** — Each setting now shows a badge (SC/CFG) indicating where it is stored.
+- **TSR Dropdown** — `r.TSR` expanded from toggle to 3-option dropdown (Off / TSR / DLSS) matching the in-game Upscaling attribute.
+- **Monitor Detection Cache** — Monitor detection results are cached across page navigations with a manual refresh button (↻) for re-detection.
+
+### Changed
+- Settings tab renamed from "USER.cfg" to "Settings" / "Einstellungen".
+- Automatic migration: overlapping settings removed from `USER.cfg` on first Apply.
+- Binding editor modal widened from 440 px to 540 px.
+
+### Fixed
+- **Server Status Display** — Replaced fragile RSS keyword-matching with the structured cState JSON API (`index.json`), which provides explicit per-component status. Adds "Maintenance" as a new status type with blue indicator. Previously, maintenance windows were never detected because incident titles didn't match component keywords.
+- **Monitor Detection Timeout** — CLI tools (`kscreen-doctor`, `gnome-monitor-config`, `wlr-randr`, `xrandr`) now have a 5-second timeout to prevent hangs in sandboxed environments. Falls back to Tauri's built-in monitor API when all CLI tools fail.
+
+### Security
+- Devtools disabled in production builds.
+- Path traversal protection added to `sc_base_dir()` via `validate_version()`.
+- Custom env var keys re-validated at launch time, not only on save.
+- Unused `zip` dependency removed to reduce attack surface.
+- `Mutex .lock().unwrap()` replaced with proper error propagation in dashboard.
+- `wine.parent().unwrap()` replaced with fallible error handling.
+- `escapeAttr()` centralized in `utils.js`, removing duplicate from `dashboard.js`.
+- `cargo audit` step added to CI pipeline.
+
 ## [0.4.9] - 2026-04-06
 
 ### Added
@@ -251,6 +279,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prefix Tools** - Winecfg, DPI scaling, PowerShell installation via winetricks
 - **Multi-version Support** - Manage LIVE, PTU, EPTU, and other Star Citizen channels
 
+[0.5.0]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.9-0...v0.5.0-2
+[0.4.9]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.8-0...v0.4.9-0
+[0.4.8]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.7-1...v0.4.8-0
+[0.4.7]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.6...v0.4.7-1
+[0.4.6]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.0...v0.4.5
 [0.4.0]: https://github.com/TomRhodan/penguin-citizen/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/TomRhodan/penguin-citizen/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/TomRhodan/penguin-citizen/compare/v0.3.4...v0.3.5
