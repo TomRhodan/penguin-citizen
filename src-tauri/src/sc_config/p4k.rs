@@ -1,0 +1,266 @@
+use super::*;
+
+/// Reads a text file from the Data.p4k archive and returns the content as a string.
+#[tauri::command]
+pub async fn read_p4k(
+    game_path: String,
+    version: String,
+    file_path: String
+) -> Result<String, String> {
+    Ok(String::from_utf8_lossy(&read_p4k_file(&game_path, &version, &file_path)?).into_owned())
+}
+/// Lists files in the P4K archive, optionally filtered by a pattern.
+/// Searches the Central Directory and returns all filenames
+/// that contain the filter pattern (case-insensitive).
+#[tauri::command]
+pub async fn list_p4k(
+    game_path: String,
+    version: String,
+    pattern: Option<String>
+) -> Result<Vec<String>, String> {
+    let p = sc_base_dir(&game_path, &version)?.join("Data.p4k");
+    if !p.exists() {
+        return Err("No P4K".into());
+    }
+
+    let mut file = File::open(&p).map_err(|e| e.to_string())?;
+    let file_length = file
+        .metadata()
+        .map_err(|e| e.to_string())?
+        .len();
+    let (cd_offset, cd_size) = find_central_directory(&mut file, file_length)?;
+
+    file
+        .seek(SeekFrom::Start(cd_offset))
+        .map_err(|e| format!("Failed to seek to central directory: {}", e))?;
+    let mut central_dir = vec![0u8; cd_size as usize];
+    file
+        .read_exact(&mut central_dir)
+        .map_err(|e| format!("Failed to read central directory: {}", e))?;
+
+    let filter = pattern.unwrap_or_default().to_lowercase();
+    let mut results = vec![];
+    let mut pos = 0;
+
+    while pos + 46 <= central_dir.len() {
+        if &central_dir[pos..pos + 4] != b"PK\x01\x02" {
+            pos += 1;
+            continue;
+        }
+        let name_length = u16::from_le_bytes([
+            central_dir[pos + 28],
+            central_dir[pos + 29],
+        ]) as usize;
+        if pos + 46 + name_length > central_dir.len() {
+            break;
+        }
+        let name = String::from_utf8_lossy(&central_dir[pos + 46..pos + 46 + name_length]);
+        if name.to_lowercase().contains(&filter) {
+            results.push(name.to_string());
+        }
+        let extra_length = u16::from_le_bytes([
+            central_dir[pos + 30],
+            central_dir[pos + 31],
+        ]) as usize;
+        let comment_length = u16::from_le_bytes([
+            central_dir[pos + 32],
+            central_dir[pos + 33],
+        ]) as usize;
+        pos += 46 + name_length + extra_length + comment_length;
+    }
+
+    Ok(results)
+}
+
+/// Returns the file size of Data.p4k for an SC version.
+/// Tries multiple possible base paths.
+#[tauri::command]
+pub async fn get_data_p4k_size(gp: String, version: String) -> Result<u64, String> {
+    let exp = expand_tilde(&gp);
+
+    // Try multiple possible paths
+    let base_paths: Vec<PathBuf> = vec![
+        Path::new(&exp).join("drive_c/Program Files/Roberts Space Industries/StarCitizen"),
+        Path::new(&exp).join("StarCitizen"),
+        Path::new(&exp).to_path_buf()
+    ];
+
+    let mut base = None;
+    for p in &base_paths {
+        if p.exists() && p.is_dir() {
+            base = Some(p.clone());
+            break;
+        }
+    }
+
+    let base = base.ok_or_else(|| "StarCitizen directory not found".to_string())?;
+
+    let data_p4k_path = base.join(&version).join("Data.p4k");
+
+    if !data_p4k_path.exists() {
+        return Err("Data.p4k not found".to_string());
+    }
+
+    let metadata = fs::metadata(&data_p4k_path).map_err(|e| e.to_string())?;
+    Ok(metadata.len())
+}
+
+/// Copies Data.p4k from a source version to a target version with progress reporting.
+/// Sends "data-p4k-progress" events to the frontend (percent, copied bytes, speed).
+/// At the end, a "data-p4k-copy-complete" event is sent.
+#[tauri::command]
+pub async fn copy_data_p4k(
+    gp: String,
+    source_version: String,
+    target_version: String,
+    _window: tauri::Window,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let exp = expand_tilde(&gp);
+
+    // Try multiple possible paths
+    let base_paths: Vec<PathBuf> = vec![
+        Path::new(&exp).join("drive_c/Program Files/Roberts Space Industries/StarCitizen"),
+        Path::new(&exp).join("StarCitizen"),
+        Path::new(&exp).to_path_buf()
+    ];
+
+    let mut base = None;
+    for p in &base_paths {
+        if p.exists() && p.is_dir() {
+            base = Some(p.clone());
+            break;
+        }
+    }
+
+    let base = base.ok_or_else(|| "StarCitizen directory not found".to_string())?;
+
+    let source = base.join(&source_version).join("Data.p4k");
+    let target = base.join(&target_version).join("Data.p4k");
+
+    if !source.exists() {
+        return Err(format!("Source Data.p4k not found at {}", source.display()));
+    }
+
+    if target.exists() {
+        return Err("Target already has Data.p4k".to_string());
+    }
+
+    // Get file size for progress calculation
+    let metadata = fs::metadata(&source).map_err(|e| e.to_string())?;
+    let total_size = metadata.len();
+
+    // Create parent dir if needed
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    // Copy with progress using tokio (runs in background thread)
+    let source_clone = source.clone();
+    let target_clone = target.clone();
+    let target_version_for_emit = target_version.clone();
+    let app_handle_clone = app_handle.clone();
+    let start_time = std::time::Instant::now();
+
+    tokio::task::spawn_blocking(move || {
+        copy_with_progress(&source_clone, &target_clone, total_size, move |copied, total| {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let speed_bps = if elapsed > 0.0 { (copied as f64 / elapsed) as u64 } else { 0 };
+            let percent = (copied as f64 / total as f64 * 100.0) as u32;
+            log::debug!("Emitting progress: {} bytes", copied);
+            let _ = app_handle_clone.emit("data-p4k-progress", serde_json::json!({
+                "version": target_version_for_emit,
+                "percent": percent,
+                "copied_bytes": copied,
+                "total_bytes": total,
+                "speed_bps": speed_bps
+            }));
+        })
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))??;
+
+    log::info!("Copied Data.p4k from {} to {}", source_version, target_version);
+
+    // Emit completion event
+    let _ = app_handle.emit("data-p4k-copy-complete", serde_json::json!({
+        "version": target_version,
+        "success": true
+    }));
+
+    Ok(())
+}
+
+/// Copies a file with progress tracking (synchronous, for spawn_blocking).
+/// Reads in 8MB chunks and reports progress every 10MB via the callback.
+fn copy_with_progress<F>(from: &Path, to: &Path, total_size: u64, mut progress_callback: F) -> Result<u64, String>
+where
+    F: FnMut(u64, u64) + Send,
+{
+    use std::io::{BufReader, BufWriter, Read, Write};
+
+    let input = BufReader::new(
+        fs::File::open(from).map_err(|e| e.to_string())?
+    );
+    let mut input: Box<dyn Read> = Box::new(input);
+
+    let output = BufWriter::new(
+        fs::File::create(to).map_err(|e| e.to_string())?
+    );
+    let mut output: Box<dyn Write> = Box::new(output);
+
+    let mut written: u64 = 0;
+    let mut last_reported: u64 = 0;
+    let report_interval: u64 = 10 * 1024 * 1024; // 10MB
+    let mut buffer = vec![0u8; 8 * 1024 * 1024]; // 8MB buffer on heap
+
+    loop {
+        let bytes_read = input.read(&mut buffer).map_err(|e| e.to_string())?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        output.write_all(&buffer[..bytes_read]).map_err(|e| e.to_string())?;
+        written += bytes_read as u64;
+
+        if written - last_reported >= report_interval {
+            progress_callback(written, total_size);
+            last_reported = written;
+        }
+    }
+
+    output.flush().map_err(|e| e.to_string())?;
+    progress_callback(written, total_size);
+
+    Ok(written)
+}
+
+/// Aborts an ongoing copy by deleting the incomplete file.
+#[tauri::command]
+pub async fn abort_copy_data_p4k(gp: String, version: String) -> Result<(), String> {
+    let exp = expand_tilde(&gp);
+
+    let base_paths: Vec<PathBuf> = vec![
+        Path::new(&exp).join("drive_c/Program Files/Roberts Space Industries/StarCitizen"),
+        Path::new(&exp).join("StarCitizen"),
+        Path::new(&exp).to_path_buf()
+    ];
+
+    let mut base = None;
+    for p in &base_paths {
+        if p.exists() && p.is_dir() {
+            base = Some(p.clone());
+            break;
+        }
+    }
+
+    let base = base.ok_or_else(|| "StarCitizen directory not found".to_string())?;
+    let target = base.join(&version).join("Data.p4k");
+
+    if target.exists() {
+        fs::remove_file(&target).map_err(|e| e.to_string())?;
+        log::info!("Aborted copy - removed partial Data.p4k for {}", version);
+    }
+
+    Ok(())
+}
