@@ -6402,6 +6402,11 @@
   box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
 }
 
+.dash-status-dot.maintenance {
+  background: #3b82f6;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.5);
+}
+
 .dash-status-dot.unknown {
   background: var(--text-muted);
 }
@@ -6409,6 +6414,7 @@
 .dash-server-badge .operational { color: var(--success); }
 .dash-server-badge .degraded { color: var(--warning); }
 .dash-server-badge .major_outage { color: var(--danger); }
+.dash-server-badge .maintenance { color: #3b82f6; }
 .dash-server-badge .unknown { color: var(--text-muted); }
 
 /* Community Stats */

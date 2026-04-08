@@ -284,12 +284,12 @@ fn format_relative_time(date_str: &str) -> String {
 /// Information about a single RSI server component.
 ///
 /// Each component (e.g. Platform, Persistent Universe, Arena Commander)
-/// has a status that is derived from current incidents.
+/// has a status sourced from the cState JSON API.
 #[derive(Serialize, Clone)]
 pub struct ServerComponent {
     /// Name of the server component (e.g. "Platform", "Persistent Universe")
     pub name: String,
-    /// Current status: "operational", "degraded", or "major_outage"
+    /// Current status: "operational", "degraded", "major_outage", or "maintenance"
     pub status: String,
 }
 
@@ -302,8 +302,8 @@ pub struct ServerStatusResult {
 
 /// Tauri command: Fetches the current server status of RSI services.
 ///
-/// Parses the RSS feed of the RSI status page and derives
-/// the status for each server component from the incidents.
+/// Uses the cState JSON API (`index.json`) which provides explicit
+/// per-component status values — no keyword guessing required.
 #[tauri::command]
 pub async fn fetch_server_status() -> ServerStatusResult {
     match fetch_server_status_inner().await {
@@ -320,144 +320,46 @@ pub async fn fetch_server_status() -> ServerStatusResult {
     }
 }
 
+/// Maps a cState status string to our internal status vocabulary.
+fn map_cstate_status(cstate: &str) -> &'static str {
+    match cstate {
+        "operational" => "operational",
+        "disrupted" => "degraded",
+        "down" => "major_outage",
+        "maintenance" => "maintenance",
+        // "notice" is informational, not an outage
+        "notice" => "operational",
+        _ => "unknown",
+    }
+}
+
 /// Internal implementation of the server status fetch.
 ///
-/// Strategy: The RSS feed of the RSI status page only contains incidents.
-/// There is no direct listing of components with their status.
-/// Therefore, the status of each component is determined indirectly:
-/// 1. Parse all incidents from the feed
-/// 2. For each known component, check whether an active incident exists
-/// 3. Derive the severity from keywords in the incident
+/// Fetches the cState `index.json` API from the RSI status page,
+/// which contains an explicit status field per system component.
 async fn fetch_server_status_inner() -> Result<
     Vec<ServerComponent>,
     Box<dyn std::error::Error + Send + Sync>
 > {
-    // Fetch RSS feed from the RSI status page
-    let body = reqwest
-        ::get("https://status.robertsspaceindustries.com/index.xml").await?
-        .text().await?;
+    let resp: serde_json::Value = reqwest
+        ::get("https://status.robertsspaceindustries.com/index.json").await?
+        .json().await?;
 
-    // Parse RSS feed to extract all incidents
-    let mut reader = Reader::from_str(&body);
-    // Safety: trim whitespace (XXE protection)
-    reader.config_mut().trim_text(true);
-    let mut incidents: Vec<(String, String)> = Vec::new(); // (title, description)
-    let mut in_item = false;
-    let mut current_tag = String::new();
-    let mut current_title = String::new();
-    let mut current_desc = String::new();
+    let systems = resp.get("systems")
+        .and_then(|s| s.as_array())
+        .ok_or("missing 'systems' in status API response")?;
 
-    // RSS feed event loop: each <item> is an incident
-    loop {
-        match reader.read_event() {
-            Ok(Event::Start(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if name == "item" {
-                    // Start a new incident
-                    in_item = true;
-                    current_title.clear();
-                    current_desc.clear();
-                } else if in_item {
-                    current_tag = name;
-                }
-            }
-            Ok(Event::Text(ref e)) => {
-                if in_item {
-                    let text = e.unescape().unwrap_or_default().to_string();
-                    match current_tag.as_str() {
-                        "title" => current_title.push_str(&text),
-                        "description" => current_desc.push_str(&text),
-                        _ => {}
-                    }
-                }
-            }
-            // CDATA sections are treated like regular text
-            Ok(Event::CData(ref e)) => {
-                if in_item {
-                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
-                    match current_tag.as_str() {
-                        "title" => current_title.push_str(&text),
-                        "description" => current_desc.push_str(&text),
-                        _ => {}
-                    }
-                }
-            }
-            Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                if name == "item" {
-                    // Incident fully parsed - add to the list
-                    in_item = false;
-                    incidents.push((
-                        current_title.trim().to_string(),
-                        current_desc.trim().to_string(),
-                    ));
-                }
-                if in_item {
-                    current_tag.clear();
-                }
-            }
-            Ok(Event::Eof) => {
-                break;
-            }
-            Err(_) => {
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    // Derive the status of each known component from the incidents.
-    // By default, each component is "operational" unless
-    // an active (unresolved) incident affects it.
-    let component_names = ["Platform", "Persistent Universe", "Arena Commander"];
-    let mut components: Vec<ServerComponent> = Vec::new();
-
-    for name in &component_names {
-        let mut status = "operational".to_string();
-
-        // Check each incident to see if it affects this component
-        for (title, desc) in &incidents {
-            let combined = format!("{} {}", title.to_lowercase(), desc.to_lowercase());
-            let name_lower = name.to_lowercase();
-
-            // Relevance check: the incident may reference the component by name
-            // or use alternative terms (e.g. "website" for Platform)
-            let relevant =
-                combined.contains(&name_lower) ||
-                (*name == "Platform" &&
-                    (combined.contains("platform") ||
-                        combined.contains("website") ||
-                        combined.contains("rsi"))) ||
-                (*name == "Persistent Universe" &&
-                    (combined.contains("persistent universe") || combined.contains("pu "))) ||
-                (*name == "Arena Commander" &&
-                    (combined.contains("arena commander") || combined.contains("ac ")));
-
-            if relevant {
-                // Ignore resolved incidents - component remains operational
-                if combined.contains("resolved") || combined.contains("completed") {
-                    // Already resolved - status remains "operational"
-                } else if combined.contains("major") || combined.contains("outage") {
-                    // Major outage - immediately mark as major_outage and break
-                    status = "major_outage".to_string();
-                    break;
-                } else if
-                    combined.contains("degraded") ||
-                    combined.contains("partial") ||
-                    combined.contains("investigating") ||
-                    combined.contains("monitoring")
-                {
-                    // Partial impairment or ongoing investigation
-                    status = "degraded".to_string();
-                }
-            }
-        }
-
-        components.push(ServerComponent {
-            name: name.to_string(),
-            status,
-        });
-    }
+    let components = systems
+        .iter()
+        .filter_map(|sys| {
+            let name = sys.get("name")?.as_str()?;
+            let status = sys.get("status")?.as_str()?;
+            Some(ServerComponent {
+                name: name.to_string(),
+                status: map_cstate_status(status).to_string(),
+            })
+        })
+        .collect();
 
     Ok(components)
 }

@@ -691,10 +691,11 @@ function renderServerComponents(el, components) {
     operational: t('dashboard:server.operational'),
     degraded: t('dashboard:server.degraded'),
     major_outage: t('dashboard:server.majorOutage'),
+    maintenance: t('dashboard:server.maintenance'),
     unknown: t('dashboard:server.unknown'),
   };
 
-  const VALID_STATUSES = ['operational', 'degraded', 'major_outage', 'unknown'];
+  const VALID_STATUSES = ['operational', 'degraded', 'major_outage', 'maintenance', 'unknown'];
   let html = '<div class="dash-server-list">';
   for (const comp of components) {
     const safeStatus = VALID_STATUSES.includes(comp.status) ? comp.status : 'unknown';

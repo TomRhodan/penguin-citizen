@@ -49,6 +49,7 @@
   "server.operational": "Betriebsbereit",
   "server.degraded": "Eingeschraenkt",
   "server.majorOutage": "Schwerer Ausfall",
+  "server.maintenance": "Wartung",
   "server.unknown": "Unbekannt",
 
   "repair.confirmTitle": "Installation reparieren",

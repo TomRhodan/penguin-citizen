@@ -49,6 +49,7 @@
   "server.operational": "Operational",
   "server.degraded": "Degraded",
   "server.majorOutage": "Major Outage",
+  "server.maintenance": "Maintenance",
   "server.unknown": "Unknown",
 
   "repair.confirmTitle": "Repair Installation",
