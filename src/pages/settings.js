@@ -216,6 +216,7 @@ function renderAppSettings() {
           ${t('settings:reset.keepToken')}
         </li>
       </ul>
+      <p class="danger-warning">${t('settings:reset.cannotUndo', { defaultValue: 'This action cannot be undone.' })}</p>
       <div id="reset-confirm-area">
         <button class="btn btn-danger" id="btn-reset-app">${t('settings:button.resetRestart')}</button>
       </div>

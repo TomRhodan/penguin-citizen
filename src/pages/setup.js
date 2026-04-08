@@ -48,6 +48,8 @@ let currentStep = 1;
 let installMode = 'full';
 /** @type {Object|null} Result of the existing installation check */
 let detectedInstallation = null;
+/** @type {number|null} Debounce timer for path validation */
+let validateTimer = null;
 
 /**
  * Entry point for the setup wizard.
@@ -163,7 +165,11 @@ function renderDirectoryStep(container, { onComplete }) {
         </div>
 
         <div class="setup-footer">
-          <button class="btn btn-primary" id="setup-btn-continue" disabled>${t('setup:button.continue')}</button>
+          <button class="btn btn-secondary" id="setup-btn-back">${t('setup:button.back', { defaultValue: 'Back' })}</button>
+          <div class="setup-continue-wrap">
+            <button class="btn btn-primary" id="setup-btn-continue" disabled>${t('setup:button.continue')}</button>
+            <span class="setup-continue-hint" id="setup-continue-hint">${t('setup:hint.validateFirst', { defaultValue: 'Please validate the path first' })}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -171,16 +177,32 @@ function renderDirectoryStep(container, { onComplete }) {
 
   const pathInput = document.getElementById('setup-path-input');
   const continueBtn = document.getElementById('setup-btn-continue');
+  const continueHint = document.getElementById('setup-continue-hint');
 
-  // Update path on input (validation happens on blur/Enter)
+  // Debounced validation on keystroke (300ms delay)
   pathInput.addEventListener('input', () => {
     currentPath = pathInput.value;
+    clearTimeout(validateTimer);
+    validateTimer = setTimeout(() => validateSetupPath(), 300);
   });
 
-  // Validate path when the input field loses focus or Enter is pressed
-  pathInput.addEventListener('blur', () => validateSetupPath());
+  // Immediate validation on blur or Enter
+  pathInput.addEventListener('blur', () => {
+    clearTimeout(validateTimer);
+    validateSetupPath();
+  });
   pathInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') validateSetupPath();
+    if (e.key === 'Enter') {
+      clearTimeout(validateTimer);
+      validateSetupPath();
+    }
+  });
+
+  // Back button returns to the disclaimer step
+  document.getElementById('setup-btn-back').addEventListener('click', () => {
+    clearTimeout(validateTimer);
+    currentStep = 1;
+    renderDisclaimerStep(container, { onComplete });
   });
 
   // Open directory browser dialog via the Tauri dialog plugin
@@ -293,12 +315,14 @@ function renderDirectoryStep(container, { onComplete }) {
 async function validateSetupPath() {
   const msgEl = document.getElementById('setup-path-validation');
   const continueBtn = document.getElementById('setup-btn-continue');
+  const continueHint = document.getElementById('setup-continue-hint');
 
   // Empty path is invalid
   if (!currentPath.trim()) {
     msgEl.className = 'path-validation-msg validation-fail';
     msgEl.textContent = t('setup:error.enterPath');
     continueBtn.disabled = true;
+    if (continueHint) continueHint.style.display = '';
     return;
   }
 
@@ -314,15 +338,18 @@ async function validateSetupPath() {
       msgEl.className = 'path-validation-msg validation-pass';
       msgEl.textContent = result.message;
       continueBtn.disabled = false;
+      if (continueHint) continueHint.style.display = 'none';
     } else {
       msgEl.className = 'path-validation-msg validation-fail';
       msgEl.textContent = result.message;
       continueBtn.disabled = true;
+      if (continueHint) continueHint.style.display = '';
     }
   } catch (err) {
     msgEl.className = 'path-validation-msg validation-fail';
     msgEl.textContent = t('setup:status.validationFailed');
     continueBtn.disabled = true;
+    if (continueHint) continueHint.style.display = '';
   }
 }
 

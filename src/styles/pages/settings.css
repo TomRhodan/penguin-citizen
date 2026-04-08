@@ -124,3 +124,11 @@
   margin-top: 6px;
 }
 
+.danger-warning {
+  font-size: var(--font-xs);
+  color: #f87171;
+  font-weight: 500;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+

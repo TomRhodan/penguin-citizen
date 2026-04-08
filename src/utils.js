@@ -49,3 +49,27 @@ export function escapeAttr(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+/**
+ * Creates a debounced version of a function.
+ * The function is only called after `delay` milliseconds of inactivity.
+ *
+ * @param {Function} fn - The function to debounce
+ * @param {number} delay - Delay in milliseconds
+ * @returns {Function & { flush: Function, cancel: Function }} Debounced function with flush() and cancel()
+ */
+export function debounce(fn, delay) {
+  let timer = null;
+  const debounced = (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+  debounced.flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      fn();
+    }
+  };
+  debounced.cancel = () => clearTimeout(timer);
+  return debounced;
+}
