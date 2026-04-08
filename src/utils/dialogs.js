@@ -69,7 +69,7 @@ export function confirm(message, options = {}) {
     // Build modal HTML: header with icon+title, body with message, footer with buttons
     // For 'danger' type, the OK button is colored red (btn-danger)
     overlay.innerHTML = `
-      <div class="modal-container modal-kind-${kind}">
+      <div class="modal-container modal-kind-${kind}" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-header">
           <div class="modal-title-wrap">
             ${icon}
@@ -338,6 +338,8 @@ export function showNotification(message, type = 'info') {
   if (existing) existing.remove();
   const notification = document.createElement('div');
   notification.className = `settings-notification notification-${type}`;
+  notification.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
   notification.textContent = message;
   document.body.appendChild(notification);
   // Short delay for CSS transition (fade-in animation)
