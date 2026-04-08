@@ -1,0 +1,686 @@
+/*
+ * launch.css
+ * Launch page styles: launch bar, cards, env vars, log panel,
+ * gamescope options, monitor settings, pre-launch overlay.
+ */
+
+/* ── Launch Page ─────────────────────────────────── */
+
+/* ── Compact Launch Bar ── */
+.launch-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.launch-bar-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+
+.launch-bar-btn-play {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.launch-bar-btn-play:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+}
+
+.launch-bar-btn-play:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.launch-bar-btn-stop {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.launch-bar-btn-stop:hover {
+  background: var(--danger);
+  color: var(--bg-primary);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+.launch-bar-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.launch-bar-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.launch-bar-info {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+  min-width: 0;
+}
+
+.launch-bar-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.launch-bar-label {
+  font-size: 0.714rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.launch-bar-value {
+  font-size: var(--font-xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.launch-bar-mono {
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+}
+
+.launch-bar-status {
+  flex-shrink: 0;
+  font-size: 0.714rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 12px;
+  border-radius: var(--radius-lg);
+  margin-left: auto;
+}
+
+.launch-bar-status-ready {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.launch-bar-status-running {
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.launch-bar-status-launching {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.launch-bar-status-checking {
+  color: var(--text-muted);
+}
+
+.launch-bar-status-error {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* ── Launch Status Messages (error/not-installed) ── */
+.launch-status-message {
+  text-align: center;
+  padding: 12px 20px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  font-size: var(--font-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.launch-status-message p {
+  margin: 0;
+}
+
+.launch-status-not-installed {
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.launch-status-error {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* ── Collapsible Card Grid ── */
+.launch-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.launch-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.launch-card:not(.gpu-disabled):hover {
+  border-color: var(--accent);
+}
+
+.launch-card.expanded {
+  border-color: var(--accent);
+}
+
+.launch-card.gpu-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.launch-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.launch-card-arrow {
+  font-size: 0.643rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  transition: color var(--transition-fast);
+}
+
+.launch-card:not(.gpu-disabled):hover .launch-card-arrow {
+  color: var(--accent);
+}
+
+.launch-card-title {
+  font-size: 0.714rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-primary);
+}
+
+.launch-card-gpu-hint {
+  font-size: 0.643rem;
+  color: var(--text-muted);
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.launch-card-gpu-miss {
+  font-size: 0.643rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: auto;
+  font-weight: 400;
+}
+
+/* Badges (collapsed state) */
+.launch-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 14px 10px 34px;
+}
+
+.launch-card-badge {
+  display: inline-block;
+  font-size: 0.643rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.launch-card-badge-muted {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.launch-card-badge-warn {
+  background: rgba(232, 167, 53, 0.1);
+  color: var(--warning, #e8a735);
+  border: 1px solid rgba(232, 167, 53, 0.2);
+}
+
+.launch-card-inactive {
+  font-size: 0.643rem;
+  font-style: italic;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+/* Card body (expanded state) */
+.launch-card-body {
+  padding: 4px 14px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.launch-card-desc {
+  font-size: 0.714rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.launch-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.launch-card-field-label {
+  font-size: 0.714rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.launch-card-hint {
+  font-size: 0.643rem;
+  color: var(--text-muted);
+}
+
+/* Toggle options (shared - used in cards) */
+.toggle-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.toggle-option input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.toggle-blocked {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toggle-tool-missing {
+  opacity: 0.5;
+}
+
+.launch-scaling-warning {
+  font-size: var(--font-xs);
+  color: var(--warning, #e8a735);
+  padding: 8px 12px;
+  background: rgba(232, 167, 53, 0.08);
+  border: 1px solid rgba(232, 167, 53, 0.2);
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
+
+/* ── Monitor Row (inside Wayland card) ── */
+.launch-monitor-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.launch-monitor-select-wrap {
+  flex: 1;
+  transition: opacity var(--transition-fast);
+}
+
+.launch-monitor-select-wrap.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.launch-monitor-input {
+  width: 100%;
+}
+
+.btn-monitor-refresh {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.btn-monitor-refresh.spinning {
+  animation: spin 0.8s linear infinite;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* ── Gamescope options (inside Gamescope card) ── */
+.launch-gamescope-options {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+}
+
+.launch-gamescope-options.gamescope-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.launch-gamescope-resolution {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.launch-gamescope-resolution label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+}
+
+.gamescope-input {
+  width: 80px;
+}
+
+.launch-tool-not-installed {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 0.714rem;
+  font-style: italic;
+}
+
+/* ── GPU filter (inside GPU & CPU card) ── */
+.launch-gpu-filter-select {
+  width: 100%;
+}
+
+.launch-cpu-topology-input {
+  font-family: monospace;
+  width: 100%;
+}
+
+/* Badges for installed/not-installed status */
+.badge-installed {
+  background: var(--success, #22c55e);
+  color: #000;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.badge-not-installed {
+  background: var(--text-muted);
+  color: #000;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.badge-experimental {
+  font-size: 0.643rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(232, 167, 53, 0.1);
+  color: var(--warning, #e8a735);
+  border: 1px solid rgba(232, 167, 53, 0.2);
+}
+
+/* ── Custom Env Vars Collapsible Row ── */
+.launch-envvars-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  flex-shrink: 0;
+  transition: border-color var(--transition-fast);
+}
+
+.launch-envvars-card:hover {
+  border-color: var(--accent);
+}
+
+.launch-envvars-card.expanded {
+  border-color: var(--accent);
+}
+
+.launch-envvars-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.launch-envvars-count {
+  font-size: 0.643rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-left: auto;
+}
+
+.launch-envvars-body {
+  padding: 4px 14px 14px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.custom-env-hint {
+  font-size: 0.714rem;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.env-var-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity var(--transition-fast);
+}
+
+.env-var-row.env-var-disabled {
+  opacity: 0.4;
+}
+
+.env-var-row.env-var-disabled .env-var-key,
+.env-var-row.env-var-disabled .env-var-value {
+  text-decoration: line-through;
+}
+
+.env-var-toggle {
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.env-var-key {
+  width: 180px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+}
+
+.env-var-equals {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.env-var-value {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+.env-var-conflict {
+  flex-shrink: 0;
+  font-size: 0.714rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(232, 167, 53, 0.1);
+  color: var(--warning, #e8a735);
+  border: 1px solid rgba(232, 167, 53, 0.2);
+  white-space: nowrap;
+}
+
+.btn-env-delete {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-env-delete:hover {
+  color: var(--error, #e74c3c);
+  border-color: var(--error, #e74c3c);
+}
+
+.btn-env-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-add-env {
+  align-self: flex-start;
+}
+
+/* Log Panel */
+.log-panel {
+  min-height: 140px;
+}
+
+.log-panel-flex {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+}
+
+.log-output {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  min-height: 80px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.log-output-flex {
+  flex: 1;
+  max-height: none;
+}
+
+
+/* --- Pre-Launch Overlay --- */
+
+.pre-launch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.pre-launch-dialog {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  max-width: 420px;
+}
+
+.pre-launch-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(6, 182, 212, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: pre-launch-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pre-launch-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pre-launch-message {
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  line-height: 1.5;
+}

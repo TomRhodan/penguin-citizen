@@ -1,0 +1,1078 @@
+/*
+ * installation.css
+ * Installation page styles: modals, wizard steps, system checks,
+ * install phases, progress, runner downloads within the installation flow.
+ */
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  max-width: 480px;
+  width: 90%;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.modal-header h3 {
+  font-size: 1.143rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-close {
+  width: 32px; height: 32px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.modal-footer-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.modal-footer-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.modal-title {
+  font-size: 1.286rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.modal-description {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.detected-info {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.detected-row {
+  display: flex;
+  gap: 8px;
+  font-size: var(--font-sm);
+}
+
+.detected-row + .detected-row {
+  margin-top: 6px;
+}
+
+.detected-label {
+  color: var(--text-muted);
+  min-width: 60px;
+}
+
+.detected-value {
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.install-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.mode-option {
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color var(--transition-normal), background var(--transition-normal);
+}
+
+.mode-option:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.mode-option.selected {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.mode-option-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.mode-option-icon {
+  font-size: 1.286rem;
+}
+
+.mode-option-title {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mode-option-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+  padding-left: 28px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Installation - Wizard */
+.wizard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wizard-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-xs);
+  font-weight: 700;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.wizard-step.active .step-number {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-primary);
+}
+
+.step-label {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+
+.wizard-step.active .step-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.wizard-divider {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.wizard-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+  flex-shrink: 0;
+}
+
+/* Check List */
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--font-sm);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  border: 1px solid transparent;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  opacity: 0.5;
+}
+
+.check-item.revealed {
+  opacity: 1;
+  animation: checkReveal 0.3s ease forwards;
+}
+
+.check-item[data-status="running"] {
+  opacity: 0.8;
+  border-color: var(--border);
+}
+
+.check-item:hover {
+  border-color: var(--border-hover);
+}
+
+.check-icon-wrap {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.check-icon {
+  font-size: var(--font-lg);
+  width: 20px;
+  text-align: center;
+  line-height: 1;
+}
+
+.check-icon.pending { color: var(--text-muted); }
+.check-icon.pass { color: var(--success); }
+.check-icon.warn { color: var(--warning); }
+.check-icon.fail { color: var(--danger); }
+
+.check-icon.running {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  font-size: 0;
+}
+
+.check-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.check-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+}
+
+.check-detail {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.check-item[data-status="fail"] .check-detail {
+  color: var(--danger);
+}
+
+.check-item[data-status="warn"] .check-detail {
+  color: var(--warning);
+}
+
+/* Fix Button */
+.btn-fix {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.1);
+  color: var(--warning);
+  font-size: 0.786rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--transition-fast);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-fix:not(:disabled):hover {
+  background: rgba(234, 179, 8, 0.2);
+  border-color: var(--warning);
+}
+
+.btn-fix:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-fix.fixed {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success);
+}
+
+/* Summary Bar */
+.summary-bar {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  margin-top: 12px;
+  border: 1px solid transparent;
+}
+
+.summary-pass {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.25);
+  color: var(--success);
+}
+
+.summary-warn {
+  background: rgba(234, 179, 8, 0.08);
+  border-color: rgba(234, 179, 8, 0.25);
+  color: var(--warning);
+}
+
+.summary-fail {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: var(--danger);
+}
+
+/* Animations */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes checkReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Wizard Step - Completed */
+.wizard-step.completed .step-number {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg-primary);
+  font-size: var(--font-md);
+  font-weight: 700;
+}
+
+.wizard-step.completed .step-label {
+  color: var(--success);
+  font-weight: 500;
+}
+
+/* Config Sections */
+.config-section {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.config-section-last {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.config-section-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+/* Path Input */
+.path-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.path-input-row .input {
+  flex: 1;
+}
+
+.path-validation-msg {
+  font-size: var(--font-xs);
+  margin-top: 6px;
+  min-height: 18px;
+  font-family: var(--font-mono);
+}
+
+.validation-pass {
+  color: var(--success);
+}
+
+.validation-warn {
+  color: var(--warning);
+}
+
+.validation-fail {
+  color: var(--danger);
+}
+
+/* Runner Empty Notice */
+.runner-empty-notice {
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.runner-empty-notice code {
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--text-primary);
+}
+
+.runner-loading {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  padding: 12px 0;
+}
+
+/* Runner Source Tabs */
+.runner-source-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+}
+
+.runner-source-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.source-tab {
+  padding: 4px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--transition-fast);
+}
+
+.source-tab:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.source-tab.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Runner Download Panel */
+.runner-download-panel {
+  margin-top: 10px;
+}
+
+.runner-download-panel.has-local {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.runner-download-toggle {
+  font-size: var(--font-xs);
+  color: var(--accent);
+  cursor: pointer;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.runner-download-toggle:hover {
+  text-decoration: underline;
+}
+
+/* Available Runner List */
+.runner-available-list {
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runner-available-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid transparent;
+  transition: border-color var(--transition-fast);
+  gap: 10px;
+  overflow: visible !important;
+}
+
+.runner-available-item:hover {
+  border-color: var(--border-hover);
+}
+
+.runner-available-item.installed {
+  opacity: 0.6;
+}
+
+.runner-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  overflow: visible !important;
+}
+
+.runner-item-name {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-word !important;
+  white-space: normal !important;
+}
+
+.runner-item-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.runner-source-badge {
+  font-size: 0.714rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-md);
+  background: var(--accent-dim);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.runner-item-size {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.runner-installed-badge {
+  font-size: 0.786rem;
+  font-weight: 600;
+  color: var(--success);
+  padding: 3px 10px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(34, 197, 94, 0.08);
+  flex-shrink: 0;
+}
+
+.runner-cache-time {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  margin-right: 8px;
+}
+
+/* Small Button */
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 0.786rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--transition-fast);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-sm:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.btn-install {
+  padding: 4px 12px;
+  font-size: 0.786rem;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--transition-fast);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  background: rgba(6, 182, 212, 0.08);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.btn-install:hover {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--accent);
+}
+
+/* Install Overlay / Progress */
+.runner-install-overlay {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: var(--radius);
+  background: rgba(6, 182, 212, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runner-install-name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0%;
+  transition: width var(--transition-normal);
+}
+
+.progress-bar-fill.extracting {
+  animation: progressPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.runner-install-status {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Fetch Error */
+.runner-fetch-error {
+  font-size: 0.786rem;
+  color: var(--warning);
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  background: rgba(234, 179, 8, 0.06);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+}
+
+/* Performance Groups */
+.perf-group {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.perf-group:first-child {
+  margin-top: 0;
+}
+
+.perf-group-title {
+  font-size: 0.786rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+
+/* Monitor Select (inline with toggle hint) */
+.monitor-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.monitor-env-name {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.monitor-select-container {
+  transition: opacity var(--transition-fast);
+}
+
+.monitor-select-container.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.monitor-select-input {
+  min-width: 220px;
+}
+
+/* Performance Toggles */
+.perf-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.perf-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+
+.perf-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.toggle-label {
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.toggle-hint {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Install Summary */
+.install-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 0;
+}
+
+.install-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+}
+
+.install-summary-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.install-summary-value {
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  font-weight: 500;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.install-summary-value.mono {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+.install-summary-badge {
+  font-size: 0.786rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.install-summary-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 12px;
+  line-height: 1.6;
+}
+
+/* Step 3 Placeholder */
+.step3-placeholder {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--font-md);
+}
+
+.step3-placeholder .text-muted {
+  margin-top: 8px;
+}
+
+/* Installation Phases */
+.install-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.install-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.install-phase.active {
+  color: var(--accent);
+  background: rgba(6, 182, 212, 0.04);
+  font-weight: 500;
+}
+
+.install-phase.done {
+  color: var(--success);
+}
+
+.install-phase-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-md);
+  flex-shrink: 0;
+}
+
+.install-phase-icon.spinning {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  font-size: 0;
+}
+
+.install-phase.done .install-phase-icon {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.install-phase-label {
+  flex: 1;
+}
+
+/* Installation Log */
+.install-log-container {
+  margin-bottom: 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 80px;
+}
+
+.install-log {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  flex: 1;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.install-log-line {
+  padding: 1px 0;
+  line-height: 1.5;
+}
+
+/* Installation Progress */
+.install-progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.install-progress-wrapper .progress-bar-track {
+  flex: 1;
+}
+
+.install-percent {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  min-width: 38px;
+  text-align: right;
+}
+
+/* Installation Error */
+.install-error-msg {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  margin-bottom: 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: var(--danger);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+/* Runners - Empty State */
+.empty-state {
+  text-align: center;
+  padding: 32px 20px;
+}
+
+.empty-icon {
+  font-size: 3.429rem;
+  margin-bottom: 12px;
+}
+
+.empty-state h3 {
+  margin-bottom: 8px;
+}
+
+.empty-state p {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  margin-bottom: 16px;
+}
+
+.source-list {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.runner-list {
+  min-height: 60px;
+}
+

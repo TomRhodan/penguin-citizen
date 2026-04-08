@@ -1,0 +1,126 @@
+/*
+ * settings.css
+ * Settings page styles: setting rows, inputs, sliders, token management.
+ */
+
+/* Settings */
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setting-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.setting-input {
+  display: flex;
+  gap: 8px;
+}
+
+.setting-input .input {
+  flex: 1;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.slider-row .slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.slider-row .slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.slider-row .slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.slider-row .slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.slider-value {
+  min-width: 45px;
+  text-align: right;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.setting-hint {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+}
+
+.token-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.token-value {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  flex: 1;
+  letter-spacing: 0.5px;
+}
+
+.token-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.token-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.token-input-row .input {
+  flex: 1;
+}
+
+.token-field .setting-hint {
+  margin-top: 6px;
+}
+

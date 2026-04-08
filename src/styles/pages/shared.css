@@ -1,0 +1,31 @@
+/*
+ * shared.css
+ * Shared component styles: tooltip system.
+ */
+
+/* ============================
+   Tooltip System (CSS-only)
+   ============================ */
+
+[data-tooltip] {
+  position: relative;
+}
+
+.tooltip-popup {
+  position: fixed;
+  padding: 8px 12px;
+  background: var(--bg-secondary, #1a1a2e);
+  color: var(--text-primary, #e0e0e0);
+  font-size: 0.786rem;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: normal;
+  max-width: 300px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  z-index: 10000;
+}
+

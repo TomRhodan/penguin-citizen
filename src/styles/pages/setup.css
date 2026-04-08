@@ -1,0 +1,123 @@
+/*
+ * setup.css
+ * Setup wizard styles (first run experience).
+ */
+
+/* ============================
+   Setup Wizard (First Run)
+   ============================ */
+
+.content-setup {
+  width: 100% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.setup-wizard {
+  width: 100%;
+  max-width: 540px;
+  padding: 20px;
+}
+
+.setup-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.setup-header {
+  padding: 40px 32px 24px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.setup-logo {
+  max-width: 100px;
+  height: auto;
+  margin-bottom: 20px;
+  opacity: 0.9;
+}
+
+.setup-title {
+  font-size: 1.571rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.setup-subtitle {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+
+.setup-body {
+  padding: 24px 32px;
+}
+
+.setup-description {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.setup-description strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.project-links {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.project-link {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: border-color var(--transition-normal), background var(--transition-normal);
+}
+
+.project-link:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.project-name {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.project-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup-label {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.setup-footer {
+  padding: 16px 32px 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+
