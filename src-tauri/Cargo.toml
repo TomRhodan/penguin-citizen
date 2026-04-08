@@ -43,6 +43,9 @@ sha2 = "0.10"
 similar = "2"
 base64 = "0.22"
 
+[dev-dependencies]
+tempfile = "3"
+
 [features]
 devtools = ["tauri/devtools"]
 default = []

@@ -1227,3 +1227,113 @@ pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, AppErr
         .map_err(|e| AppError::Task(e.to_string()))?
         .map_err(Into::into)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_config_default_has_sensible_values() {
+        let config = AppConfig::default();
+        assert!(config.install_path.is_empty());
+        assert!(config.selected_runner.is_none());
+        assert_eq!(config.log_level, "info");
+        assert_eq!(config.install_mode, "full");
+        assert_eq!(config.ui_scale, 1.0);
+        assert!(config.language.is_none());
+    }
+
+    #[test]
+    fn performance_defaults_enable_core_features() {
+        let perf = PerformanceSettings::default();
+        assert!(perf.esync);
+        assert!(perf.fsync);
+        assert!(perf.dxvk_async);
+        assert!(perf.wayland);
+        assert!(!perf.mangohud);
+        assert!(!perf.dxvk_hud);
+    }
+
+    #[test]
+    fn app_config_serialization_roundtrip() {
+        let config = AppConfig {
+            install_path: "~/Games/star-citizen".into(),
+            selected_runner: Some("wine-ge-proton8-25".into()),
+            performance: PerformanceSettings {
+                mangohud: true,
+                custom_env_vars: vec![CustomEnvVar {
+                    key: "WINEDEBUG".into(),
+                    value: "-all".into(),
+                    enabled: true,
+                }],
+                ..Default::default()
+            },
+            github_token: Some("ghp_test123".into()),
+            log_level: "debug".into(),
+            auto_backup_on_launch: Some(true),
+            runner_sources: vec![RunnerSourceConfig {
+                name: "LUG".into(),
+                api_url: "https://api.github.com/repos/starcitizen-lug/lug-wine/releases".into(),
+                filter: Some("all".into()),
+                enabled: true,
+            }],
+            install_mode: "quick".into(),
+            ui_scale: 1.25,
+            language: Some("de".into()),
+        };
+
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.install_path, config.install_path);
+        assert_eq!(restored.selected_runner, config.selected_runner);
+        assert!(restored.performance.mangohud);
+        assert_eq!(restored.performance.custom_env_vars.len(), 1);
+        assert_eq!(restored.performance.custom_env_vars[0].key, "WINEDEBUG");
+        assert_eq!(restored.github_token, config.github_token);
+        assert_eq!(restored.log_level, "debug");
+        assert_eq!(restored.runner_sources.len(), 1);
+        assert_eq!(restored.runner_sources[0].name, "LUG");
+        assert_eq!(restored.install_mode, "quick");
+        assert_eq!(restored.ui_scale, 1.25);
+        assert_eq!(restored.language, Some("de".into()));
+    }
+
+    #[test]
+    fn app_config_deserializes_with_missing_fields() {
+        // Simulate an older config that's missing newer fields
+        let json = r#"{"install_path": "/tmp/sc", "log_level": "info"}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.install_path, "/tmp/sc");
+        assert!(config.selected_runner.is_none());
+        assert_eq!(config.ui_scale, 1.0);
+        assert!(config.performance.esync); // default should be true
+    }
+
+    #[test]
+    fn custom_env_var_roundtrip() {
+        let var = CustomEnvVar {
+            key: "DXVK_HUD".into(),
+            value: "fps,frametimes".into(),
+            enabled: false,
+        };
+        let json = serde_json::to_string(&var).unwrap();
+        let restored: CustomEnvVar = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.key, "DXVK_HUD");
+        assert!(!restored.enabled);
+    }
+
+    #[test]
+    fn gamescope_settings_default() {
+        let gs = GamescopeSettings::default();
+        assert!(!gs.enabled);
+        assert!(gs.width.is_none());
+    }
+
+    #[test]
+    fn get_system_locale_returns_nonempty() {
+        let locale = get_system_locale();
+        assert!(!locale.is_empty());
+        assert!(locale.len() >= 2);
+    }
+}

@@ -366,3 +366,152 @@ pub(crate) fn validate_env_var_key(key: &str) -> Result<(), String> {
     if BLOCKED.contains(&key) { return Err("Blocked".to_string()); }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    // ── expand_tilde ──
+
+    #[test]
+    fn expand_tilde_replaces_home() {
+        let result = expand_tilde("~/Games/star-citizen");
+        assert!(!result.starts_with('~'), "tilde should be expanded");
+        assert!(result.ends_with("/Games/star-citizen"));
+    }
+
+    #[test]
+    fn expand_tilde_no_tilde_unchanged() {
+        assert_eq!(expand_tilde("/tmp/foo"), "/tmp/foo");
+    }
+
+    #[test]
+    fn expand_tilde_empty_string() {
+        assert_eq!(expand_tilde(""), "");
+    }
+
+    #[test]
+    fn expand_tilde_only_tilde() {
+        let result = expand_tilde("~");
+        assert!(!result.is_empty());
+        assert!(!result.starts_with('~'));
+    }
+
+    // ── validate_env_var_key ──
+
+    #[test]
+    fn env_var_valid_keys() {
+        assert!(validate_env_var_key("WINEDEBUG").is_ok());
+        assert!(validate_env_var_key("MY_VAR_123").is_ok());
+        assert!(validate_env_var_key("X").is_ok());
+    }
+
+    #[test]
+    fn env_var_empty_rejected() {
+        assert_eq!(validate_env_var_key("").unwrap_err(), "Empty");
+    }
+
+    #[test]
+    fn env_var_invalid_chars_rejected() {
+        assert_eq!(validate_env_var_key("MY-VAR").unwrap_err(), "Invalid");
+        assert_eq!(validate_env_var_key("MY VAR").unwrap_err(), "Invalid");
+        assert_eq!(validate_env_var_key("MY.VAR").unwrap_err(), "Invalid");
+        assert_eq!(validate_env_var_key("$VAR").unwrap_err(), "Invalid");
+    }
+
+    #[test]
+    fn env_var_blocked_system_vars() {
+        for key in &["PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "HOME", "USER", "SHELL"] {
+            assert_eq!(validate_env_var_key(key).unwrap_err(), "Blocked",
+                       "{} should be blocked", key);
+        }
+    }
+
+    #[test]
+    fn env_var_blocked_wine_vars() {
+        for key in &["WINEPREFIX", "WINEARCH", "WINE", "WINESERVER", "WINELOADER", "WINEDLLPATH"] {
+            assert_eq!(validate_env_var_key(key).unwrap_err(), "Blocked",
+                       "{} should be blocked", key);
+        }
+    }
+
+    #[test]
+    fn env_var_blocked_xdg_vars() {
+        for key in &["XDG_CONFIG_HOME", "XDG_DATA_HOME"] {
+            assert_eq!(validate_env_var_key(key).unwrap_err(), "Blocked",
+                       "{} should be blocked", key);
+        }
+    }
+
+    // ── safe_unpack ──
+
+    #[test]
+    fn safe_unpack_normal_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path();
+
+        // Create a simple tar archive in memory
+        let mut builder = tar::Builder::new(Vec::new());
+        let content = b"hello world";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append_data(&mut header, "test.txt", &content[..]).unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let mut archive = tar::Archive::new(&data[..]);
+        safe_unpack(&mut archive, dst).unwrap();
+
+        let extracted = std::fs::read_to_string(dst.join("test.txt")).unwrap();
+        assert_eq!(extracted, "hello world");
+    }
+
+    #[test]
+    fn safe_unpack_subdirectory_structure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path();
+
+        // Create archive with a subdirectory entry
+        let mut builder = tar::Builder::new(Vec::new());
+        let content = b"nested file";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append_data(&mut header, "subdir/nested.txt", &content[..]).unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let mut archive = tar::Archive::new(&data[..]);
+        safe_unpack(&mut archive, dst).unwrap();
+
+        let extracted = std::fs::read_to_string(dst.join("subdir/nested.txt")).unwrap();
+        assert_eq!(extracted, "nested file");
+    }
+
+    // ── validate_screenshot_filename ──
+
+    #[test]
+    fn screenshot_filename_valid() {
+        assert!(validate_screenshot_filename("screenshot.png").is_ok());
+        assert!(validate_screenshot_filename("my-shot_01.jpg").is_ok());
+    }
+
+    #[test]
+    fn screenshot_filename_rejects_traversal() {
+        assert!(validate_screenshot_filename("../etc/passwd").is_err());
+        assert!(validate_screenshot_filename("foo/bar.png").is_err());
+        assert!(validate_screenshot_filename("foo\\bar.png").is_err());
+        assert!(validate_screenshot_filename("").is_err());
+    }
+
+    // ── http_client ──
+
+    #[test]
+    fn http_client_returns_same_instance() {
+        let a = http_client() as *const reqwest::Client;
+        let b = http_client() as *const reqwest::Client;
+        assert_eq!(a, b, "http_client should return the same instance");
+    }
+}
