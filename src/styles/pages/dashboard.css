@@ -4,6 +4,24 @@
  * community stats, skeleton loading, repair banner.
  */
 
+/* Offline Banner */
+.dash-offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  font-size: var(--font-sm);
+  margin-bottom: 12px;
+}
+
+.dash-offline-banner svg {
+  flex-shrink: 0;
+}
+
 /* Dashboard Status Icons */
 .card-icon.status-ok {
   color: var(--success);
