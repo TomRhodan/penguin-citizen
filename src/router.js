@@ -96,9 +96,15 @@ async function navigate(page) {
   content.innerHTML = '';
   route.render(content);
 
-  // Highlight the active sidebar link (toggle CSS class 'active')
+  // Highlight the active sidebar link and set ARIA current page
   document.querySelectorAll('.nav-link').forEach((link) => {
-    link.classList.toggle('active', link.dataset.page === page);
+    const isActive = link.dataset.page === page;
+    link.classList.toggle('active', isActive);
+    if (isActive) {
+      link.setAttribute('aria-current', 'page');
+    } else {
+      link.removeAttribute('aria-current');
+    }
   });
 }
 

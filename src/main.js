@@ -91,6 +91,19 @@ document.getElementById('link-wiki').addEventListener('click', (e) => {
   invoke('open_browser', { url: 'https://wiki.starcitizen-lug.org/' }).catch(err => console.error(err));
 });
 
+// === Keyboard navigation ===
+// Sidebar navigation via keyboard: Enter/Space activates links
+document.querySelectorAll('.nav-link').forEach(link => {
+  // Make links keyboard-focusable (already are as <a> elements, but ensure role)
+  link.setAttribute('role', 'link');
+  link.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      link.click();
+    }
+  });
+});
+
 /**
  * Global Tooltip System
  *
