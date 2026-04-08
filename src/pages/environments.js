@@ -2872,7 +2872,7 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
   // we SHOULD NOT default to 1, because that blocks other instances.
   // We keep it as null to allow any device capture unless specifically locked by a column click.
   if (targetInstance === null) {
-      console.log('[EDITOR] No target instance provided, defaulting to auto-detect (no filter)');
+      debugLog('editor', 'debug', 'No target instance provided, defaulting to auto-detect (no filter)');
   }
 
   // Create modal
@@ -2943,7 +2943,7 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
   const dmap = window.activeBackup?.device_map || [];
   invoke('list_connected_devices', { deviceMap: dmap }).then(devices => {
     connectedDevices = devices || [];
-    console.log('[EDITOR] Connected devices:', connectedDevices);
+    debugLog('editor', 'debug', `Connected devices: ${JSON.stringify(connectedDevices)}`);
     if (profileDeviceMap.length > 0) {
       // Show profile's SC devices with connection status
       deviceSelect.innerHTML = `
@@ -3037,7 +3037,7 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
 
   // 1. Listen for backend hardware events (joysticks via Rust/gilrs)
   listen('input-captured', (event) => {
-    console.log('[EDITOR] Hardware event received from Rust:', event.payload);
+    debugLog('editor', 'debug', `Hardware event received from Rust: ${JSON.stringify(event.payload)}`);
     setCapturedInput(event.payload);
   }).then(unlisten => {
     inputCapturedUnlisten = unlisten;
@@ -4860,7 +4860,6 @@ async function showDataP4kCopyProgressModal(sourceVersion, targetVersion) {
 
     // Setup progress listener
     unlisten = await listen('data-p4k-progress', (event) => {
-      console.log('[DEBUG] Progress event received:', event.payload);
       const { version, percent, copied_bytes, total_bytes, speed_bps } = event.payload;
 
       // Only handle our target version

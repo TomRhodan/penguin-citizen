@@ -47,6 +47,17 @@
   box-sizing: border-box;
 }
 
+/* Accessibility: visible focus ring for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Remove focus ring for mouse clicks (keep only for keyboard) */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 html, body {
   height: 100%;
   overflow: hidden;
