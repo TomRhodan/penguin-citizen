@@ -322,10 +322,23 @@ pub(crate) fn expand_tilde(p: &str) -> String {
     p.to_string()
 }
 
+/// Maximum total extracted size: 50 GB. Protects against archive bombs
+/// (e.g., a 1 KB archive that expands to 1 TB).
+const MAX_EXTRACT_SIZE: u64 = 50 * 1024 * 1024 * 1024;
+
 pub(crate) fn safe_unpack<R: io::Read>(archive: &mut tar::Archive<R>, dst: &Path) -> io::Result<()> {
     let canonical_dst = dst.canonicalize()?;
+    let mut total_size: u64 = 0;
     for entry in archive.entries()? {
         let mut entry = entry?;
+        // Archive bomb protection: abort if total extracted size exceeds limit
+        total_size = total_size.saturating_add(entry.size());
+        if total_size > MAX_EXTRACT_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Archive exceeds maximum extraction size ({} GB)", MAX_EXTRACT_SIZE / (1024 * 1024 * 1024)),
+            ));
+        }
         let path = entry.path()?;
         let target = canonical_dst.join(&path);
         let parent = target.parent().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No parent"))?;
@@ -340,7 +353,16 @@ pub(crate) fn safe_unpack<R: io::Read>(archive: &mut tar::Archive<R>, dst: &Path
 pub(crate) fn validate_env_var_key(key: &str) -> Result<(), String> {
     if key.is_empty() { return Err("Empty".to_string()); }
     if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { return Err("Invalid".to_string()); }
-    const BLOCKED: &[&str] = &["PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "HOME", "USER", "SHELL"];
+    // Variables that could break Wine/Proton operation or compromise security.
+    // The app manages these internally and users should not override them.
+    const BLOCKED: &[&str] = &[
+        // System security
+        "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "HOME", "USER", "SHELL",
+        // Wine/Proton internals (managed by the app)
+        "WINEPREFIX", "WINEARCH", "WINE", "WINESERVER", "WINELOADER", "WINEDLLPATH",
+        // XDG paths (could redirect config/data storage)
+        "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+    ];
     if BLOCKED.contains(&key) { return Err("Blocked".to_string()); }
     Ok(())
 }

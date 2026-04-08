@@ -661,9 +661,13 @@ pub fn run() {
                 }
                 // Kill all child processes (game, wineserver) to prevent orphans
                 installer::cleanup_child_processes();
-                // Use _exit() for immediate termination - bypasses atexit handlers
-                // from GTK/WebKitGTK that can deadlock and prevent clean shutdown.
-                // All fds are closed by the kernel, releasing the FUSE mount.
+                // SAFETY: _exit(0) is used intentionally to bypass GTK/WebKitGTK
+                // atexit handlers that deadlock during normal shutdown on some
+                // Linux distributions. This is a known upstream issue.
+                // Window state is saved above, child processes are cleaned up,
+                // and the kernel closes all remaining fds (releasing FUSE mounts).
+                // std::process::exit() is NOT suitable because it still triggers
+                // C atexit handlers where the deadlock occurs.
                 unsafe { libc::_exit(0); }
             }
         })

@@ -658,9 +658,19 @@ pub fn stop_input_capture() {
     // delaying DirectInput initialisation past the 500 ms correlation window.
     if let Ok(mut state) = WINE_CAPTURE.lock() {
         if let Some(pid) = state.wine_pid.take() {
-            // SAFETY: pid is a valid process ID obtained from child.id() above.
-            unsafe { libc::kill(pid, libc::SIGTERM); }
-            log_capture(&format!("[WINE] Sent SIGTERM to helper process (PID {})", pid));
+            // Verify the PID still belongs to a Wine-related process before killing.
+            // This guards against PID reuse by the OS after the helper has already exited.
+            let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
+                .unwrap_or_default();
+            let comm = comm.trim();
+            if comm.contains("wine") || comm.contains("wineserver") || comm.contains("proton") {
+                // SAFETY: pid verified to still be a Wine process via /proc.
+                unsafe { libc::kill(pid, libc::SIGTERM); }
+                log_capture(&format!("[WINE] Sent SIGTERM to helper process (PID {}, comm={})", pid, comm));
+            } else if !comm.is_empty() {
+                log_capture(&format!("[WINE] Skipped SIGTERM: PID {} is now '{}', not Wine", pid, comm));
+            }
+            // If comm is empty, process already exited - nothing to do.
         }
     }
     log_capture(">>> HARDWARE CAPTURE DISABLED <<<");

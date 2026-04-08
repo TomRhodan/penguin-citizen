@@ -23,6 +23,9 @@
   },
   "app": {
     "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://robertsspaceindustries.com https://media.robertsspaceindustries.com https://*.star-citizen.wiki data:; connect-src ipc: http://ipc.localhost; font-src 'self' data:"
+    },
     "windows": [
       {
         "title": "Penguin Citizen",
