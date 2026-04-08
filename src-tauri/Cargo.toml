@@ -1,6 +1,6 @@
 [package]
 name = "penguin-citizen"
-version = "0.4.9"
+version = "0.5.0"
 description = "A Linux management tool for Star Citizen - install, configure, and launch with Wine/Proton"
 authors = ["TomRhodan <tomrhodan@gmail.com>"]
 license = "GPL-3.0-or-later"

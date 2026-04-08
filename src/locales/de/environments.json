@@ -27,7 +27,7 @@
   "version.copyTooltip": "Vollstaendige unabhaengige Kopie (100GB+ zusaetzlich)",
 
   "tab.profile": "Profile",
-  "tab.usercfg": "USER.cfg",
+  "tab.usercfg": "Einstellungen",
   "tab.localization": "Lokalisierung",
   "tab.storage": "Speicher",
   "tab.profileTooltip": "Star Citizen Profil-Snapshots speichern und laden",
@@ -160,11 +160,11 @@
   "device.none": "Keines",
   "device.unknown": "Unbekannt",
 
-  "cfg.sectionTitle": "USER.cfg Einstellungen - {{version}}",
+  "cfg.sectionTitle": "Einstellungen - {{version}}",
   "cfg.unsavedChanges": "Ungespeicherte Aenderungen",
   "cfg.apply": "Anwenden",
   "cfg.reset": "Zuruecksetzen",
-  "cfg.onlyChangedSaved": "Nur geaenderte Werte werden in USER.cfg gespeichert. ",
+  "cfg.onlyChangedSaved": "Spieleinstellungen synchronisieren mit Star Citizen. Engine-Tweaks werden in USER.cfg gespeichert.",
   "cfg.countChanged": "{{count}} geaendert",
   "cfg.allDefaults": "Alles Standard",
   "cfg.resetToDefault": "Auf Standard zuruecksetzen",

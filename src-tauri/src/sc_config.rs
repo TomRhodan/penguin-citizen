@@ -1431,6 +1431,79 @@ pub async fn write_attributes(gp: String, v: String, attrs: ScAttributes) -> Res
     xml.push_str("</Attributes>\n");
     fs::write(p, xml).map_err(|e| e.to_string())
 }
+
+/// Returns all attributes from attributes.xml as a flat key-value map.
+/// Used by the frontend settings tab to read attributes-target settings.
+#[tauri::command]
+pub async fn read_attributes_map(gp: String, v: String) -> Result<HashMap<String, String>, String> {
+    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+        "user/client/0/Profiles/default/attributes.xml"
+    );
+    if !p.exists() {
+        return Ok(HashMap::new());
+    }
+    let c = fs::read_to_string(&p).map_err(|e| e.to_string())?;
+    let attrs = parse_attributes_str(&c);
+    Ok(attrs.attrs.into_iter().map(|a| (a.name, a.value)).collect())
+}
+
+/// Merges changed attributes into the existing attributes.xml.
+/// Only the attributes present in `changes` are updated or added;
+/// all other existing attributes are preserved.
+#[tauri::command]
+pub async fn write_attributes_partial(
+    gp: String, v: String, changes: HashMap<String, String>
+) -> Result<(), String> {
+    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+        "user/client/0/Profiles/default/attributes.xml"
+    );
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let mut attrs = if p.exists() {
+        let c = fs::read_to_string(&p).map_err(|e| e.to_string())?;
+        parse_attributes_str(&c)
+    } else {
+        ScAttributes { version: "1".into(), attrs: Vec::new() }
+    };
+    for (name, value) in changes {
+        if let Some(existing) = attrs.attrs.iter_mut().find(|a| a.name == name) {
+            existing.value = value;
+        } else {
+            attrs.attrs.push(ScAttribute { name, value });
+        }
+    }
+    let mut xml = format!("<Attributes Version=\"{}\">\n", attrs.version);
+    for a in &attrs.attrs {
+        xml.push_str(&format!(" <Attr name=\"{}\" value=\"{}\"/>\n", a.name, a.value));
+    }
+    xml.push_str("</Attributes>\n");
+    // Atomic write via temp file + rename
+    let tmp = p.with_extension("xml.tmp");
+    fs::write(&tmp, &xml).map_err(|e| format!("Failed to write temp attributes: {}", e))?;
+    fs::rename(&tmp, &p).map_err(|e| format!("Failed to rename temp attributes: {}", e))?;
+    Ok(())
+}
+
+/// Returns a SHA256 hash of the non-volatile attributes for change detection.
+/// Volatile fields (lastPlayed, window position, etc.) are filtered out
+/// so that only meaningful setting changes affect the hash.
+#[tauri::command]
+pub async fn get_attributes_hash(gp: String, v: String) -> Result<String, String> {
+    let p = sc_base_dir(&expand_tilde(&gp), &v).join(
+        "user/client/0/Profiles/default/attributes.xml"
+    );
+    if !p.exists() {
+        return Ok(String::new());
+    }
+    let c = fs::read_to_string(&p).map_err(|e| e.to_string())?;
+    let mut attrs = parse_attributes_str(&c);
+    attrs.canonicalize();
+    let json = serde_json::to_string(&attrs.attrs)
+        .map_err(|e| format!("Failed to serialize attributes: {}", e))?;
+    Ok(format!("{:x}", Sha256::digest(json.as_bytes())))
+}
+
 /// Parses the actionmaps.xml of the default profile, or an exported layout file
 /// if `source` is specified.
 #[tauri::command]
