@@ -81,7 +81,7 @@ pub struct InstallationStatus {
     pub message: String,
 }
 
-use crate::util::{expand_tilde, validate_env_var_key};
+use crate::util::{expand_tilde, http_client, validate_env_var_key};
 
 /// Sends a progress message as an event to the frontend.
 /// The frontend receives these via the "install-progress" event listener
@@ -834,13 +834,7 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
 
     // Temporary directory for downloads and intermediate files
     let tmp_dir = Path::new(&install_path).join(".tmp");
-    // HTTP client with custom User-Agent for GitHub API requests
-    let client = reqwest::Client
-        ::builder()
-        .user_agent("penguin-citizen/0.5.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     emit_progress(&app, "prepare", "Preparing environment...", 0.0, "Starting installation...");
 

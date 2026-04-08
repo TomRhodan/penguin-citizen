@@ -237,7 +237,7 @@ pub(crate) fn resolve_wine_bin(runner_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-use crate::util::expand_tilde;
+use crate::util::{expand_tilde, http_client};
 
 // --- Tauri commands ---
 
@@ -254,14 +254,7 @@ pub async fn fetch_available_runners(base_path: String) -> FetchRunnersResult {
     let token = load_github_token();
     let sources = load_runner_sources();
 
-    // Create HTTP client with User-Agent (GitHub requires a User-Agent)
-    let client = reqwest::Client
-        ::builder()
-        .user_agent("penguin-citizen/0.5.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     let mut all_runners = Vec::new();
     let mut errors = Vec::new();
@@ -411,12 +404,7 @@ pub async fn install_runner(
         });
     };
 
-    let client = reqwest::Client
-        ::builder()
-        .user_agent("penguin-citizen/0.5.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     // Start HTTP request
     let response = match client.get(&download_url).send().await {

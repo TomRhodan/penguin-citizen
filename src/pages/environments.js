@@ -34,6 +34,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { confirm, prompt, showDiff, showNotification } from '../utils/dialogs.js';
+import { logError } from '../utils/error-handler.js';
 import { escapeHtml } from '../utils.js';
 import { t } from '../i18n.js';
 
@@ -84,11 +85,15 @@ let scVersions = [];
 /** @type {Object|null} Active copy operation: { version: string, startTime: number } */
 let copyingVersion = null;
 
-// Event listener cleanup (prevents memory leaks on re-renders)
+// Event listener cleanup (prevents memory leaks on page navigation and re-renders)
 /** @type {Function|null} Unlisten function for Data.p4k copy progress events */
 let unlistenProgress = null;
 /** @type {Function|null} Unlisten function for Data.p4k copy-complete events */
 let unlistenCopyComplete = null;
+/** @type {Function|null} Unlisten function for launch-started event (post-game attribute sync) */
+let unlistenLaunchStarted = null;
+/** @type {Function|null} Unlisten function for launch-exited event (post-game attribute sync) */
+let unlistenLaunchExited = null;
 
 // Binding and profile state
 /** @type {Object|null} Parsed actionmaps from actionmaps.xml */
@@ -191,7 +196,7 @@ let deviceTuningData = [];
  */
 function resetEnvironmentState() {
   // Kill any running Wine helper and stop hardware capture
-  invoke('stop_input_capture').catch(() => null);
+  invoke('stop_input_capture').catch(err => logError(err, 'environments:stop_input_capture'));
 
   // Close any modals that belong to the outgoing environment (binding editor,
   // tuning editor, diff viewer — anything appended to document.body)
@@ -608,6 +613,15 @@ export function setActiveProfileTab(tab) {
   activeProfileTab = tab;
 }
 
+/** Cleans up all active event listeners (prevents memory leaks on page navigation) */
+export function cleanupEnvironments() {
+  if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }
+  if (unlistenCopyComplete) { unlistenCopyComplete(); unlistenCopyComplete = null; }
+  if (unlistenLaunchStarted) { unlistenLaunchStarted(); unlistenLaunchStarted = null; }
+  if (unlistenLaunchExited) { unlistenLaunchExited(); unlistenLaunchExited = null; }
+  postGameListenerRegistered = false;
+}
+
 /**
  * Main render function: Loads all data and renders the environments page.
  * Uses a generation counter so that with rapidly successive calls,
@@ -665,7 +679,7 @@ export async function renderEnvironments(container) {
           });
         } catch (e) { /* ignore */ }
       }
-    });
+    }).then(fn => { unlistenLaunchStarted = fn; });
     listen('launch-exited', async () => {
       if (config?.install_path && activeScVersion && preLaunchAttributesHash) {
         try {
@@ -692,7 +706,7 @@ export async function renderEnvironments(container) {
         } catch (e) { /* ignore */ }
         preLaunchAttributesHash = '';
       }
-    });
+    }).then(fn => { unlistenLaunchExited = fn; });
   }
 
   // Load localization labels in the background (for translated action names in bindings)
@@ -1117,7 +1131,7 @@ async function loadLocalizationData() {
         tabEl.innerHTML = `${renderLocalizationStatus()}${renderLanguageSelector()}`;
       }
     })
-    .catch(() => { /* ignore */ });
+    .catch(err => logError(err, 'environments:load_actionmaps'));
 }
 
 // Mapping of old/removed CVar names to their successors (for migration)
@@ -3071,7 +3085,7 @@ async function openBindingEditor(actionName, category, currentInput, defaultDevi
   // installPath + selectedRunner enable the parallel Wine DirectInput helper for axis
   // name mapping (Linux name shown in UI, Wine name written to actionmaps.xml).
   console.log(`[EDITOR] Starting hardware capture: targetInstance=${targetInstance}, targetType=${bindingEditorDevice}`);
-  invoke('load_config').catch(() => null).then(cfg => {
+  invoke('load_config').catch(err => { logError(err, 'environments:load_config'); return null; }).then(cfg => {
     invoke('start_input_capture', {
       deviceMap: profileDeviceMap,
       targetInstance: targetInstance,
@@ -4359,7 +4373,7 @@ async function saveProfile() {
       });
       lastRestoredBackupId = created.id;
       lastRestoredPerVersion[activeScVersion] = created.id;
-      invoke('save_active_profile', { v: activeScVersion, bid: created.id }).catch(() => {});
+      invoke('save_active_profile', { v: activeScVersion, bid: created.id }).catch(err => logError(err, 'environments:save_active_profile'));
       showNotification(t('environments:notification.profileSaved'), 'success');
       await loadBackups();
       await loadProfileStatus();
@@ -4399,7 +4413,7 @@ async function loadProfile(backupId) {
     });
     lastRestoredBackupId = backupId;
     lastRestoredPerVersion[activeScVersion] = backupId;
-    invoke('save_active_profile', { v: activeScVersion, bid: backupId }).catch(() => {});
+    invoke('save_active_profile', { v: activeScVersion, bid: backupId }).catch(err => logError(err, 'environments:save_active_profile'));
     showNotification(t('environments:notification.profileLoaded'), 'success');
     await Promise.all([loadActionDefinitions(), loadDevicesAndBindings(), loadCompleteBindingList(), loadBackups(), loadUserCfgSettings()]);
     await loadProfileStatus();
@@ -4425,7 +4439,7 @@ async function deleteProfile(backupId) {
       lastRestoredBackupId = null;
       delete lastRestoredPerVersion[activeScVersion];
       activeProfileStatus = null;
-      invoke('save_active_profile', { v: activeScVersion, bid: '' }).catch(() => {});
+      invoke('save_active_profile', { v: activeScVersion, bid: '' }).catch(err => logError(err, 'environments:save_active_profile'));
     }
     showNotification(t('environments:notification.profileDeleted'), 'success');
     await loadBackups();

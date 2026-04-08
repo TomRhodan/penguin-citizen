@@ -98,7 +98,7 @@ struct GhAsset {
     size: u64,
 }
 
-use crate::util::expand_tilde;
+use crate::util::{expand_tilde, http_client};
 
 // --- Tauri commands ---
 
@@ -110,13 +110,7 @@ use crate::util::expand_tilde;
 pub async fn fetch_dxvk_releases() -> Result<Vec<DxvkRelease>, String> {
     let token = load_github_token();
 
-    let client = reqwest::Client
-        ::builder()
-        .user_agent("penguin-citizen/0.5.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     let url = "https://api.github.com/repos/doitsujin/dxvk/releases?per_page=10";
     let mut request = client.get(url);
@@ -251,12 +245,7 @@ pub async fn install_dxvk(
     emit("downloading", 0.0, "Downloading DXVK...");
 
     // --- Download phase ---
-    let client = reqwest::Client
-        ::builder()
-        .user_agent("penguin-citizen/0.5.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     let response = client
         .get(&download_url)

@@ -32,6 +32,8 @@ use serde::{ Deserialize, Serialize };
 use std::collections::HashMap;
 use std::sync::Mutex; // For thread-safe access to the statistics cache
 
+use crate::util::http_client;
+
 // ── RSI News ──────────────────────────────────────────────────────────
 
 /// A single RSI news article from the Atom feed.
@@ -451,11 +453,7 @@ async fn fetch_community_stats_inner() -> Result<
     CommunityStats,
     Box<dyn std::error::Error + Send + Sync>
 > {
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     // Prepare both API requests as futures
     let stats_fut = async {

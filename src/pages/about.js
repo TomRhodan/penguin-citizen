@@ -15,6 +15,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { t } from '../i18n.js';
+import { logError } from '../utils/error-handler.js';
 // Static image assets for logo and community badge
 import logoUrl from '../assets/logos/PenguinCitizen-Transparent-Logo-Image.png';
 import madeByCommunityUrl from '../assets/logos/MadeByTheCommunity_White.png';
@@ -136,7 +137,7 @@ export async function renderAbout(container) {
   container.querySelectorAll('.about-link[data-url]').forEach(link => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      invoke('open_browser', { url: link.dataset.url }).catch(err => console.error('[DEBUG] open_browser failed:', err));
+      invoke('open_browser', { url: link.dataset.url }).catch(err => logError(err, 'about:open_browser'));
     });
   });
 }

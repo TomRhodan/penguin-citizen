@@ -296,11 +296,11 @@ async function loadAndCheck(container) {
  * Listens for "launch-exited" (game ended) and "launch-log" (log lines).
  */
 function listenForExit(container) {
-  cleanup();
+  cleanupLaunch();
   listen('launch-exited', () => {
     launchStatus = 'ready';
     renderPage(container);
-    cleanup();
+    cleanupLaunch();
   }).then(fn => { unlistenLaunchExited = fn; }).catch(() => { });
 
   listen('launch-log', (event) => {
@@ -1123,7 +1123,7 @@ async function onLaunch(container) {
   await checkAndUpdateLocalization(container);
 
   // Clean up old event listeners and register new ones
-  cleanup();
+  cleanupLaunch();
 
   try {
     unlistenLaunchLog = await listen('launch-log', (event) => {
@@ -1140,7 +1140,7 @@ async function onLaunch(container) {
     unlistenLaunchExited = await listen('launch-exited', () => {
       launchStatus = 'ready';
       renderPage(container);
-      cleanup();
+      cleanupLaunch();
     });
   } catch (e) {
     console.error('Failed to register launch event listeners:', e);
@@ -1157,7 +1157,7 @@ async function onLaunch(container) {
     installStatus = { installed: true, message: String(err) };
     launchLog.push(`ERROR: ${err}`);
     renderPage(container);
-    cleanup();
+    cleanupLaunch();
   }
 }
 
@@ -1203,8 +1203,8 @@ function scrollLog() {
   }
 }
 
-/** Cleans up all active event listeners (prevents memory leaks on re-renders) */
-function cleanup() {
+/** Cleans up all active event listeners (prevents memory leaks on page navigation) */
+export function cleanupLaunch() {
   if (unlistenLaunchLog) { unlistenLaunchLog(); unlistenLaunchLog = null; }
   if (unlistenLaunchStarted) { unlistenLaunchStarted(); unlistenLaunchStarted = null; }
   if (unlistenLaunchExited) { unlistenLaunchExited(); unlistenLaunchExited = null; }

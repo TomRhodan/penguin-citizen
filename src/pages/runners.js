@@ -38,6 +38,7 @@ import { listen } from '@tauri-apps/api/event';
 import { escapeHtml } from '../utils.js';
 import { t } from '../i18n.js';
 import { prompt as customPrompt, showNotification } from '../utils/dialogs.js';
+import { logError } from '../utils/error-handler.js';
 
 /**
  * Sorts runner sources: LUG sources first (sorted by name length),
@@ -117,6 +118,13 @@ let activeContainer = null;
  *
  * @param {HTMLElement} container - The container element to render into
  */
+/** Cleans up all active event listeners (prevents memory leaks on page navigation) */
+export function cleanupRunners() {
+  if (unlistenRunnerProgress) { unlistenRunnerProgress(); unlistenRunnerProgress = null; }
+  if (unlistenDxvkProgress) { unlistenDxvkProgress(); unlistenDxvkProgress = null; }
+  if (unlistenPrefixLog) { unlistenPrefixLog(); unlistenPrefixLog = null; }
+}
+
 export function renderRunners(container) {
   // Fully reset state on every page visit
   config = null;
@@ -157,9 +165,9 @@ export function renderRunners(container) {
 function loadData(container) {
   // Load config and both caches in parallel
   Promise.all([
-    invoke('load_config').catch(() => null),
-    invoke('load_runner_cache').catch(() => ({ runners: [], cached_at: 0 })),
-    invoke('load_dxvk_cache').catch(() => ({ releases: [], cached_at: 0 })),
+    invoke('load_config').catch(err => { logError(err, 'runners:load_config'); return null; }),
+    invoke('load_runner_cache').catch(err => { logError(err, 'runners:load_runner_cache'); return { runners: [], cached_at: 0 }; }),
+    invoke('load_dxvk_cache').catch(err => { logError(err, 'runners:load_dxvk_cache'); return { releases: [], cached_at: 0 }; }),
   ]).then(([cfg, runnerCacheData, dxvkCacheData]) => {
     config = cfg;
     runnerCache = runnerCacheData;
@@ -249,7 +257,7 @@ function syncAvailableRunners(container, forceRefresh) {
       // Save new cache
       const nowCached = Math.floor(Date.now() / 1000);
       runnerCache = { runners: availableRunners, cached_at: nowCached };
-      invoke('save_runner_cache', { runners: availableRunners }).catch(() => {});
+      invoke('save_runner_cache', { runners: availableRunners }).catch(err => logError(err, 'runners:save_runner_cache'));
 
       // Update cache time display in the header
       const cacheTimeEl = container.querySelector('.card-header-info');
@@ -356,7 +364,8 @@ function fireDataFetches(container, forceRefresh = false) {
 
     // After the scan, synchronize available runners
     syncAvailableRunners(container, forceRefresh);
-  }).catch(() => {
+  }).catch(err => {
+    logError(err, 'runners:scan_runners');
     loadingFlags.installed = false;
 
     const refreshInstalledBtn = document.getElementById('btn-refresh-installed');
@@ -379,7 +388,8 @@ function fireDataFetches(container, forceRefresh = false) {
     // Update release list after detection to correctly display "Current" badge
     patchSection('dxvk-releases-slot', renderDxvkReleasesContent());
     bindDxvkEvents(container);
-  }).catch(() => {
+  }).catch(err => {
+    logError(err, 'runners:detect_dxvk_version');
     loadingFlags.dxvk = false;
     patchSection('dxvk-status-slot', renderDxvkStatusContent());
     patchSection('dxvk-releases-slot', renderDxvkReleasesContent());
@@ -395,11 +405,12 @@ function fireDataFetches(container, forceRefresh = false) {
       loadingFlags.dxvkReleases = false;
 
       // Save new cache
-      invoke('save_dxvk_cache', { releases: dxvkReleases }).catch(() => {});
+      invoke('save_dxvk_cache', { releases: dxvkReleases }).catch(err => logError(err, 'runners:save_dxvk_cache'));
 
       patchSection('dxvk-releases-slot', renderDxvkReleasesContent());
       bindDxvkEvents(container);
-    }).catch(() => {
+    }).catch(err => {
+      logError(err, 'runners:fetch_dxvk_releases');
       loadingFlags.dxvkReleases = false;
       // Fall back to cache data on error
       if (dxvkCache.releases && dxvkCache.releases.length > 0) {
@@ -422,7 +433,8 @@ function fireDataFetches(container, forceRefresh = false) {
       loadingFlags.dpi = false;
       patchSection('prefix-tools-slot', renderPrefixToolsContent());
       bindPrefixToolEvents(container);
-    }).catch(() => {
+    }).catch(err => {
+      logError(err, 'runners:get_dpi');
       loadingFlags.dpi = false;
       patchSection('prefix-tools-slot', renderPrefixToolsContent());
       bindPrefixToolEvents(container);
@@ -434,9 +446,7 @@ function fireDataFetches(container, forceRefresh = false) {
       powershellInstalled = result;
       patchSection('prefix-tools-slot', renderPrefixToolsContent());
       bindPrefixToolEvents(container);
-    }).catch(() => {
-      // PowerShell detection is optional
-    });
+    }).catch(err => logError(err, 'runners:detect_powershell'));
   } else {
     loadingFlags.dpi = false;
   }

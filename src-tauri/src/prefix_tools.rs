@@ -31,7 +31,7 @@ use std::process::{ Command, Stdio };
 use tauri::{ AppHandle, Emitter };
 
 use crate::runners::resolve_wine_bin;
-use crate::util::expand_tilde;
+use crate::util::{expand_tilde, http_client};
 
 /// Determines the paths for the Wine binary, runner bin directory, and prefix.
 ///
@@ -303,13 +303,7 @@ pub async fn install_powershell(
 
     let winetricks_path = tmp_dir.join("winetricks");
 
-    let client = reqwest::Client
-        ::builder()
-        .user_agent("penguin-citizen/0.5.0")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
 
     let wt_bytes = client
         .get("https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks")

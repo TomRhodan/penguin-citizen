@@ -18,8 +18,31 @@
 
 use std::io;
 use std::path::Path;
+use std::sync::OnceLock;
 use tauri::Window;
 use base64::{Engine as _, engine::general_purpose};
+
+/// Global HTTP client with connection pooling, User-Agent, and timeouts.
+///
+/// Initialized once on first use. All modules should use `http_client()`
+/// instead of creating their own `reqwest::Client` instances.
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// Returns the shared HTTP client with sensible defaults:
+/// - User-Agent: `penguin-citizen/{version}`
+/// - Connect timeout: 10 seconds
+/// - Request timeout: 30 seconds
+/// - Connection pooling across all requests
+pub(crate) fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .user_agent(concat!("penguin-citizen/", env!("CARGO_PKG_VERSION")))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
 
 /// Validates a screenshot filename to prevent path traversal.
 /// Only a plain filename (no slashes, no `..`) is accepted.

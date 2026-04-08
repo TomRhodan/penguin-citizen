@@ -26,6 +26,7 @@
 //! The translation files come from community repositories on GitHub.
 
 use crate::sc_config::{ expand_tilde, sc_base_dir };
+use crate::util::http_client;
 use chrono::Local;
 use serde::{ Deserialize, Serialize };
 use std::fs;
@@ -603,13 +604,9 @@ pub async fn check_localization_update(
     }
 
     // Fetch latest commit from GitHub and compare with local SHA
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
     let (remote_sha, remote_date) =
-        fetch_github_commit_info(&client, &source_repo, &meta.language_code, &version).await?;
+        fetch_github_commit_info(client, &source_repo, &meta.language_code, &version).await?;
 
     let update_available = local_sha.as_deref() != Some(&remote_sha);
 
@@ -843,11 +840,7 @@ pub async fn install_localization(
     let url = build_download_url(&source_repo, &language_code, &version);
 
     // Download translation file
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
     let response = client
         .get(&url)
         .send().await
@@ -886,7 +879,7 @@ pub async fn install_localization(
     update_user_cfg_language(&expanded, &version, &language_code)?;
 
     // Fetch commit information from GitHub (errors are tolerated as this is not critical)
-    let commit_info = fetch_github_commit_info(&client, &source_repo, &language_code, &version)
+    let commit_info = fetch_github_commit_info(client, &source_repo, &language_code, &version)
         .await
         .ok();
 
@@ -939,11 +932,7 @@ pub async fn fetch_remote_language_info(
     }
 
     let languages = get_available_languages_sync();
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    let client = http_client();
     let mut entries = Vec::new();
 
     // Deduplication: each unique (source_repo, language_code) pair
@@ -956,7 +945,7 @@ pub async fn fetch_remote_language_info(
         }
 
         // Use "LIVE" as the default version for remote fetching
-        match fetch_github_commit_info(&client, &lang.source_repo, &lang.language_code, "LIVE")
+        match fetch_github_commit_info(client, &lang.source_repo, &lang.language_code, "LIVE")
             .await
         {
             Ok((sha, date)) => {

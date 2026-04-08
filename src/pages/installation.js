@@ -168,6 +168,12 @@ function getInstallPhases() {
  *
  * @param {HTMLElement} container - The container element to render into
  */
+/** Cleans up all active event listeners (prevents memory leaks on page navigation) */
+export function cleanupInstallation() {
+  if (unlistenProgress) { unlistenProgress(); unlistenProgress = null; }
+  if (unlistenInstall) { unlistenInstall(); unlistenInstall = null; }
+}
+
 export async function renderInstallation(container) {
   // Import LUG Helper sources (for current runner URLs)
   try {

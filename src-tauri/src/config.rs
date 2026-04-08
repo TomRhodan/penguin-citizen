@@ -30,6 +30,8 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
+use crate::error::AppError;
+
 /// A custom environment variable that is set when launching Star Citizen.
 ///
 /// Allows the user to define custom KEY=VALUE pairs
@@ -506,7 +508,7 @@ pub struct SetupCheck {
 /// or the stored installation path does not point to an existing
 /// directory.
 #[tauri::command]
-pub async fn check_needs_setup() -> Result<SetupCheck, String> {
+pub async fn check_needs_setup() -> Result<SetupCheck, AppError> {
     tokio::task
         ::spawn_blocking(move || {
             // Default installation path: ~/Games/star-citizen, fallback to /tmp
@@ -531,18 +533,19 @@ pub async fn check_needs_setup() -> Result<SetupCheck, String> {
                 default_path,
             }
         }).await
-        .map_err(|e| format!("Task failed: {}", e))
+        .map_err(|e| AppError::Task(e.to_string()))
 }
 
 /// Creates the installation directory recursively (including all parent directories).
 #[tauri::command]
-pub async fn create_install_directory(path: String) -> Result<(), String> {
+pub async fn create_install_directory(path: String) -> Result<(), AppError> {
     tokio::task
         ::spawn_blocking(move || {
             let expanded = expand_tilde(&path);
             fs::create_dir_all(&expanded).map_err(|e| format!("Failed to create directory: {}", e))
         }).await
-        .map_err(|e| format!("Task failed: {}", e))?
+        .map_err(|e| AppError::Task(e.to_string()))?
+        .map_err(Into::into)
 }
 
 /// Validates an installation path for write permissions and sufficient disk space.
@@ -550,7 +553,7 @@ pub async fn create_install_directory(path: String) -> Result<(), String> {
 /// Checks the nearest existing parent directory, since the target path
 /// may not yet exist. Requires at least 100 GB of free space.
 #[tauri::command]
-pub async fn validate_install_path(path: String) -> Result<PathValidation, String> {
+pub async fn validate_install_path(path: String) -> Result<PathValidation, AppError> {
     tokio::task
         ::spawn_blocking(move || {
             let expanded = expand_tilde(&path);
@@ -589,7 +592,7 @@ pub async fn validate_install_path(path: String) -> Result<PathValidation, Strin
                 message,
             }
         }).await
-        .map_err(|e| format!("Task failed: {}", e))
+        .map_err(|e| AppError::Task(e.to_string()))
 }
 
 /// Scans the `runners/` directory for locally installed Wine runners.
@@ -597,7 +600,7 @@ pub async fn validate_install_path(path: String) -> Result<PathValidation, Strin
 /// A valid runner is detected if it contains a wine binary in a known layout.
 /// Results are returned sorted alphabetically by name.
 #[tauri::command]
-pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, String> {
+pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, AppError> {
     tokio::task
         ::spawn_blocking(move || {
             let expanded = expand_tilde(&base_path);
@@ -643,7 +646,7 @@ pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, String
                 runners_dir: runners_dir_str,
             }
         }).await
-        .map_err(|e| format!("Task failed: {}", e))
+        .map_err(|e| AppError::Task(e.to_string()))
 }
 
 /// Saves the configuration to the JSON file.
@@ -652,14 +655,14 @@ pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, String
 /// so that fields not managed by the frontend (e.g. github_token,
 /// runner_sources) are not accidentally overwritten or deleted.
 #[tauri::command]
-pub async fn save_config(config: AppConfig) -> Result<(), String> {
+pub async fn save_config(config: AppConfig) -> Result<(), AppError> {
     // Validate custom environment variable keys before saving
     for env_var in &config.performance.custom_env_vars {
         validate_env_var_key(&env_var.key)?;
     }
 
     tokio::task
-        ::spawn_blocking(move || {
+        ::spawn_blocking(move || -> Result<(), String> {
             let path = config_file_path().ok_or("Could not determine config directory")?;
             let config_path = Path::new(&path);
 
@@ -747,7 +750,8 @@ pub async fn save_config(config: AppConfig) -> Result<(), String> {
 
             Ok(())
         }).await
-        .map_err(|e| format!("Task failed: {}", e))?
+        .map_err(|e| AppError::Task(e.to_string()))?
+        .map_err(Into::into)
 }
 
 /// Loads the configuration from the JSON file.
@@ -756,7 +760,7 @@ pub async fn save_config(config: AppConfig) -> Result<(), String> {
 /// If the runner sources are empty, the default sources are inserted and
 /// immediately written back to the file so they are available on the next load.
 #[tauri::command]
-pub async fn load_config() -> Result<Option<AppConfig>, String> {
+pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
     tokio::task
         ::spawn_blocking(move || {
             let path = match config_file_path() {
@@ -796,7 +800,7 @@ pub async fn load_config() -> Result<Option<AppConfig>, String> {
 
             Some(config)
         }).await
-        .map_err(|e| format!("Task failed: {}", e))
+        .map_err(|e| AppError::Task(e.to_string()))
 }
 
 /// Resets the entire application to its initial state.
@@ -805,8 +809,8 @@ pub async fn load_config() -> Result<Option<AppConfig>, String> {
 /// the configuration file, and the cache. However, the GitHub token is preserved
 /// since it must be manually entered and should not be lost.
 #[tauri::command]
-pub async fn reset_app() -> Result<(), String> {
-    let config_path = config_file_path().ok_or("Could not determine config directory")?;
+pub async fn reset_app() -> Result<(), AppError> {
+    let config_path = config_file_path().ok_or(AppError::Config("Could not determine config directory".into()))?;
     let cache_path = cache_file_path();
 
     // Load existing configuration to determine installation path and token
@@ -825,7 +829,7 @@ pub async fn reset_app() -> Result<(), String> {
     if !install_path.is_empty() {
         let p = Path::new(&install_path);
         if p.exists() {
-            fs::remove_dir_all(p).map_err(|e| format!("Failed to delete installation: {}", e))?;
+            fs::remove_dir_all(p)?;
         }
     }
 
@@ -864,7 +868,7 @@ pub async fn reset_app() -> Result<(), String> {
 /// Loads the runner cache from the cache file.
 /// Returns an empty cache if the file does not exist or is invalid.
 #[tauri::command]
-pub async fn load_runner_cache() -> Result<RunnerCache, String> {
+pub async fn load_runner_cache() -> Result<RunnerCache, AppError> {
     tokio::task
         ::spawn_blocking(move || {
             let path = match cache_file_path() {
@@ -887,7 +891,7 @@ pub async fn load_runner_cache() -> Result<RunnerCache, String> {
             };
             cache.runners
         }).await
-        .map_err(|e| format!("Task failed: {}", e))
+        .map_err(|e| AppError::Task(e.to_string()))
 }
 
 /// Saves the runner data to the cache with the current timestamp.
@@ -895,7 +899,7 @@ pub async fn load_runner_cache() -> Result<RunnerCache, String> {
 /// Loads the existing cache, updates only the runner part, and writes
 /// the entire file back so the DXVK cache is preserved.
 #[tauri::command]
-pub async fn save_runner_cache(runners: Vec<CachedRunner>) -> Result<(), String> {
+pub async fn save_runner_cache(runners: Vec<CachedRunner>) -> Result<(), AppError> {
     // Set current Unix timestamp to record the time of caching
     let runners_cache = RunnerCache {
         runners,
@@ -948,16 +952,13 @@ pub async fn save_runner_cache(runners: Vec<CachedRunner>) -> Result<(), String>
         Ok(())
     }).await;
 
-    match result {
-        Ok(r) => r,
-        Err(e) => Err(format!("Task failed: {}", e)),
-    }
+    result.map_err(|e| AppError::Task(e.to_string()))?.map_err(Into::into)
 }
 
 /// Loads the DXVK cache from the cache file.
 /// Returns an empty cache if the file does not exist or is invalid.
 #[tauri::command]
-pub async fn load_dxvk_cache() -> Result<DxvkCache, String> {
+pub async fn load_dxvk_cache() -> Result<DxvkCache, AppError> {
     tokio::task
         ::spawn_blocking(move || {
             let path = match cache_file_path() {
@@ -980,7 +981,7 @@ pub async fn load_dxvk_cache() -> Result<DxvkCache, String> {
             };
             cache.dxvk
         }).await
-        .map_err(|e| format!("Task failed: {}", e))
+        .map_err(|e| AppError::Task(e.to_string()))
 }
 
 /// Saves the DXVK release data to the cache with the current timestamp.
@@ -988,7 +989,7 @@ pub async fn load_dxvk_cache() -> Result<DxvkCache, String> {
 /// Works analogously to `save_runner_cache` - loads the existing cache,
 /// updates only the DXVK part, and preserves the runner cache.
 #[tauri::command]
-pub async fn save_dxvk_cache(releases: Vec<CachedDxvkRelease>) -> Result<(), String> {
+pub async fn save_dxvk_cache(releases: Vec<CachedDxvkRelease>) -> Result<(), AppError> {
     // Set current Unix timestamp
     let dxvk_cache = DxvkCache {
         releases,
@@ -1041,10 +1042,7 @@ pub async fn save_dxvk_cache(releases: Vec<CachedDxvkRelease>) -> Result<(), Str
         Ok(())
     }).await;
 
-    match result {
-        Ok(r) => r,
-        Err(e) => Err(format!("Task failed: {}", e)),
-    }
+    result.map_err(|e| AppError::Task(e.to_string()))?.map_err(Into::into)
 }
 
 // --- Runner source management ---
@@ -1072,29 +1070,29 @@ pub struct AddRunnerSourceResult {
 pub async fn add_runner_source_from_github(
     name: String,
     api_url: String
-) -> Result<AddRunnerSourceResult, String> {
+) -> Result<AddRunnerSourceResult, AppError> {
     let name = name.trim().to_string();
     let api_url = api_url.trim().to_string();
 
     // Input validation
     if name.is_empty() {
-        return Err("Name cannot be empty".into());
+        return Err(AppError::Validation("Name cannot be empty".into()));
     }
     if api_url.is_empty() {
-        return Err("API URL cannot be empty".into());
+        return Err(AppError::Validation("API URL cannot be empty".into()));
     }
 
     // Check URL format - only GitHub API URLs are supported
     let parsed_url = reqwest::Url::parse(&api_url).map_err(|_| {
-        "URL must be a valid GitHub API URL (e.g., https://api.github.com/repos/owner/repo/releases)".to_string()
+        AppError::Validation("URL must be a valid GitHub API URL (e.g., https://api.github.com/repos/owner/repo/releases)".into())
     })?;
     if parsed_url.host_str() != Some("api.github.com") || !parsed_url.path().starts_with("/repos/") {
-        return Err(
+        return Err(AppError::Validation(
             "URL must be a GitHub API URL (e.g., https://api.github.com/repos/owner/repo/releases)".into()
-        );
+        ));
     }
 
-    let result = tokio::task
+    tokio::task
         ::spawn_blocking(move || {
             let config_path = match config_file_path() {
                 Some(p) => Path::new(&p).to_path_buf(),
@@ -1146,9 +1144,8 @@ pub async fn add_runner_source_from_github(
                 added_sources: vec![name],
             })
         }).await
-        .map_err(|e| format!("Task failed: {}", e))?;
-
-    result
+        .map_err(|e| AppError::Task(e.to_string()))?
+        .map_err(Into::into)
 }
 
 /// Imports the predefined runner sources from the LUG helper project.
@@ -1158,7 +1155,7 @@ pub async fn add_runner_source_from_github(
 /// (LUG, LUG Experimental, RawFox, Kron4ek) and skips already
 /// existing sources (duplicate check by name).
 #[tauri::command]
-pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, String> {
+pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, AppError> {
     // Predefined LUG helper Wine runner sources
     // (based on https://github.com/starcitizen-lug/lug-helper)
     let lug_sources = vec![
@@ -1171,7 +1168,7 @@ pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, String
         ("Kron4ek", "https://api.github.com/repos/Kron4ek/Wine-Builds/releases")
     ];
 
-    let result = tokio::task
+    tokio::task
         ::spawn_blocking(move || {
             let config_path = match config_file_path() {
                 Some(p) => Path::new(&p).to_path_buf(),
@@ -1227,7 +1224,6 @@ pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, String
                 added_sources,
             })
         }).await
-        .map_err(|e| format!("Task failed: {}", e))?;
-
-    result
+        .map_err(|e| AppError::Task(e.to_string()))?
+        .map_err(Into::into)
 }

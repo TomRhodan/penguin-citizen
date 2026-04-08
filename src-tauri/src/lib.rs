@@ -51,6 +51,7 @@ static XWAYLAND_COMPENSATION: OnceLock<f64> = OnceLock::new();
 
 // ── Module Declarations ──
 // Each module encapsulates a self-contained functional area of the application.
+pub(crate) mod error;
 mod util;
 mod config;
 mod dashboard;

@@ -29,29 +29,30 @@
 // Tauri invoke API for calls to the Rust backend
 import { invoke } from '@tauri-apps/api/core';
 
-// Import all page render functions
+// Import all page render functions and cleanup handlers
 import { renderDashboard } from './pages/dashboard.js';
-import { renderInstallation } from './pages/installation.js';
-import { renderRunners } from './pages/runners.js';
-import { renderLaunch, flushPendingSave } from './pages/launch.js';
-import { renderEnvironments } from './pages/environments.js';
+import { renderInstallation, cleanupInstallation } from './pages/installation.js';
+import { renderRunners, cleanupRunners } from './pages/runners.js';
+import { renderLaunch, flushPendingSave, cleanupLaunch } from './pages/launch.js';
+import { renderEnvironments, cleanupEnvironments } from './pages/environments.js';
 import { renderSettings } from './pages/settings.js';
 import { renderAbout } from './pages/about.js';
 import { renderSetup } from './pages/setup.js';
 
 /**
- * Route mapping: Maps page names to their corresponding render functions.
- * Each render function receives the content element and populates it with the page view.
- * @constant {Object<string, function>}
+ * Route mapping: Maps page names to their render function and optional cleanup handler.
+ * Cleanup is called before navigating away from a page to release event listeners
+ * and other resources, preventing memory leaks.
+ * @constant {Object<string, {render: function, cleanup?: function}>}
  */
 const routes = {
-  dashboard: renderDashboard,
-  installation: renderInstallation,
-  runners: renderRunners,
-  launch: renderLaunch,
-  environments: renderEnvironments,
-  settings: renderSettings,
-  about: renderAbout,
+  dashboard: { render: renderDashboard },
+  installation: { render: renderInstallation, cleanup: cleanupInstallation },
+  runners: { render: renderRunners, cleanup: cleanupRunners },
+  launch: { render: renderLaunch, cleanup: cleanupLaunch },
+  environments: { render: renderEnvironments, cleanup: cleanupEnvironments },
+  settings: { render: renderSettings },
+  about: { render: renderAbout },
 };
 
 // Pages visible when NO Star Citizen instance is installed
@@ -60,9 +61,11 @@ const PRE_INSTALL_PAGES = ['dashboard', 'installation', 'settings'];
 // Pages visible when an instance IS installed
 const POST_INSTALL_PAGES = ['dashboard', 'launch', 'runners', 'environments', 'settings'];
 
-// State variables: Is the setup wizard active? Is SC installed?
+// State variables: Is the setup wizard active? Is SC installed? Which page is active?
 let setupActive = false;
 let installed = false;
+/** @type {string|null} Currently active page name (for cleanup on navigation) */
+let currentPage = null;
 
 /**
  * Navigates to a specific page.
@@ -80,12 +83,18 @@ async function navigate(page) {
   flushPendingSave();
 
   const content = document.getElementById('content');
-  const renderFn = routes[page];
-  if (!renderFn) return;
+  const route = routes[page];
+  if (!route) return;
+
+  // Clean up the current page's event listeners and resources before leaving
+  if (currentPage && routes[currentPage]?.cleanup) {
+    routes[currentPage].cleanup();
+  }
+  currentPage = page;
 
   // Remove old page content and render the new page
   content.innerHTML = '';
-  renderFn(content);
+  route.render(content);
 
   // Highlight the active sidebar link (toggle CSS class 'active')
   document.querySelectorAll('.nav-link').forEach((link) => {
@@ -201,6 +210,7 @@ async function init() {
   updateSidebar(isInstalled);
 
   // Load dashboard as the start page
+  currentPage = 'dashboard';
   navigate('dashboard');
 }
 
