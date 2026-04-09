@@ -278,7 +278,7 @@ pub fn get_system_locale() -> String {
             // Parse "de_DE.UTF-8" -> "de"
             let lang = first.split('_').next().unwrap_or(first);
             let lang = lang.split('.').next().unwrap_or(lang);
-            if !lang.is_empty() {
+            if lang.len() >= 2 {
                 return lang.to_lowercase();
             }
         }
