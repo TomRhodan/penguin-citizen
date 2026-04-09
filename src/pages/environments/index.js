@@ -280,10 +280,7 @@ function rerenderFromState() {
 function resetEnvironmentState() {
   const s = getState();
 
-  if (performance.memory) {
-    const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
-    debugLog('RENDER', 'info', `resetEnvironmentState — JS heap before reset: ${mb} MB`);
-  }
+  debugLog('RENDER', 'info', 'resetEnvironmentState called');
 
   // Kill any running Wine helper and stop hardware capture
   invoke('stop_input_capture').catch(err => logError(err, 'environments:stop_input_capture'));
@@ -1096,10 +1093,16 @@ export function cleanupEnvironments() {
  * @param {HTMLElement} container - DOM container for the page
  */
 export async function renderEnvironments(container) {
-  // Memory debugging: log heap usage on each render to identify leaks
-  if (performance.memory) {
-    const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
-    debugLog('RENDER', 'info', `renderEnvironments called — JS heap: ${mb} MB`);
+  // Memory debugging: count active Tauri listeners and log render calls
+  {
+    const s = getState();
+    const activeListeners = [s.unlistenProgress, s.unlistenCopyComplete, s.unlistenLaunchStarted, s.unlistenLaunchExited].filter(Boolean).length;
+    const stateKeys = Object.keys(s).length;
+    const bindingCount = (s.completeBindingList || []).length;
+    const backupCount = (s.backups || []).length;
+    debugLog('RENDER', 'info',
+      `renderEnvironments — listeners:${activeListeners} stateKeys:${stateKeys} bindings:${bindingCount} backups:${backupCount} version:${s.activeScVersion || 'none'}`
+    );
   }
 
   const scrollPos = container.scrollTop;
@@ -1193,13 +1196,10 @@ export async function renderEnvironments(container) {
     setState({ unlistenLaunchExited: ulExited });
   }
 
-  // Register Data.p4k copy progress listeners (once per page visit).
+  // Register Data.p4k copy progress listeners (once — skip if already registered).
   // These must NOT be in attachProfilesEventListeners() because that function
   // runs on every render/re-render, which would accumulate duplicate listeners.
-  {
-    const { unlistenProgress: oldP, unlistenCopyComplete: oldC } = getState();
-    if (oldP) { oldP(); }
-    if (oldC) { oldC(); }
+  if (!getState().unlistenProgress) {
     const ulProgress = await listen('data-p4k-progress', (event) => {
       const { version, percent } = event.payload;
       const progressEl = document.querySelector(`.version-copy-progress[data-version="${version}"]`);

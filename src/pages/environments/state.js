@@ -137,17 +137,24 @@ export function setState(updates) {
  * Does NOT reset cross-version state (lastRestoredPerVersion, ESSENTIAL_ACTIONS).
  */
 export function resetState() {
-  // Preserve fields that persist across version switches
+  // Preserve fields that persist across version switches:
+  // - App-level: config, render tracking, migration flag
+  // - Tauri listeners: launch event handles (registered once)
+  // - Localization labels: game-wide, not version-specific — reloading
+  //   on every switch causes a wasteful double-render cycle
   const { config, renderGeneration, migrationChecked, postGameListenerRegistered,
-          unlistenLaunchStarted, unlistenLaunchExited } = state;
+          unlistenLaunchStarted, unlistenLaunchExited,
+          localizationLoaded, localizationLabels, actionDefinitions } = state;
 
   state = createState();
 
-  // Restore persistent fields
   state.config = config;
   state.renderGeneration = renderGeneration;
   state.migrationChecked = migrationChecked;
   state.postGameListenerRegistered = postGameListenerRegistered;
   state.unlistenLaunchStarted = unlistenLaunchStarted;
   state.unlistenLaunchExited = unlistenLaunchExited;
+  state.localizationLoaded = localizationLoaded;
+  state.localizationLabels = localizationLabels;
+  state.actionDefinitions = actionDefinitions;
 }
