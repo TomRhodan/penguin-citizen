@@ -275,8 +275,16 @@ pub async fn fetch_available_runners(base_path: String) -> FetchRunnersResult {
         }
         match request.send().await {
             Ok(resp) => {
-                if !resp.status().is_success() {
-                    errors.push(format!("{}: GitHub API returned {}", source.name, resp.status()));
+                let status = resp.status();
+                if !status.is_success() {
+                    if status.as_u16() == 403 || status.as_u16() == 429 {
+                        errors.push(format!(
+                            "{}: GitHub API rate limit reached ({}). Add a GitHub token in Settings to increase the limit.",
+                            source.name, status
+                        ));
+                    } else {
+                        errors.push(format!("{}: GitHub API returned {}", source.name, status));
+                    }
                     continue;
                 }
                 match resp.json::<Vec<GhRelease>>().await {

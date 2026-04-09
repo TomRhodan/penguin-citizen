@@ -27,10 +27,27 @@
 
 use serde::{ Deserialize, Serialize };
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use crate::error::AppError;
+
+/// Writes content to a file with owner-only permissions (0o600).
+///
+/// Config and cache files may contain sensitive data (e.g. GitHub tokens),
+/// so they must not be world-readable. This replaces plain `fs::write()`
+/// for all files in `~/.config/penguin-citizen/`.
+fn write_private(path: impl AsRef<Path>, content: &str) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(content.as_bytes())
+}
 
 /// A custom environment variable that is set when launching Star Citizen.
 ///
@@ -626,7 +643,9 @@ pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, AppErr
                                 .unwrap_or_default()
                                 .to_string_lossy()
                                 .into_owned();
-                            let bin_path = wine_exe.parent().unwrap().to_string_lossy().into_owned();
+                            let bin_path = wine_exe.parent()
+                                .map(|p| p.to_string_lossy().into_owned())
+                                .unwrap_or_default();
                             let wine_executable = wine_exe.to_string_lossy().into_owned();
 
                             runners.push(DetectedRunner {
@@ -746,7 +765,7 @@ pub async fn save_config(config: AppConfig) -> Result<(), AppError> {
                 ::to_string_pretty(&merged)
                 .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-            fs::write(config_path, json).map_err(|e| format!("Failed to write config: {}", e))?;
+            write_private(config_path, &json).map_err(|e| format!("Failed to write config: {}", e))?;
 
             Ok(())
         }).await
@@ -793,7 +812,7 @@ pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
                     ..config
                 };
                 if let Ok(json) = serde_json::to_string_pretty(&new_config) {
-                    let _ = fs::write(&path, json);
+                    let _ = write_private(&path, &json);
                 }
                 return Some(new_config);
             }
@@ -852,7 +871,7 @@ pub async fn reset_app() -> Result<(), AppError> {
             if let Some(parent) = Path::new(&config_path).parent() {
                 let _ = fs::create_dir_all(parent);
             }
-            let _ = fs::write(&config_path, json);
+            let _ = write_private(&config_path, &json);
         }
     }
 
@@ -945,7 +964,7 @@ pub async fn save_runner_cache(runners: Vec<CachedRunner>) -> Result<(), AppErro
             }
         };
 
-        if let Err(e) = fs::write(cache_path, json) {
+        if let Err(e) = write_private(cache_path, &json) {
             return Err(format!("Failed to write cache: {}", e));
         }
 
@@ -1035,7 +1054,7 @@ pub async fn save_dxvk_cache(releases: Vec<CachedDxvkRelease>) -> Result<(), App
             }
         };
 
-        if let Err(e) = fs::write(cache_path, json) {
+        if let Err(e) = write_private(cache_path, &json) {
             return Err(format!("Failed to write cache: {}", e));
         }
 
@@ -1136,7 +1155,7 @@ pub async fn add_runner_source_from_github(
 
             // Save config
             let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-            fs::write(&config_path, json).map_err(|e| e.to_string())?;
+            write_private(&config_path, &json).map_err(|e| e.to_string())?;
 
             Ok(AddRunnerSourceResult {
                 success: true,
@@ -1210,7 +1229,7 @@ pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, AppErr
 
             // Save configuration (even if no new sources were added)
             let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-            fs::write(&config_path, json).map_err(|e| e.to_string())?;
+            write_private(&config_path, &json).map_err(|e| e.to_string())?;
 
             let message = if added_sources.is_empty() {
                 "All LUG sources already configured".to_string()

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1] - 2026-04-09
 
+### Security
+- **Config file permissions** — All config, cache, and window-state files are now written with `0o600` (owner-only) permissions instead of inheriting the default umask, preventing other users from reading the GitHub token.
+- **Winetricks integrity verification** — Winetricks is now downloaded from a pinned release tag (`20250102`) instead of `master`, with SHA-256 hash verification before execution.
+- **Double-launch guard** — `launch_game` now rejects concurrent launches, preventing orphaned Wine processes from a second click.
+- **PID reuse protection** — `stop_game` verifies the process still exists via `/proc/{pid}/comm` before sending signals, and uses `libc::kill()` directly instead of spawning `Command::new("kill")`.
+- **Stricter Wine PID verification** — Wine helper process termination now uses exact process name matching (`WINE_NAMES.contains()`) instead of substring `contains()`, preventing accidental kills of unrelated processes.
+- **GitHub rate limit handling** — HTTP 403/429 responses from the GitHub API now show a clear message suggesting to add a token, instead of a generic error.
+- **Async runtime safety** — `stop_game` replaced `std::thread::sleep` with `tokio::time::sleep` to avoid blocking the Tokio worker thread.
+- **Mutex poisoning recovery** — All `GAME_PID` lock acquisitions now use `unwrap_or_else(|e| e.into_inner())` instead of silently ignoring lock failures.
+
 ### Fixed
 - **Memory leak** — `Gilrs::new()` was called on every version switch, spawning udev/inotify threads that accumulated (90+ zombie threads, 200+ MB growth). Now uses a single shared Gilrs instance across all device queries and capture sessions.
 - **Double render** — Each version switch triggered `renderEnvironments()` twice due to localization labels being unnecessarily reloaded. Eliminated by preserving game-wide data across version resets.

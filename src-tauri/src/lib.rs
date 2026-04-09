@@ -315,7 +315,17 @@ fn save_window_state_from(window: &tauri::WebviewWindow) {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(&state) {
-            let _ = std::fs::write(path, json);
+            use std::os::unix::fs::OpenOptionsExt;
+            let _ = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(json.as_bytes())
+                });
         }
     }
 }

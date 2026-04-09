@@ -44,6 +44,60 @@ pub(crate) fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// Pinned Winetricks version and its SHA-256 hash.
+///
+/// Using a fixed release tag instead of `master` ensures reproducible installs
+/// and allows integrity verification of the downloaded script.
+/// Update both constants together when upgrading to a new Winetricks release.
+const WINETRICKS_TAG: &str = "20250102";
+const WINETRICKS_SHA256: &str = "53194dead910f8a5eb1deacaa4773d4e48f5873633d18ab1ecd6fdb0cb92243b";
+
+/// Downloads the pinned Winetricks script to `tmp_dir` and verifies its SHA-256 hash.
+///
+/// Returns the path to the downloaded, executable script.
+/// This is shared between `installer::install` and `prefix_tools` to avoid
+/// duplicating the download + chmod + verification logic.
+pub(crate) async fn download_winetricks(tmp_dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let url = format!(
+        "https://raw.githubusercontent.com/Winetricks/winetricks/{}/src/winetricks",
+        WINETRICKS_TAG
+    );
+    let winetricks_path = tmp_dir.join("winetricks");
+
+    let wt_bytes = http_client()
+        .get(&url)
+        .send().await
+        .map_err(|e| format!("Failed to download winetricks: {}", e))?
+        .bytes().await
+        .map_err(|e| format!("Failed to read winetricks response: {}", e))?;
+
+    // Verify integrity via SHA-256
+    use sha2::{Sha256, Digest};
+    let hash = format!("{:x}", Sha256::digest(&wt_bytes));
+    if hash != WINETRICKS_SHA256 {
+        return Err(format!(
+            "Winetricks integrity check failed!\nExpected: {}\nGot:      {}\n\
+             The downloaded script does not match the pinned version {}. \
+             This could indicate a tampered download or an update is needed.",
+            WINETRICKS_SHA256, hash, WINETRICKS_TAG
+        ));
+    }
+
+    std::fs::write(&winetricks_path, &wt_bytes)
+        .map_err(|e| format!("Failed to write winetricks: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&winetricks_path, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("Failed to chmod winetricks: {}", e))?;
+    }
+
+    log::info!("Winetricks {} downloaded and verified (SHA-256 OK)", WINETRICKS_TAG);
+
+    Ok(winetricks_path)
+}
+
 /// Validates a screenshot filename to prevent path traversal.
 /// Only a plain filename (no slashes, no `..`) is accepted.
 fn validate_screenshot_filename(filename: &str) -> Result<(), String> {

@@ -123,28 +123,8 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
 
     emit_progress(&app, "prepare", "Downloading winetricks...", 2.0, "Downloading winetricks...");
 
-    // Download Winetricks script directly from GitHub (always latest version)
-    let winetricks_path = tmp_dir.join("winetricks");
-
-    let wt_bytes = client
-        .get("https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks")
-        .send().await
-        .map_err(|e| format!("Failed to download winetricks: {}", e))?
-        .bytes().await
-        .map_err(|e| format!("Failed to read winetricks response: {}", e))?;
-
-    std::fs
-        ::write(&winetricks_path, &wt_bytes)
-        .map_err(|e| format!("Failed to write winetricks: {}", e))?;
-
-    // Mark Winetricks script as executable (only needed on Unix systems)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs
-            ::set_permissions(&winetricks_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to chmod winetricks: {}", e))?;
-    }
+    // Download pinned Winetricks version with SHA-256 integrity verification
+    let winetricks_path = crate::util::download_winetricks(&tmp_dir).await?;
 
     emit_progress(&app, "prepare", "Environment ready", 5.0, "Environment prepared successfully");
 
@@ -256,8 +236,12 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         .send().await
         .map_err(|e| format!("Failed to fetch DXVK release: {}", e))?;
 
-    if !dxvk_resp.status().is_success() {
-        return Err(format!("GitHub API returned {} for DXVK", dxvk_resp.status()));
+    let dxvk_status = dxvk_resp.status();
+    if !dxvk_status.is_success() {
+        if dxvk_status.as_u16() == 403 || dxvk_status.as_u16() == 429 {
+            return Err("GitHub API rate limit reached. Add a GitHub token in Settings to increase the limit.".into());
+        }
+        return Err(format!("GitHub API returned {} for DXVK", dxvk_status));
     }
 
     /// A GitHub release object from the GitHub Releases API.
@@ -804,9 +788,7 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
     let pid = child.id();
 
     // Store PID so the launch page and stop_game know a process is running
-    if let Ok(mut guard) = GAME_PID.lock() {
-        *guard = Some((pid, install_path.clone()));
-    }
+    *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = Some((pid, install_path.clone()));
 
     let _ = app.emit("launch-started", "RSI Launcher process started");
     let _ = app.emit("launch-log", &format!("> RSI Launcher started (PID: {})", pid));
@@ -819,9 +801,7 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         let status = child.wait();
         let code = status.ok().and_then(|s| s.code());
 
-        if let Ok(mut guard) = GAME_PID.lock() {
-            *guard = None;
-        }
+        *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
         let _ = bg_app.emit("launch-log", &format!("> RSI Launcher exited (code: {:?})", code));
         let _ = bg_app.emit("launch-exited", code.unwrap_or(-1));

@@ -119,8 +119,12 @@ pub async fn fetch_dxvk_releases() -> Result<Vec<DxvkRelease>, String> {
     }
     let resp = request.send().await.map_err(|e| format!("Failed to fetch DXVK releases: {}", e))?;
 
-    if !resp.status().is_success() {
-        return Err(format!("GitHub API returned {}", resp.status()));
+    let status = resp.status();
+    if !status.is_success() {
+        if status.as_u16() == 403 || status.as_u16() == 429 {
+            return Err("GitHub API rate limit reached. Add a GitHub token in Settings to increase the limit.".into());
+        }
+        return Err(format!("GitHub API returned {}", status));
     }
 
     let releases: Vec<GhRelease> = resp

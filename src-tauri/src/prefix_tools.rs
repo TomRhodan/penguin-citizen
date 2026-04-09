@@ -31,7 +31,7 @@ use std::process::{ Command, Stdio };
 use tauri::{ AppHandle, Emitter };
 
 use crate::runners::resolve_wine_bin;
-use crate::util::{expand_tilde, http_client};
+use crate::util::expand_tilde;
 
 /// Determines the paths for the Wine binary, runner bin directory, and prefix.
 ///
@@ -297,33 +297,11 @@ pub async fn install_powershell(
 
     emit_log("Downloading winetricks...");
 
-    // Download winetricks from GitHub
+    // Download pinned Winetricks version with SHA-256 integrity verification
     let tmp_dir = prefix.join(".tmp");
     std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create tmp dir: {}", e))?;
 
-    let winetricks_path = tmp_dir.join("winetricks");
-
-    let client = http_client();
-
-    let wt_bytes = client
-        .get("https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks")
-        .send().await
-        .map_err(|e| format!("Failed to download winetricks: {}", e))?
-        .bytes().await
-        .map_err(|e| format!("Failed to read winetricks: {}", e))?;
-
-    std::fs
-        ::write(&winetricks_path, &wt_bytes)
-        .map_err(|e| format!("Failed to write winetricks: {}", e))?;
-
-    // Make winetricks script executable (Unix only)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs
-            ::set_permissions(&winetricks_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to chmod winetricks: {}", e))?;
-    }
+    let winetricks_path = crate::util::download_winetricks(&tmp_dir).await?;
 
     emit_log("Installing PowerShell via winetricks (this may take several minutes)...");
 

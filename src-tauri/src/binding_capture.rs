@@ -692,7 +692,11 @@ pub fn stop_input_capture() {
             let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid))
                 .unwrap_or_default();
             let comm = comm.trim();
-            if comm.contains("wine") || comm.contains("wineserver") || comm.contains("proton") {
+            const WINE_NAMES: &[&str] = &[
+                "wine", "wine64", "wine-preloader", "wine64-preloader",
+                "wineserver", "proton", "penguin-citize", // comm is truncated to 15 chars
+            ];
+            if WINE_NAMES.contains(&comm) {
                 // SAFETY: pid verified to still be a Wine process via /proc.
                 unsafe { libc::kill(pid, libc::SIGTERM); }
                 log_capture(&format!("[WINE] Sent SIGTERM to helper process (PID {}, comm={})", pid, comm));

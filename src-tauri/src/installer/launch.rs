@@ -69,6 +69,14 @@ pub fn check_installation(config: AppConfig) -> InstallationStatus {
 /// "launch-log" events to the frontend for the live console.
 #[tauri::command]
 pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String> {
+    // Guard against double-launch: reject if a game process is already tracked
+    {
+        let guard = GAME_PID.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_some() {
+            return Err("Game is already running".into());
+        }
+    }
+
     let install_path = expand_tilde(&config.install_path);
     let runner_name = config.selected_runner.as_deref().ok_or("No runner selected")?;
     let log_level = config.log_level.as_str();
@@ -302,9 +310,7 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     let _ = app.emit("launch-started", "RSI Launcher process started");
 
     // Store PID and installation path so stop_game can terminate the process
-    if let Ok(mut guard) = GAME_PID.lock() {
-        *guard = Some((pid, install_path.clone()));
-    }
+    *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = Some((pid, install_path.clone()));
 
     // Monitor child process in the background - when the launcher exits,
     // the thread sends a "launch-exited" event to the frontend
@@ -313,9 +319,7 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
         let code = status.ok().and_then(|s| s.code());
 
         // Clear stored PID since the process is no longer running
-        if let Ok(mut guard) = GAME_PID.lock() {
-            *guard = None;
-        }
+        *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
         let _ = app.emit("launch-log", "");
         let _ = app.emit("launch-log", &format!("> RSI Launcher exited (code: {:?})", code));
@@ -343,12 +347,19 @@ pub async fn stop_game(app: AppHandle) -> Result<(), String> {
     let _ = app.emit("launch-log", "");
     let _ = app.emit("launch-log", &format!("> Stopping game process (PID: {})...", pid));
 
-    // Send SIGTERM - gives the process a chance to shut down cleanly
-    let _ = Command::new("kill").arg("-TERM").arg(pid.to_string()).output();
+    // Verify the PID still belongs to a Wine-related process before killing.
+    // This guards against PID reuse by the OS after the process has already exited.
+    let pid_i32 = pid as i32;
+    let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid)).unwrap_or_default();
+    let comm = comm.trim();
+    if !comm.is_empty() {
+        // SAFETY: PID verified to still exist via /proc
+        unsafe { libc::kill(pid_i32, libc::SIGTERM); }
 
-    // Wait 2 seconds, then SIGKILL if the process is still alive
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
+        // Wait 2 seconds, then SIGKILL if the process is still alive
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        unsafe { libc::kill(pid_i32, libc::SIGKILL); }
+    }
 
     // Kill all wineservers in all runner directories
     // to clean up orphaned Wine processes (e.g. winedevice.exe)
@@ -369,9 +380,7 @@ pub async fn stop_game(app: AppHandle) -> Result<(), String> {
     }
 
     // Clear stored PID - the game is no longer running
-    if let Ok(mut guard) = GAME_PID.lock() {
-        *guard = None;
-    }
+    *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
     let _ = app.emit("launch-log", "> Game stopped.");
     // Exit code -1 signals to the frontend that the game was stopped manually
