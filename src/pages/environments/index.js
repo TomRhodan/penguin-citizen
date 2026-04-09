@@ -280,6 +280,11 @@ function rerenderFromState() {
 function resetEnvironmentState() {
   const s = getState();
 
+  if (performance.memory) {
+    const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+    debugLog('RENDER', 'info', `resetEnvironmentState — JS heap before reset: ${mb} MB`);
+  }
+
   // Kill any running Wine helper and stop hardware capture
   invoke('stop_input_capture').catch(err => logError(err, 'environments:stop_input_capture'));
 
@@ -306,7 +311,7 @@ function resetEnvironmentState() {
  * tab navigation, version selection, profile actions, binding editor,
  * drag-and-drop, USER.cfg controls, localization, and more.
  */
-async function attachProfilesEventListeners() {
+function attachProfilesEventListeners() {
   const s = getState();
   const callbacks = {
     renderEnvironments,
@@ -1005,35 +1010,6 @@ async function attachProfilesEventListeners() {
     updateSettingHighlight(row, key, setting, setting.value);
   });
 
-  // Data.p4k copy progress listener - clean up old listeners to prevent leaks.
-  // Use await to ensure the unlisten handle is stored BEFORE any re-render
-  // can race and register a duplicate listener.
-  const { unlistenProgress: oldProgress, unlistenCopyComplete: oldComplete } = getState();
-  if (oldProgress) { oldProgress(); }
-  if (oldComplete) { oldComplete(); }
-
-  const newUnlistenProgress = await listen('data-p4k-progress', (event) => {
-    const { version, percent } = event.payload;
-    const progressEl = document.querySelector(`.version-copy-progress[data-version="${version}"]`);
-    if (progressEl) {
-      progressEl.style.width = `${percent}%`;
-      progressEl.textContent = `${percent}%`;
-    }
-  });
-
-  const newUnlistenCopyComplete = await listen('data-p4k-copy-complete', async (event) => {
-    const { version, success } = event.payload;
-    if (success) {
-      showNotification(t('environments:notification.dataP4kForVersion', { version }), 'success');
-    }
-    setState({ copyingVersion: null });
-    const { config } = getState();
-    const scVersions = await invoke('detect_sc_versions', { gp: config.install_path });
-    setState({ scVersions });
-    renderEnvironments(document.getElementById('content'));
-  });
-
-  setState({ unlistenProgress: newUnlistenProgress, unlistenCopyComplete: newUnlistenCopyComplete });
 }
 
 // ==================== App Close Blocker ====================
@@ -1120,6 +1096,12 @@ export function cleanupEnvironments() {
  * @param {HTMLElement} container - DOM container for the page
  */
 export async function renderEnvironments(container) {
+  // Memory debugging: log heap usage on each render to identify leaks
+  if (performance.memory) {
+    const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+    debugLog('RENDER', 'info', `renderEnvironments called — JS heap: ${mb} MB`);
+  }
+
   const scrollPos = container.scrollTop;
 
   // Increment generation to discard stale renders from parallel calls
@@ -1209,6 +1191,35 @@ export async function renderEnvironments(container) {
       }
     });
     setState({ unlistenLaunchExited: ulExited });
+  }
+
+  // Register Data.p4k copy progress listeners (once per page visit).
+  // These must NOT be in attachProfilesEventListeners() because that function
+  // runs on every render/re-render, which would accumulate duplicate listeners.
+  {
+    const { unlistenProgress: oldP, unlistenCopyComplete: oldC } = getState();
+    if (oldP) { oldP(); }
+    if (oldC) { oldC(); }
+    const ulProgress = await listen('data-p4k-progress', (event) => {
+      const { version, percent } = event.payload;
+      const progressEl = document.querySelector(`.version-copy-progress[data-version="${version}"]`);
+      if (progressEl) {
+        progressEl.style.width = `${percent}%`;
+        progressEl.textContent = `${percent}%`;
+      }
+    });
+    const ulComplete = await listen('data-p4k-copy-complete', async (event) => {
+      const { version, success } = event.payload;
+      if (success) {
+        showNotification(t('environments:notification.dataP4kForVersion', { version }), 'success');
+      }
+      setState({ copyingVersion: null });
+      const { config: cfg } = getState();
+      const versions = await invoke('detect_sc_versions', { gp: cfg.install_path });
+      setState({ scVersions: versions });
+      renderEnvironments(document.getElementById('content'));
+    });
+    setState({ unlistenProgress: ulProgress, unlistenCopyComplete: ulComplete });
   }
 
   // Load localization labels in the background (for translated action names in bindings)
