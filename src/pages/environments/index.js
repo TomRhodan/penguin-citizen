@@ -280,8 +280,6 @@ function rerenderFromState() {
 function resetEnvironmentState() {
   const s = getState();
 
-  debugLog('RENDER', 'info', 'resetEnvironmentState called');
-
   // Kill any running Wine helper and stop hardware capture
   invoke('stop_input_capture').catch(err => logError(err, 'environments:stop_input_capture'));
 
@@ -1093,17 +1091,6 @@ export function cleanupEnvironments() {
  * @param {HTMLElement} container - DOM container for the page
  */
 export async function renderEnvironments(container) {
-  // Memory debugging: count active Tauri listeners and log render calls
-  {
-    const s = getState();
-    const activeListeners = [s.unlistenProgress, s.unlistenCopyComplete, s.unlistenLaunchStarted, s.unlistenLaunchExited].filter(Boolean).length;
-    const stateKeys = Object.keys(s).length;
-    const bindingCount = (s.completeBindingList || []).length;
-    const backupCount = (s.backups || []).length;
-    debugLog('RENDER', 'info',
-      `renderEnvironments — listeners:${activeListeners} stateKeys:${stateKeys} bindings:${bindingCount} backups:${backupCount} version:${s.activeScVersion || 'none'}`
-    );
-  }
 
   const scrollPos = container.scrollTop;
 

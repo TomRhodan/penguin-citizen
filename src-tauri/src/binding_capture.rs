@@ -398,8 +398,17 @@ pub fn start_input_capture(
     let app_clone = app.clone();
     let capturing = IS_CAPTURING.clone();
 
+    // Take the shared Gilrs instance for the capture duration (checkout pattern).
+    // This avoids creating a new Gilrs (and its udev/inotify threads) per capture.
+    // After capture ends, the instance is returned to SHARED_GILRS.
+    let checked_out_gilrs = SHARED_GILRS.lock().ok().and_then(|mut g| g.take());
+
     thread::spawn(move || {
-        match Gilrs::new() {
+        let gilrs_result = match checked_out_gilrs {
+            Some(gilrs) => Ok(gilrs),
+            None => Gilrs::new(),
+        };
+        match gilrs_result {
             Ok(mut gilrs) => {
                 log_capture(&format!("Gilrs active. Found {} devices.", gilrs.gamepads().count()));
 
@@ -654,6 +663,11 @@ pub fn start_input_capture(
                     // Short pause to reduce CPU load when no events are pending.
                     // 10ms yields an effective polling rate of ~100Hz.
                     thread::sleep(std::time::Duration::from_millis(10));
+                }
+
+                // Return the Gilrs instance to the shared pool (checkin).
+                if let Ok(mut guard) = SHARED_GILRS.lock() {
+                    *guard = Some(gilrs);
                 }
             }
             // Gilrs could not be initialized (e.g. missing permissions)
