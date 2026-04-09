@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-09
+
+### Fixed
+- **Memory leak** — `Gilrs::new()` was called on every version switch, spawning udev/inotify threads that accumulated (90+ zombie threads, 200+ MB growth). Now uses a single shared Gilrs instance across all device queries and capture sessions.
+- **Double render** — Each version switch triggered `renderEnvironments()` twice due to localization labels being unnecessarily reloaded. Eliminated by preserving game-wide data across version resets.
+- **Tauri listener race conditions** — `listen()` subscriptions used fire-and-forget `.then()` patterns that raced with re-renders, causing duplicate IPC subscriptions. Replaced with synchronous `await`.
+- **Event listener cleanup** — Added page lifecycle system to the router; each page now exports a `cleanup()` function called before navigation to release Tauri event subscriptions.
+- **Silent error swallowing** — 30+ `.catch(() => null)` blocks now log to the backend debug.log via centralized error handler.
+- **Dashboard cards** — Cards now grow with content at any UI scale instead of showing scrollbars.
+- **PID validation** — Wine helper SIGTERM now verifies the process via `/proc/{pid}/comm` before killing, preventing accidental termination of unrelated processes after PID reuse.
+
+### Added
+- **AppError type system** — Structured error enum replacing ad-hoc `Result<T, String>` with typed variants (Io, Network, Config, Validation, etc.) and automatic `From` conversions.
+- **Shared HTTP client** — Global `http_client()` with connection pooling replacing 10 separate `reqwest::Client` instances.
+- **Network offline detection** — Dashboard shows a warning banner when disconnected and auto-reloads data on reconnect.
+- **Setup wizard improvements** — Back button, debounced path validation on keystroke, hint explaining disabled Continue button.
+- **Accessibility** — `:focus-visible` styles, `aria-label` on navigation, `aria-current="page"`, `aria-live` on content area, `role="dialog"` and `role="alert"` on modals/notifications.
+- **Debounce utility** — Reusable `debounce()` function with `flush()` and `cancel()` methods.
+- **Unit tests** — 22 new tests for util.rs and config.rs (21 → 43 total).
+
+### Changed
+- **Architecture: environments.js** (5,921 lines) split into 9 focused modules with central state store (`getState`/`setState`/`resetState`).
+- **Architecture: sc_config.rs** (4,691 lines) split into 6 submodules (versions, bindings, profiles, p4k, localization).
+- **Architecture: installer.rs** (1,810 lines) split into 4 submodules (launch, install, repair).
+- **Architecture: pages.css** (8,247 lines) split into 9 per-page stylesheets.
+- **Destructive actions** — App reset now shows explicit "cannot be undone" warning.
+- **Debug logs** — Replaced `console.log('[DEBUG]...')` with `debugLog()` backend logging.
+
+### Security
+- **Archive bomb protection** — `safe_unpack()` enforces 50 GB extraction size limit.
+- **Environment variable blocklist** — Extended with Wine/Proton internals (WINEPREFIX, WINEARCH, etc.) and XDG paths.
+- **Content Security Policy** — Added CSP to `tauri.conf.json` restricting scripts, styles, and image origins.
+- **XSS audit** — Verified `escapeHtml()` is used consistently across all innerHTML assignments.
+
 ## [0.5.0] - 2026-04-08
 
 ### Added
@@ -279,6 +313,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prefix Tools** - Winecfg, DPI scaling, PowerShell installation via winetricks
 - **Multi-version Support** - Manage LIVE, PTU, EPTU, and other Star Citizen channels
 
+[0.5.1]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.0-2...v0.5.1
 [0.5.0]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.9-0...v0.5.0-2
 [0.4.9]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.8-0...v0.4.9-0
 [0.4.8]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.7-1...v0.4.8-0
