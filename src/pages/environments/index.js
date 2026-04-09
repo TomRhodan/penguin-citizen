@@ -306,7 +306,7 @@ function resetEnvironmentState() {
  * tab navigation, version selection, profile actions, binding editor,
  * drag-and-drop, USER.cfg controls, localization, and more.
  */
-function attachProfilesEventListeners() {
+async function attachProfilesEventListeners() {
   const s = getState();
   const callbacks = {
     renderEnvironments,
@@ -1005,22 +1005,23 @@ function attachProfilesEventListeners() {
     updateSettingHighlight(row, key, setting, setting.value);
   });
 
-  // Data.p4k copy progress listener - clean up old listeners to prevent leaks
-  const { unlistenProgress, unlistenCopyComplete } = getState();
-  if (unlistenProgress) { unlistenProgress(); }
-  if (unlistenCopyComplete) { unlistenCopyComplete(); }
-  setState({ unlistenProgress: null, unlistenCopyComplete: null });
+  // Data.p4k copy progress listener - clean up old listeners to prevent leaks.
+  // Use await to ensure the unlisten handle is stored BEFORE any re-render
+  // can race and register a duplicate listener.
+  const { unlistenProgress: oldProgress, unlistenCopyComplete: oldComplete } = getState();
+  if (oldProgress) { oldProgress(); }
+  if (oldComplete) { oldComplete(); }
 
-  listen('data-p4k-progress', (event) => {
+  const newUnlistenProgress = await listen('data-p4k-progress', (event) => {
     const { version, percent } = event.payload;
     const progressEl = document.querySelector(`.version-copy-progress[data-version="${version}"]`);
     if (progressEl) {
       progressEl.style.width = `${percent}%`;
       progressEl.textContent = `${percent}%`;
     }
-  }).then(fn => { setState({ unlistenProgress: fn }); });
+  });
 
-  listen('data-p4k-copy-complete', async (event) => {
+  const newUnlistenCopyComplete = await listen('data-p4k-copy-complete', async (event) => {
     const { version, success } = event.payload;
     if (success) {
       showNotification(t('environments:notification.dataP4kForVersion', { version }), 'success');
@@ -1030,7 +1031,9 @@ function attachProfilesEventListeners() {
     const scVersions = await invoke('detect_sc_versions', { gp: config.install_path });
     setState({ scVersions });
     renderEnvironments(document.getElementById('content'));
-  }).then(fn => { setState({ unlistenCopyComplete: fn }); });
+  });
+
+  setState({ unlistenProgress: newUnlistenProgress, unlistenCopyComplete: newUnlistenCopyComplete });
 }
 
 // ==================== App Close Blocker ====================
@@ -1165,7 +1168,7 @@ export async function renderEnvironments(container) {
   // Register post-game listener for attributes.xml sync detection (once)
   if (!getState().postGameListenerRegistered && config?.install_path) {
     setState({ postGameListenerRegistered: true });
-    listen('launch-started', async () => {
+    const ulStarted = await listen('launch-started', async () => {
       const { config: cfg, activeScVersion: av } = getState();
       if (cfg?.install_path && av) {
         try {
@@ -1175,8 +1178,9 @@ export async function renderEnvironments(container) {
           setState({ preLaunchAttributesHash });
         } catch (e) { /* ignore */ }
       }
-    }).then(fn => { setState({ unlistenLaunchStarted: fn }); });
-    listen('launch-exited', async () => {
+    });
+    setState({ unlistenLaunchStarted: ulStarted });
+    const ulExited = await listen('launch-exited', async () => {
       const { config: cfg, activeScVersion: av, preLaunchAttributesHash } = getState();
       if (cfg?.install_path && av && preLaunchAttributesHash) {
         try {
@@ -1203,7 +1207,8 @@ export async function renderEnvironments(container) {
         } catch (e) { /* ignore */ }
         setState({ preLaunchAttributesHash: '' });
       }
-    }).then(fn => { setState({ unlistenLaunchExited: fn }); });
+    });
+    setState({ unlistenLaunchExited: ulExited });
   }
 
   // Load localization labels in the background (for translated action names in bindings)
