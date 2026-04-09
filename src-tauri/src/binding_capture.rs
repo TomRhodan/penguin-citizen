@@ -108,6 +108,10 @@ struct WineCaptureState {
     wine_pid: Option<i32>,
 }
 
+/// Shared Gilrs instance for `list_device_axes`. Avoids creating a new Gilrs
+/// (and its udev/inotify threads) on every call — those threads leaked before.
+static SHARED_GILRS: Lazy<std::sync::Mutex<Option<Gilrs>>> = Lazy::new(|| std::sync::Mutex::new(None));
+
 static WINE_CAPTURE: Lazy<Arc<Mutex<WineCaptureState>>> = Lazy::new(|| {
     Arc::new(Mutex::new(WineCaptureState {
         events: Vec::new(),
@@ -211,7 +215,18 @@ pub struct ConnectedDeviceWithAxes {
 /// Used by the tuning UI to show axis-level deadzone/saturation controls.
 #[tauri::command]
 pub fn list_device_axes(device_map: Option<Vec<DeviceMapping>>) -> Result<Vec<ConnectedDeviceWithAxes>, String> {
-    let gilrs = Gilrs::new().map_err(|e| e.to_string())?;
+    // Reuse the shared Gilrs instance to avoid spawning udev/inotify threads
+    // on every call. Gilrs::new() creates system-level watcher threads that
+    // accumulate if called repeatedly (e.g. on every version switch).
+    let mut gilrs_guard = SHARED_GILRS.lock().map_err(|e| format!("Gilrs lock: {}", e))?;
+    let gilrs = gilrs_guard.get_or_insert_with(|| {
+        Gilrs::new().unwrap_or_else(|e| {
+            log_capture(&format!("Failed to init Gilrs: {:?}", e));
+            // Return a default-ish Gilrs — this path should rarely happen
+            Gilrs::new().expect("Gilrs init failed twice")
+        })
+    });
+
     let mut results = Vec::new();
     let mut used_mappings = std::collections::HashSet::new();
 
