@@ -18,7 +18,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { router } from '../router.js';
-import { setActiveProfileTab, renderEnvironments } from '../pages/environments.js';
+import { setActiveProfileTab, renderEnvironments } from '../pages/environments/index.js';
 import { confirm } from './dialogs.js';
 
 /**

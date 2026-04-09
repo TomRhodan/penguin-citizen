@@ -34,7 +34,7 @@ import { renderDashboard } from './pages/dashboard.js';
 import { renderInstallation, cleanupInstallation } from './pages/installation.js';
 import { renderRunners, cleanupRunners } from './pages/runners.js';
 import { renderLaunch, flushPendingSave, cleanupLaunch } from './pages/launch.js';
-import { renderEnvironments, cleanupEnvironments } from './pages/environments.js';
+import { renderEnvironments, cleanupEnvironments } from './pages/environments/index.js';
 import { renderSettings } from './pages/settings.js';
 import { renderAbout } from './pages/about.js';
 import { renderSetup } from './pages/setup.js';
