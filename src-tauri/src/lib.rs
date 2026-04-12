@@ -63,6 +63,7 @@ mod binding_capture;
 // binding_database was removed – bindings are now managed per profile in sc_config
 mod runners;
 mod sc_config;
+mod shader_cache;
 mod system_check;
 mod action_definitions;
 
@@ -646,6 +647,11 @@ pub fn run() {
                 localization::install_localization,
                 localization::remove_localization,
                 localization::fetch_remote_language_info,
+
+                // Shader cache management (detection, deletion)
+                shader_cache::get_shader_cache_info,
+                shader_cache::delete_shader_cache,
+                shader_cache::check_shader_cache_exists,
 
                 // Dashboard (RSI news, server status, community statistics)
                 dashboard::fetch_rsi_news,

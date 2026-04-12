@@ -133,5 +133,8 @@
 
   "badge.new": "NEW",
   "badge.installed": "Installed",
-  "badge.notInstalled": "Not installed"
+  "badge.notInstalled": "Not installed",
+
+  "shader.missingTitle": "Shader cache missing",
+  "shader.missingMessage": "The next launch will take significantly longer (up to 10 min) while shaders are compiled. Wait 2\u20133 minutes at the login menu for optimal performance."
 }

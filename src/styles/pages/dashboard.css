@@ -538,3 +538,102 @@
   color: var(--text-primary);
 }
 
+/* ── Shader Cache Widget ── */
+
+.dash-shader-refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  line-height: 1;
+}
+
+.dash-shader-refresh-btn:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.dash-shader-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dash-shader-entry {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.dash-shader-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.dash-shader-version {
+  font-weight: 600;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+.dash-shader-sizes {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.dash-shader-rec {
+  display: inline-block;
+  font-size: var(--font-xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+
+.dash-shader-rec--warning {
+  background: rgba(255, 170, 0, 0.12);
+  color: #e6a200;
+}
+
+.dash-shader-rec--info {
+  background: rgba(120, 120, 140, 0.12);
+  color: var(--text-muted);
+}
+
+.dash-shader-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.dash-shader-actions .btn-sm {
+  font-size: var(--font-xs);
+  padding: 3px 10px;
+}
+
+.dash-shader-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.dash-shader-total {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dash-shader-del-all {
+  font-size: var(--font-xs);
+}
+

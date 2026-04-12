@@ -133,5 +133,8 @@
 
   "badge.new": "NEU",
   "badge.installed": "Installiert",
-  "badge.notInstalled": "Nicht installiert"
+  "badge.notInstalled": "Nicht installiert",
+
+  "shader.missingTitle": "Shader-Cache fehlt",
+  "shader.missingMessage": "Der naechste Start dauert deutlich laenger (bis zu 10 Min.), da Shader neu kompiliert werden. Warte nach dem Laden 2\u20133 Minuten im Login-Menue fuer optimale Leistung."
 }

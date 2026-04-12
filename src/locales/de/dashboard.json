@@ -57,5 +57,24 @@
   "repair.backupBanner": "Ein Reparatur-Backup existiert unter {{path}} ({{size}}). Wenn alles funktioniert, kannst du es loeschen.",
   "repair.deleteConfirm": "Bist du sicher, dass du dieses Reparatur-Backup unwiderruflich loeschen moechtest?",
   "repair.moveWarning": "Die Star Citizen Spieldaten konnten nicht automatisch verschoben werden. Bitte kopiere den StarCitizen-Ordner manuell aus dem Backup.",
-  "repair.tooltip": "Erstellt eine frische Wine-Umgebung und installiert den RSI Launcher neu, wobei deine Spieldaten erhalten bleiben"
+  "repair.tooltip": "Erstellt eine frische Wine-Umgebung und installiert den RSI Launcher neu, wobei deine Spieldaten erhalten bleiben",
+
+  "section.shaderCache": "Shader-Cache",
+
+  "shader.stale": "Veraltet \u2014 Loeschen empfohlen",
+  "shader.missing": "Kein Cache \u2014 Shader werden beim naechsten Start kompiliert",
+  "shader.large": "Ungewoehnlich grosser Cache",
+  "shader.deleteSc": "SC",
+  "shader.deleteDxvk": "DXVK",
+  "shader.deleteAll": "Alle",
+  "shader.total": "Gesamt",
+  "shader.deleteAllCaches": "Alle Caches loeschen",
+  "shader.confirmTitle": "Shader-Cache loeschen",
+  "shader.confirmOk": "Loeschen",
+  "shader.confirmDelete": "{{type}}-Shader-Cache fuer {{version}} loeschen?",
+  "shader.confirmAllForVersion": "Alle Shader-Caches fuer {{version}} loeschen?",
+  "shader.confirmDeleteAll": "Alle Shader-Caches fuer alle Versionen loeschen?",
+  "shader.deleted": "Shader-Cache geloescht ({{freed}} freigegeben)",
+  "shader.partialDelete": "Teilweise geloescht ({{freed}} freigegeben), einige Dateien konnten nicht entfernt werden",
+  "shader.deleteFailed": "Shader-Cache konnte nicht geloescht werden: {{error}}"
 }

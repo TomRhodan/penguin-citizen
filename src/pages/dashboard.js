@@ -34,7 +34,7 @@ import { router } from '../router.js';
 import { requestAutoLaunch } from './launch.js';
 import { setRepairMode } from './installation.js';
 import { escapeHtml, escapeAttr } from '../utils.js';
-import { confirm } from '../utils/dialogs.js';
+import { confirm, showNotification } from '../utils/dialogs.js';
 import { t } from '../i18n.js';
 import { getNetworkStatus, onNetworkChange } from '../utils/network-status.js';
 
@@ -106,6 +106,13 @@ export function renderDashboard(container) {
         <div class="dash-panel" id="dash-stats-panel">
           <div class="dash-panel-title"><span class="dash-panel-title-icon">&#9734;</span> ${t('dashboard:section.community')}</div>
           <div id="dash-stats-content">${renderStatsSkeleton()}</div>
+        </div>
+        <div class="dash-panel" id="dash-shader-panel" style="display:none">
+          <div class="dash-panel-title">
+            <span class="dash-panel-title-icon">&#9830;</span> ${t('dashboard:section.shaderCache', { defaultValue: 'Shader Cache' })}
+            <button class="dash-shader-refresh-btn" id="dash-shader-refresh" title="${t('dashboard:button.refresh', { defaultValue: 'Refresh' })}">&#8635;</button>
+          </div>
+          <div id="dash-shader-content">${renderShaderCacheSkeleton()}</div>
         </div>
       </div>
     </div>
@@ -197,8 +204,9 @@ async function loadAll() {
   const newsPromise = loadNews();
   const serverPromise = loadServerStatus();
   const statsPromise = loadCommunityStats();
+  const shaderPromise = loadShaderCacheStatus();
 
-  await Promise.allSettled([localPromise, newsPromise, serverPromise, statsPromise]);
+  await Promise.allSettled([localPromise, newsPromise, serverPromise, statsPromise, shaderPromise]);
 }
 
 /**
@@ -953,6 +961,227 @@ function formatDelta(delta, key) {
   // Fans/Fleet - format with thousands separators
   const formatted = Math.round(abs).toLocaleString('en-US');
   return `${sign}${delta < 0 ? '-' : ''}${formatted}`;
+}
+
+// ── Shader Cache Widget ──────────────────────────────────────
+
+/** Creates the skeleton placeholder for the shader cache panel */
+function renderShaderCacheSkeleton() {
+  return `
+    <div class="dash-shader-list">
+      <div class="dash-skeleton dash-skeleton-line medium"></div>
+      <div class="dash-skeleton dash-skeleton-line short"></div>
+    </div>`;
+}
+
+/** Formats a byte count as a human-readable string */
+function formatBytes(bytes) {
+  if (bytes === 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * Loads shader cache status for all installed SC versions.
+ * Only displayed when SC is installed.
+ */
+async function loadShaderCacheStatus() {
+  const panel = document.getElementById('dash-shader-panel');
+  const el = document.getElementById('dash-shader-content');
+  if (!panel || !el) return;
+
+  // Wait for config to be loaded
+  if (!dashConfig?.install_path) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  try {
+    const infos = await invoke('get_shader_cache_info', { installPath: dashConfig.install_path });
+    if (infos.length === 0) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = '';
+    renderShaderCacheWidget(el, infos);
+  } catch (err) {
+    console.warn('Failed to load shader cache info:', err);
+    panel.style.display = 'none';
+  }
+}
+
+/**
+ * Renders the shader cache widget content with per-version cache info.
+ * @param {HTMLElement} el - Container element
+ * @param {Array} infos - Array of ShaderCacheInfo objects from the backend
+ */
+function renderShaderCacheWidget(el, infos) {
+  let totalSize = 0;
+  let html = '<div class="dash-shader-list">';
+
+  for (const info of infos) {
+    const scSize = info.sc_cache_size_bytes;
+    const dxvkSize = info.dxvk_cache_size_bytes;
+    totalSize += scSize + dxvkSize;
+
+    const hasSc = info.sc_cache_path && scSize > 0;
+    const hasDxvk = info.dxvk_cache_path && dxvkSize > 0;
+
+    // Recommendation badge
+    let recHtml = '';
+    if (info.recommendation === 'stale') {
+      recHtml = `<span class="dash-shader-rec dash-shader-rec--warning">${t('dashboard:shader.stale', { defaultValue: 'Outdated — clearing recommended' })}</span>`;
+    } else if (info.recommendation === 'missing') {
+      recHtml = `<span class="dash-shader-rec dash-shader-rec--info">${t('dashboard:shader.missing', { defaultValue: 'No cache — shaders will compile on next launch' })}</span>`;
+    } else if (info.recommendation === 'large') {
+      recHtml = `<span class="dash-shader-rec dash-shader-rec--warning">${t('dashboard:shader.large', { defaultValue: 'Unusually large cache' })}</span>`;
+    }
+
+    // Buttons
+    let buttonsHtml = '';
+    if (hasSc || hasDxvk) {
+      buttonsHtml = '<div class="dash-shader-actions">';
+      if (hasSc) {
+        buttonsHtml += `<button class="btn-sm dash-shader-del" data-version="${escapeAttr(info.sc_version)}" data-type="sc">${t('dashboard:shader.deleteSc', { defaultValue: 'SC' })}</button>`;
+      }
+      if (hasDxvk) {
+        buttonsHtml += `<button class="btn-sm dash-shader-del" data-version="${escapeAttr(info.sc_version)}" data-type="dxvk">${t('dashboard:shader.deleteDxvk', { defaultValue: 'DXVK' })}</button>`;
+      }
+      if (hasSc && hasDxvk) {
+        buttonsHtml += `<button class="btn-sm dash-shader-del" data-version="${escapeAttr(info.sc_version)}" data-type="all">${t('dashboard:shader.deleteAll', { defaultValue: 'All' })}</button>`;
+      }
+      buttonsHtml += '</div>';
+    }
+
+    html += `
+      <div class="dash-shader-entry">
+        <div class="dash-shader-header">
+          <span class="dash-shader-version">${escapeHtml(info.sc_version)}</span>
+          <span class="dash-shader-sizes">SC: ${formatBytes(scSize)} &middot; DXVK: ${formatBytes(dxvkSize)}</span>
+        </div>
+        ${recHtml}
+        ${buttonsHtml}
+      </div>`;
+  }
+
+  html += '</div>';
+
+  // Footer with total + delete-all
+  if (totalSize > 0) {
+    html += `
+      <div class="dash-shader-footer">
+        <span class="dash-shader-total">${t('dashboard:shader.total', { defaultValue: 'Total' })}: ${formatBytes(totalSize)}</span>
+        <button class="btn-sm dash-shader-del-all" id="dash-shader-del-all">${t('dashboard:shader.deleteAllCaches', { defaultValue: 'Clear all caches' })}</button>
+      </div>`;
+  }
+
+  el.innerHTML = html;
+  bindShaderDeleteButtons();
+}
+
+/** Binds click handlers to all shader delete buttons */
+function bindShaderDeleteButtons() {
+  // Per-version delete buttons
+  document.querySelectorAll('.dash-shader-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const version = btn.dataset.version;
+      const cacheType = btn.dataset.type;
+      const label = cacheType === 'all'
+        ? t('dashboard:shader.confirmAllForVersion', { version, defaultValue: `Delete all shader caches for ${version}?` })
+        : t('dashboard:shader.confirmDelete', { version, type: cacheType.toUpperCase(), defaultValue: `Delete ${cacheType.toUpperCase()} shader cache for ${version}?` });
+
+      const ok = await confirm(label, {
+        title: t('dashboard:shader.confirmTitle', { defaultValue: 'Clear Shader Cache' }),
+        kind: 'warning',
+        okLabel: t('dashboard:shader.confirmOk', { defaultValue: 'Delete' }),
+      });
+      if (!ok) return;
+
+      try {
+        btn.disabled = true;
+        const result = await invoke('delete_shader_cache', {
+          installPath: dashConfig.install_path,
+          scVersion: version,
+          cacheType,
+        });
+        const freed = formatBytes(result.freed_bytes);
+        if (result.failed_paths?.length > 0) {
+          showNotification(
+            t('dashboard:shader.partialDelete', { freed, defaultValue: `Partially cleared (${freed} freed), some files could not be deleted` }),
+            'warning'
+          );
+        } else {
+          showNotification(
+            t('dashboard:shader.deleted', { freed, defaultValue: `Shader cache cleared (${freed} freed)` }),
+            'success'
+          );
+        }
+        await loadShaderCacheStatus();
+      } catch (err) {
+        showNotification(
+          t('dashboard:shader.deleteFailed', { error: err, defaultValue: `Failed to delete shader cache: ${err}` }),
+          'error'
+        );
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Delete-all button
+  const delAll = document.getElementById('dash-shader-del-all');
+  if (delAll) {
+    delAll.addEventListener('click', async () => {
+      const ok = await confirm(
+        t('dashboard:shader.confirmDeleteAll', { defaultValue: 'Delete all shader caches for all versions?' }),
+        {
+          title: t('dashboard:shader.confirmTitle', { defaultValue: 'Clear Shader Cache' }),
+          kind: 'warning',
+          okLabel: t('dashboard:shader.confirmOk', { defaultValue: 'Delete' }),
+        }
+      );
+      if (!ok) return;
+
+      try {
+        delAll.disabled = true;
+        const result = await invoke('delete_shader_cache', {
+          installPath: dashConfig.install_path,
+          scVersion: 'all',
+          cacheType: 'all',
+        });
+        const freed = formatBytes(result.freed_bytes);
+        if (result.failed_paths?.length > 0) {
+          showNotification(
+            t('dashboard:shader.partialDelete', { freed, defaultValue: `Partially cleared (${freed} freed), some files could not be deleted` }),
+            'warning'
+          );
+        } else {
+          showNotification(
+            t('dashboard:shader.deleted', { freed, defaultValue: `Shader cache cleared (${freed} freed)` }),
+            'success'
+          );
+        }
+        await loadShaderCacheStatus();
+      } catch (err) {
+        showNotification(
+          t('dashboard:shader.deleteFailed', { error: err, defaultValue: `Failed to delete shader cache: ${err}` }),
+          'error'
+        );
+        delAll.disabled = false;
+      }
+    });
+  }
+
+  // Refresh button
+  const refreshBtn = document.getElementById('dash-shader-refresh');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      const el = document.getElementById('dash-shader-content');
+      if (el) el.innerHTML = renderShaderCacheSkeleton();
+      loadShaderCacheStatus();
+    });
+  }
 }
 
 // ── Helper Functions ──────────────────────────────────────────

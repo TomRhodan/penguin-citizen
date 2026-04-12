@@ -70,6 +70,8 @@ let vulkanDevices = [];
 let gamescopeInstalled = false;
 /** @type {boolean} Whether gamemoderun is installed on the system */
 let gamemodeInstalled = false;
+/** @type {boolean} Whether the shader cache is missing (triggers a warning banner) */
+let shaderCacheMissing = false;
 /** @type {Set<string>} Tracks which option cards are currently expanded */
 const expandedCards = new Set();
 /** @type {boolean} Whether the custom env vars section is expanded */
@@ -272,6 +274,9 @@ async function loadAndCheck(container) {
       } else {
         launchStatus = 'ready';
       }
+
+      // Check shader cache existence (non-blocking)
+      checkShaderCacheStatus(config).then(() => renderPage(container)).catch(() => {});
     } else {
       launchStatus = 'not_installed';
     }
@@ -415,9 +420,23 @@ function renderLaunchBar() {
  * Displayed between launch bar and card grid.
  */
 function renderLaunchStatusMessages() {
+  let html = '';
+
+  // Shader cache warning banner
+  if (shaderCacheMissing && launchStatus === 'ready') {
+    html += `
+      <div class="launch-shader-warning">
+        <span class="launch-shader-warning-icon">&#9888;</span>
+        <div>
+          <strong>${t('launch:shader.missingTitle', { defaultValue: 'Shader cache missing' })}</strong>
+          <p>${t('launch:shader.missingMessage', { defaultValue: 'The next launch will take significantly longer (up to 10 min) while shaders are compiled. Wait 2\u20133 minutes at the login menu for optimal performance.' })}</p>
+        </div>
+      </div>`;
+  }
+
   if (launchStatus === 'not_installed') {
     const msg = installStatus?.message || t('launch:error.notInstalled');
-    return `
+    html += `
       <div class="launch-status-message launch-status-not-installed">
         <p>${escapeHtml(msg)}</p>
         <button class="btn btn-primary btn-sm" id="btn-goto-install">${t('launch:button.gotoInstall')}</button>
@@ -427,7 +446,7 @@ function renderLaunchStatusMessages() {
 
   if (launchStatus === 'error') {
     const msg = installStatus?.message || t('launch:error.generic');
-    return `
+    html += `
       <div class="launch-status-message launch-status-error">
         <p>${escapeHtml(msg)}</p>
         <button class="btn btn-sm" id="btn-retry-check">${t('launch:button.retry')}</button>
@@ -435,7 +454,7 @@ function renderLaunchStatusMessages() {
     `;
   }
 
-  return '';
+  return html;
 }
 
 // ── Collapsible Card Grid ─────────────────────────
@@ -1453,4 +1472,26 @@ function saveConfigNow() {
   if (!launchConfig) return;
   clearTimeout(_saveConfigTimer);
   invoke('save_config', { config: launchConfig }).catch(err => console.warn('Config save failed:', err));
+}
+
+/**
+ * Checks whether the shader cache exists for the primary SC version.
+ * Detects installed versions and checks the first one (LIVE is sorted first).
+ * Sets `shaderCacheMissing` flag for the warning banner.
+ * @param {Object} config - App configuration with install_path
+ */
+async function checkShaderCacheStatus(config) {
+  if (!config?.install_path) return;
+  try {
+    const versions = await invoke('detect_sc_versions', { gp: config.install_path });
+    if (!versions || versions.length === 0) return;
+    const primaryVersion = versions[0].version; // LIVE is sorted first
+    const exists = await invoke('check_shader_cache_exists', {
+      installPath: config.install_path,
+      scVersion: primaryVersion,
+    });
+    shaderCacheMissing = !exists;
+  } catch {
+    shaderCacheMissing = false;
+  }
 }

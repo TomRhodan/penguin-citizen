@@ -57,5 +57,24 @@
   "repair.backupBanner": "A repair backup exists at {{path}} ({{size}}). If everything works, you can delete it.",
   "repair.deleteConfirm": "Are you sure you want to permanently delete this repair backup? This cannot be undone.",
   "repair.moveWarning": "Could not move Star Citizen game data automatically. Please copy the StarCitizen folder manually from the backup.",
-  "repair.tooltip": "Creates a fresh Wine environment and reinstalls the RSI Launcher while preserving your game data"
+  "repair.tooltip": "Creates a fresh Wine environment and reinstalls the RSI Launcher while preserving your game data",
+
+  "section.shaderCache": "Shader Cache",
+
+  "shader.stale": "Outdated \u2014 clearing recommended",
+  "shader.missing": "No cache \u2014 shaders will compile on next launch",
+  "shader.large": "Unusually large cache",
+  "shader.deleteSc": "SC",
+  "shader.deleteDxvk": "DXVK",
+  "shader.deleteAll": "All",
+  "shader.total": "Total",
+  "shader.deleteAllCaches": "Clear all caches",
+  "shader.confirmTitle": "Clear Shader Cache",
+  "shader.confirmOk": "Delete",
+  "shader.confirmDelete": "Delete {{type}} shader cache for {{version}}?",
+  "shader.confirmAllForVersion": "Delete all shader caches for {{version}}?",
+  "shader.confirmDeleteAll": "Delete all shader caches for all versions?",
+  "shader.deleted": "Shader cache cleared ({{freed}} freed)",
+  "shader.partialDelete": "Partially cleared ({{freed}} freed), some files could not be deleted",
+  "shader.deleteFailed": "Failed to delete shader cache: {{error}}"
 }
