@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-04-12
+
+### Added
+- **Shader cache management** — New dashboard widget shows shader cache sizes per installed SC version (LIVE, PTU, HOTFIX, EPTU), with one-click clearing for SC shader caches and DXVK pipeline caches. Caches are matched to the correct SC version via the `Branch` field from `build_manifest.id`.
+- **Launch page shader warning** — Non-blocking yellow banner appears when the shader cache is missing, alerting that the next launch will take longer due to shader compilation.
+
 ## [0.5.1] - 2026-04-09
 
 ### Security
@@ -323,6 +329,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prefix Tools** - Winecfg, DPI scaling, PowerShell installation via winetricks
 - **Multi-version Support** - Manage LIVE, PTU, EPTU, and other Star Citizen channels
 
+[0.5.2]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.0-2...v0.5.1
 [0.5.0]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.9-0...v0.5.0-2
 [0.4.9]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.8-0...v0.4.9-0
