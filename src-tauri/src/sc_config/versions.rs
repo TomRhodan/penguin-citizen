@@ -478,7 +478,7 @@ pub async fn list_importable_versions(gp: String, target_version: String) -> Res
             score,
         });
     }
-    result.sort_by(|a, b| b.score.cmp(&a.score));
+    result.sort_by_key(|b| std::cmp::Reverse(b.score));
     Ok(result)
 }
 

@@ -161,32 +161,26 @@ async fn fetch_rsi_news_inner() -> Result<
                 }
             }
             // Text content inside a tag
-            Ok(Event::Text(ref e)) => {
-                if in_entry {
-                    let text = e.unescape().unwrap_or_default().to_string();
-                    // Assign text to the correct field based on the current tag
-                    match current_tag.as_str() {
-                        "title" => current_title.push_str(&text),
-                        "summary" => current_summary.push_str(&text),
-                        "published" | "updated" => {
-                            // Only take the first date (published preferred)
-                            if current_published.is_empty() {
-                                current_published = text;
-                            }
-                        }
-                        _ => {}
+            Ok(Event::Text(ref e)) if in_entry => {
+                let text = e.unescape().unwrap_or_default().to_string();
+                // Assign text to the correct field based on the current tag
+                match current_tag.as_str() {
+                    "title" => current_title.push_str(&text),
+                    "summary" => current_summary.push_str(&text),
+                    "published" | "updated" if current_published.is_empty() => {
+                        // Only take the first date (published preferred)
+                        current_published = text;
                     }
+                    _ => {}
                 }
             }
             // CDATA sections can also contain titles or summaries
-            Ok(Event::CData(ref e)) => {
-                if in_entry {
-                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
-                    match current_tag.as_str() {
-                        "title" => current_title.push_str(&text),
-                        "summary" => current_summary.push_str(&text),
-                        _ => {}
-                    }
+            Ok(Event::CData(ref e)) if in_entry => {
+                let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                match current_tag.as_str() {
+                    "title" => current_title.push_str(&text),
+                    "summary" => current_summary.push_str(&text),
+                    _ => {}
                 }
             }
             // Closing tag - on </entry>, save the collected entry

@@ -1691,7 +1691,7 @@ impl ScActionProfile {
         for am in &mut self.action_maps {
             am.canonicalize();
         }
-        self.devices.sort_by(|a, b| a.instance.cmp(&b.instance));
+        self.devices.sort_by_key(|a| a.instance);
         for d in &mut self.devices {
             d.canonicalize();
         }
