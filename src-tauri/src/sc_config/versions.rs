@@ -398,6 +398,11 @@ pub async fn create_sc_version(gp: String, version: String) -> Result<(), String
 ///
 /// When `replace_existing` is true and the target already has a Data.p4k,
 /// it is removed first (works for both regular files and existing symlinks).
+///
+/// **Partial-failure note:** When `replace_existing` is true, the existing target
+/// is removed before the new symlink is created. If the symlink creation then
+/// fails, the original target is NOT restored. Callers should ask the user to
+/// confirm the replace before invoking with `replace_existing = true`.
 #[tauri::command]
 pub async fn link_data_p4k(
     gp: String,
