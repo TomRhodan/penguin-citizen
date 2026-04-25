@@ -1241,8 +1241,8 @@ export async function renderEnvironments(container) {
       }
     });
     const ulComplete = await listen('data-p4k-copy-complete', async (event) => {
-      const { version, success } = event.payload;
-      if (success) {
+      const { version, success, operation } = event.payload || {};
+      if (success && operation !== 'move') {
         showNotification(t('environments:notification.dataP4kForVersion', { version }), 'success');
       }
       setState({ copyingVersion: null });

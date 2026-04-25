@@ -86,9 +86,9 @@ function renderShareDataP4kSection(activeVersion, scVersions) {
           </select>
         </div>
         <div style="display: flex; gap: 0.5rem;">
-          <button class="btn btn-sm" id="btn-share-move" data-source="${escapeHtml(activeVersion)}">${t('environments:storage.shareMoveBtn')}</button>
-          <button class="btn btn-sm" id="btn-share-copy" data-source="${escapeHtml(activeVersion)}">${t('environments:storage.shareCopyBtn')}</button>
-          <button class="btn btn-sm" id="btn-share-symlink" data-source="${escapeHtml(activeVersion)}">${t('environments:storage.shareSymlinkBtn')}</button>
+          <button class="btn btn-sm" id="btn-share-move" data-source="${escapeHtml(activeVersion)}" title="${t('environments:version.moveTooltip')}">${t('environments:storage.shareMoveBtn')}</button>
+          <button class="btn btn-sm" id="btn-share-copy" data-source="${escapeHtml(activeVersion)}" title="${t('environments:version.copyTooltip')}">${t('environments:storage.shareCopyBtn')}</button>
+          <button class="btn btn-sm" id="btn-share-symlink" data-source="${escapeHtml(activeVersion)}" title="${t('environments:version.symlinkTooltip')}">${t('environments:storage.shareSymlinkBtn')}</button>
         </div>
       </div>
     </div>

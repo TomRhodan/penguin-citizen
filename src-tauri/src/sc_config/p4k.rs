@@ -182,7 +182,8 @@ pub async fn copy_data_p4k(
     // Emit completion event
     let _ = app_handle.emit("data-p4k-copy-complete", serde_json::json!({
         "version": target_version,
-        "success": true
+        "success": true,
+        "operation": "copy"
     }));
 
     Ok(())
@@ -298,7 +299,8 @@ pub async fn move_data_p4k(
             log::info!("Moved Data.p4k from {} to {} (same fs)", source_version, target_version);
             let _ = app_handle.emit("data-p4k-copy-complete", serde_json::json!({
                 "version": target_version,
-                "success": true
+                "success": true,
+                "operation": "move"
             }));
             Ok(())
         }
@@ -340,7 +342,8 @@ pub async fn move_data_p4k(
 
             let _ = app_handle.emit("data-p4k-copy-complete", serde_json::json!({
                 "version": target_version,
-                "success": true
+                "success": true,
+                "operation": "move"
             }));
             Ok(())
         }
