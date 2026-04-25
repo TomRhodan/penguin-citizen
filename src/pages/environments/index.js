@@ -50,6 +50,7 @@ import {
   renderStorageTab, deleteScVersion, showImportVersionDialog,
   showDataP4kCopyDropdown, showDataP4kCopyProgressModal,
   createScVersion, linkDataP4k, updateProfileFromSc,
+  moveDataP4k, confirmReplaceDataP4k,
 } from './storage.js';
 import {
   loadUserCfgSettings, detectAttributeConflicts,
@@ -515,6 +516,40 @@ function attachProfilesEventListeners() {
     const version = e.target.closest('button').dataset.version;
     await deleteScVersion(version, callbacks);
   });
+
+  // Share Data.p4k section (Storage tab)
+  const handleShareAction = async (mode) => {
+    const select = document.getElementById('share-target-select');
+    const button = document.querySelector(`#btn-share-${mode}`);
+    if (!select || !button) return;
+
+    const sourceVersion = button.dataset.source;
+    const opt = select.options[select.selectedIndex];
+    if (!opt) return;
+    const targetVersion = opt.value;
+    const targetHasP4k = opt.dataset.hasP4k === '1';
+    const targetSize = opt.dataset.size ? parseInt(opt.dataset.size, 10) : 0;
+    const targetMtime = opt.dataset.mtime ? parseInt(opt.dataset.mtime, 10) * 1000 : null;
+
+    let replaceExisting = false;
+    if (targetHasP4k) {
+      const ok = await confirmReplaceDataP4k(targetVersion, targetSize, targetMtime);
+      if (!ok) return;
+      replaceExisting = true;
+    }
+
+    if (mode === 'move') {
+      await moveDataP4k(sourceVersion, targetVersion, replaceExisting, { renderEnvironments });
+    } else if (mode === 'copy') {
+      await showDataP4kCopyProgressModal(sourceVersion, targetVersion, replaceExisting, { renderEnvironments });
+    } else if (mode === 'symlink') {
+      await linkDataP4k(sourceVersion, targetVersion, replaceExisting, { renderEnvironments });
+    }
+  };
+
+  document.getElementById('btn-share-move')?.addEventListener('click', () => handleShareAction('move'));
+  document.getElementById('btn-share-copy')?.addEventListener('click', () => handleShareAction('copy'));
+  document.getElementById('btn-share-symlink')?.addEventListener('click', () => handleShareAction('symlink'));
 
   // Toggle changes detail panel + file diff — delegated on document so the listener
   // survives renderEnvironments() rebuilding the DOM.
