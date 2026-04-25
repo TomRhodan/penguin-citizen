@@ -395,8 +395,16 @@ pub async fn create_sc_version(gp: String, version: String) -> Result<(), String
 /// Creates a symlink for Data.p4k from one version to another.
 /// Saves disk space when multiple versions use the same P4K file.
 /// Only supported on Unix/Linux.
+///
+/// When `replace_existing` is true and the target already has a Data.p4k,
+/// it is removed first (works for both regular files and existing symlinks).
 #[tauri::command]
-pub async fn link_data_p4k(gp: String, src_version: String, dst_version: String) -> Result<(), String> {
+pub async fn link_data_p4k(
+    gp: String,
+    src_version: String,
+    dst_version: String,
+    replace_existing: bool,
+) -> Result<(), String> {
     let base = get_sc_base_path(&gp)?;
     let source = base.join(&src_version).join("Data.p4k");
     let target = base.join(&dst_version).join("Data.p4k");
@@ -404,11 +412,16 @@ pub async fn link_data_p4k(gp: String, src_version: String, dst_version: String)
     if !source.exists() {
         return Err(format!("Source Data.p4k not found in {}", src_version));
     }
-    if target.exists() {
-        return Err(format!("Destination already has Data.p4k in {}", dst_version));
+    // symlink_metadata so we detect symlinks too (exists() follows symlinks)
+    let target_present = std::fs::symlink_metadata(&target).is_ok();
+    if target_present {
+        if !replace_existing {
+            return Err(format!("Destination already has Data.p4k in {}", dst_version));
+        }
+        fs::remove_file(&target)
+            .map_err(|e| format!("Failed to remove existing target: {}", e))?;
     }
 
-    // Ensure destination version folder exists
     if let Some(parent) = target.parent() {
         if !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
