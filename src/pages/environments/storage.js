@@ -339,7 +339,7 @@ export async function showDataP4kCopyDropdown(targetVersion, event) {
       dropdown.remove();
 
       // Show progress modal instead of starting copy immediately
-      await showDataP4kCopyProgressModal(sourceVersion, targetVersion);
+      await showDataP4kCopyProgressModal(sourceVersion, targetVersion, false);
     });
   });
 
