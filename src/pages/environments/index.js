@@ -374,13 +374,13 @@ function attachProfilesEventListeners() {
   document.getElementById('btn-link-p4k')?.addEventListener('click', async (e) => {
     const version = e.currentTarget.dataset.version;
     const source = document.getElementById('data-source-select')?.value;
-    if (source) await linkDataP4k(source, version, callbacks);
+    if (source) await linkDataP4k(source, version, false, callbacks);
   });
 
   document.getElementById('btn-copy-p4k')?.addEventListener('click', async (e) => {
     const version = e.currentTarget.dataset.version;
     const source = document.getElementById('data-source-select')?.value;
-    if (source) showDataP4kCopyProgressModal(source, version, callbacks);
+    if (source) showDataP4kCopyProgressModal(source, version, false, callbacks);
   });
 
   // Device drag-and-drop (Pointer Events - works in WebKitGTK)

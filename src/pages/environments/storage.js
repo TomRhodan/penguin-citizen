@@ -363,7 +363,7 @@ export async function showDataP4kCopyDropdown(targetVersion, event) {
  * @param {string} targetVersion - Version receiving the copy
  * @param {Object} callbacks - { renderEnvironments }
  */
-export async function showDataP4kCopyProgressModal(sourceVersion, targetVersion, callbacks = {}) {
+export async function showDataP4kCopyProgressModal(sourceVersion, targetVersion, replaceExisting, callbacks = {}) {
   // Remove existing modal
   document.querySelector('#data-p4k-copy-modal')?.remove();
 
@@ -516,7 +516,8 @@ export async function showDataP4kCopyProgressModal(sourceVersion, targetVersion,
       await invoke('copy_data_p4k', {
         gp: currentConfig.install_path,
         sourceVersion,
-        targetVersion
+        targetVersion,
+        replaceExisting
       });
 
       // Success
@@ -587,13 +588,13 @@ export async function createScVersion(version, callbacks = {}) {
  * @param {string} targetVersion - Version that will receive the symlink
  * @param {Object} callbacks - { renderEnvironments }
  */
-export async function linkDataP4k(sourceVersion, targetVersion, callbacks = {}) {
+export async function linkDataP4k(sourceVersion, targetVersion, replaceExisting, callbacks = {}) {
   const { config } = getState();
   if (!sourceVersion || !targetVersion || !config?.install_path) return;
 
   try {
     showNotification(t('environments:notification.symlinking', { source: sourceVersion, target: targetVersion }), 'info');
-    await invoke('link_data_p4k', { gp: config.install_path, src_version: sourceVersion, dst_version: targetVersion });
+    await invoke('link_data_p4k', { gp: config.install_path, src_version: sourceVersion, dst_version: targetVersion, replace_existing: replaceExisting });
     showNotification(t('environments:notification.symlinkSuccess'), 'success');
 
     // Reload environments
