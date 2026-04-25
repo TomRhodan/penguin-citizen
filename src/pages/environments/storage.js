@@ -606,6 +606,59 @@ export async function linkDataP4k(sourceVersion, targetVersion, callbacks = {}) 
 }
 
 /**
+ * Asks the user to confirm overwriting an existing Data.p4k in the target environment.
+ * @param {string} targetVersion - Target environment name (e.g. "LIVE")
+ * @param {number} sizeBytes - Size of the existing target file in bytes
+ * @param {number|null} mtimeMs - Modification time of the target file in ms since epoch (or null)
+ * @returns {Promise<boolean>} true if the user confirmed
+ */
+export async function confirmReplaceDataP4k(targetVersion, sizeBytes, mtimeMs) {
+  const sizeStr = formatFileSize(sizeBytes);
+  const dateStr = mtimeMs ? new Date(mtimeMs).toLocaleString() : '?';
+  return await confirm(
+    t('environments:storage.replaceMsg', { version: targetVersion, size: sizeStr, date: dateStr }),
+    {
+      title: t('environments:storage.replaceTitle'),
+      kind: 'warning',
+      okLabel: t('environments:storage.replaceConfirm'),
+    }
+  );
+}
+
+/**
+ * Moves Data.p4k from `sourceVersion` to `targetVersion`, optionally replacing
+ * an existing target file. Uses the `move_data_p4k` Tauri command:
+ * same-filesystem moves are instant, cross-filesystem moves emit
+ * `data-p4k-progress` events (caller may show a progress modal in the future).
+ *
+ * @param {string} sourceVersion - Version with the Data.p4k
+ * @param {string} targetVersion - Version that will receive Data.p4k
+ * @param {boolean} replaceExisting - If true, overwrite target's Data.p4k
+ * @param {Object} callbacks - { renderEnvironments }
+ */
+export async function moveDataP4k(sourceVersion, targetVersion, replaceExisting, callbacks = {}) {
+  const { config } = getState();
+  if (!sourceVersion || !targetVersion || !config?.install_path) return;
+
+  try {
+    showNotification(t('environments:notification.moving', { src: sourceVersion, tgt: targetVersion }), 'info');
+    await invoke('move_data_p4k', {
+      gp: config.install_path,
+      sourceVersion,
+      targetVersion,
+      replaceExisting,
+    });
+    showNotification(t('environments:notification.moveSuccess'), 'success');
+
+    const scVersionsUpdated = await invoke('detect_sc_versions', { gp: config.install_path });
+    setState({ scVersions: scVersionsUpdated });
+    if (callbacks.renderEnvironments) callbacks.renderEnvironments(document.getElementById('content'));
+  } catch (err) {
+    showNotification(t('environments:notification.moveFailed', { error: err }), 'error');
+  }
+}
+
+/**
  * Updates an existing profile with the current Star Citizen game files.
  * Overwrites the profile's stored files with the live SC files.
  * @param {string} backupId - ID of the profile to update
