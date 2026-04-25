@@ -282,6 +282,12 @@ pub enum MoveOutcome {
 ///
 /// The source is left intact when this returns `CrossFilesystem` — the caller
 /// is responsible for deleting it after a successful copy.
+///
+/// **Partial-failure note (`replace_existing = true`):** The existing target is
+/// removed before the rename is attempted. If `rename` then fails with a
+/// non-EXDEV error, the target slot will be empty and the source will be
+/// intact. Callers should present a confirmation dialog before setting
+/// `replace_existing = true`.
 #[allow(dead_code)] // called by move_data_p4k Tauri command (Task 4)
 pub fn move_data_p4k_inner(
     source: &Path,
@@ -311,8 +317,8 @@ pub fn move_data_p4k_inner(
 
     match fs::rename(source, target) {
         Ok(()) => Ok(MoveOutcome::Renamed),
-        // EXDEV = 18 on Linux: cross-device rename not permitted
-        Err(e) if e.raw_os_error() == Some(18) => Ok(MoveOutcome::CrossFilesystem),
+        // EXDEV: cross-device rename not permitted
+        Err(e) if e.raw_os_error() == Some(libc::EXDEV) => Ok(MoveOutcome::CrossFilesystem),
         Err(e) => Err(format!("Failed to move Data.p4k: {}", e)),
     }
 }
