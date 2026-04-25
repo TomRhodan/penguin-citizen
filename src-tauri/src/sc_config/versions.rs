@@ -93,7 +93,21 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
                 let has_custom_characters = find_dir_case_insensitive(&user_base, &["CustomCharacters", "customcharacters"]).is_some_and(|d| {
                     fs::read_dir(&d).is_ok_and(|mut es| es.any(|e| e.ok().is_some_and(|e| e.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("chf")))))
                 });
-                let has_data_p4k = path.join("Data.p4k").exists();
+                let p4k_path = path.join("Data.p4k");
+                let p4k_lstat = std::fs::symlink_metadata(&p4k_path).ok();
+                let p4k_stat = std::fs::metadata(&p4k_path).ok(); // follows symlinks; None for dangling symlinks
+                let has_data_p4k = p4k_stat.is_some(); // true only when actually readable
+                let data_p4k_is_symlink = p4k_lstat.as_ref().map(|m| m.file_type().is_symlink());
+                let data_p4k_size = p4k_stat.as_ref().map(|m| m.len());
+                let data_p4k_mtime = p4k_stat.as_ref()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs());
+                let data_p4k_symlink_target = if data_p4k_is_symlink == Some(true) {
+                    std::fs::read_link(&p4k_path).ok().map(|p| p.display().to_string())
+                } else {
+                    None
+                };
                 res.push(ScVersionInfo {
                     version: n,
                     path: path.to_string_lossy().into_owned(),
@@ -103,6 +117,10 @@ fn detect_sc_versions_from_path(base: &Path) -> Result<Vec<ScVersionInfo>, Strin
                     has_exported_layouts,
                     has_custom_characters,
                     has_data_p4k,
+                    data_p4k_size,
+                    data_p4k_mtime,
+                    data_p4k_is_symlink,
+                    data_p4k_symlink_target,
                 });
             }
         }

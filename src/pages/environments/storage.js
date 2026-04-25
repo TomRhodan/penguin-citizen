@@ -37,6 +37,65 @@ import { debugLog, formatFileSize } from './utils.js';
 // ── Storage Tab Rendering ──
 
 /**
+ * Renders the "Share Data.p4k" panel of the Storage tab.
+ * Returns an empty string when the active environment has no Data.p4k
+ * or when no other environments exist.
+ *
+ * @param {string} activeVersion - Currently active SC version
+ * @param {Array} scVersions - Detected SC versions (from state)
+ * @returns {string} HTML
+ */
+function renderShareDataP4kSection(activeVersion, scVersions) {
+  const active = scVersions.find(v => v.version === activeVersion);
+  if (!active || active.has_data_p4k === false) return '';
+
+  const others = scVersions.filter(v => v.version !== activeVersion);
+  if (others.length === 0) return '';
+
+  const sizeStr = active.data_p4k_size != null ? formatFileSize(active.data_p4k_size) : '?';
+  const dateStr = active.data_p4k_mtime != null
+    ? new Date(active.data_p4k_mtime * 1000).toLocaleDateString()
+    : '?';
+
+  const targetOptions = others.map(v => {
+    let badge = t('environments:storage.targetEmpty');
+    if (v.has_data_p4k !== false) {
+      if (v.data_p4k_is_symlink && v.data_p4k_symlink_target) {
+        badge = t('environments:storage.targetSymlink', { source: escapeHtml(v.data_p4k_symlink_target) });
+      } else {
+        badge = t('environments:storage.targetExists', { size: v.data_p4k_size != null ? formatFileSize(v.data_p4k_size) : '?' });
+      }
+    }
+    return `<option value="${escapeHtml(v.version)}" data-has-p4k="${v.has_data_p4k !== false ? '1' : '0'}" data-size="${v.data_p4k_size ?? ''}" data-mtime="${v.data_p4k_mtime ?? ''}">${escapeHtml(v.version)} — ${badge}</option>`;
+  }).join('');
+
+  return `
+    <div class="storage-share-section sc-section" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+      <h4 style="margin-top: 0;">${t('environments:storage.shareTitle')}</h4>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+        ${t('environments:storage.shareDesc')}
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <div class="profile-info-row">
+          <span class="profile-info-label">${t('environments:storage.currentSize', { size: sizeStr, date: dateStr })}</span>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <label for="share-target-select" style="white-space: nowrap;">${t('environments:storage.targetLabel')}:</label>
+          <select id="share-target-select" class="btn btn-sm" style="flex: 1; background: var(--bg-secondary);">
+            ${targetOptions}
+          </select>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-sm" id="btn-share-move" data-source="${escapeHtml(activeVersion)}">${t('environments:storage.shareMoveBtn')}</button>
+          <button class="btn btn-sm" id="btn-share-copy" data-source="${escapeHtml(activeVersion)}">${t('environments:storage.shareCopyBtn')}</button>
+          <button class="btn btn-sm" id="btn-share-symlink" data-source="${escapeHtml(activeVersion)}">${t('environments:storage.shareSymlinkBtn')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
  * Renders the Storage tab with version information and the option
  * to delete an entire environment ("Danger Zone").
  */
@@ -71,6 +130,8 @@ export function renderStorageTab() {
           </span>
         </div>
       </div>
+
+      ${renderShareDataP4kSection(activeScVersion, scVersions)}
 
       <div class="storage-actions" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 1rem;">
         <div style="padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 50, 50, 0.05);">

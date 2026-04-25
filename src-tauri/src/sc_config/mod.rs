@@ -184,8 +184,16 @@ pub struct ScVersionInfo {
     pub has_exported_layouts: bool,
     /// Whether custom characters (.chf files) are present
     pub has_custom_characters: bool,
-    /// Whether the Data.p4k archive file exists
+    /// Whether the Data.p4k archive file exists (and is readable — false for missing or dangling symlinks)
     pub has_data_p4k: bool,
+    /// Size of Data.p4k in bytes (None if not present)
+    pub data_p4k_size: Option<u64>,
+    /// Unix timestamp (seconds since epoch) of Data.p4k last-modified time (None if not present)
+    pub data_p4k_mtime: Option<u64>,
+    /// Whether Data.p4k is a symlink (None if not present)
+    pub data_p4k_is_symlink: Option<bool>,
+    /// Symlink target path if Data.p4k is a symlink (None otherwise)
+    pub data_p4k_symlink_target: Option<String>,
 }
 /// A single attribute from the attributes.xml (name-value pair).
 #[derive(Serialize, Deserialize, Default, Clone)]
