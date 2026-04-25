@@ -274,3 +274,228 @@ export function renderDeviceMapCollapsible() {
     </div>
   `;
 }
+
+/**
+ * Opens a modal to configure tuning (curves, inversions, deadzones) for a single
+ * axis binding. Loads the current device tuning, lets the user adjust exponent,
+ * deadzone, saturation and invert, and persists the result via update_device_tuning.
+ */
+export async function openTuningEditor(actionName, category, currentInput, deviceType, targetInstance) {
+  const { activeScVersion: v, lastRestoredBackupId: profileId, completeBindingList } = getState();
+
+  if (!v || !profileId) {
+    showNotification(t('environments:notification.noProfileLoaded', 'Kein Profil geladen'), 'error');
+    return;
+  }
+
+  const tuningName = resolveTuningName(actionName);
+  const axisInput = currentInput.split('_').pop();
+  const displayName = (completeBindingList.find(b => b.action_name === actionName) || {}).display_name || '';
+
+  try {
+    debugLog('TUNING', 'info', `Fetching tuning data: v=${v}, profile_id=${profileId}`);
+    const devices = await invoke('get_device_tuning', { v, profileId });
+    debugLog('TUNING', 'info', `Fetched ${devices.length} devices from profile`);
+
+    const device = devices.find(d => d.instance === targetInstance && d.device_type === deviceType);
+    if (!device) {
+      debugLog('TUNING', 'warn', `Device not found: type=${deviceType}, instance=${targetInstance}`);
+      showNotification(t('environments:notification.deviceNotFound', 'Gerät nicht im Profil gefunden'), 'error');
+      return;
+    }
+
+    const currentTuning = device.tuning.find(tn => tn.name === tuningName) || { name: tuningName, invert: 0, exponent: 1.0, sensitivity: 1.0 };
+    const axisOption = device.axis_options.find(o => o.input === axisInput) || { input: axisInput, deadzone: 0.0, saturation: 1.0 };
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-container tuning-editor-modal">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="modal-icon-info"><path d="M12 20v-8m0-4h.01M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10z"/></svg>
+            <h3>${t('environments:tuning.title', 'Tuning Editor')}</h3>
+          </div>
+          <button class="btn-close modal-close-btn" data-action="close-tuning-editor">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="tuning-canvas-container">
+            <div class="tuning-grid-overlay"></div>
+            <div class="tuning-axis-labels">
+              <div style="display: flex; justify-content: space-between; width: 100%;">
+                <span>Output 1.0</span>
+                <span>(In)</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%; height: 100%;">
+                <span>0.0</span>
+                <span>1.0</span>
+              </div>
+            </div>
+            <canvas id="tuningCurve" width="470" height="220" style="position: relative; z-index: 2;"></canvas>
+          </div>
+
+          <div class="tuning-info">
+            <div class="tuning-device-name">${escapeHtml(device.product)}</div>
+            <div class="tuning-action-name">${displayName ? escapeHtml(displayName) : actionName} <span class="text-muted">(${currentInput})</span></div>
+          </div>
+
+          <div class="tuning-grid">
+            <label class="filter-toggle">
+              <span class="toggle-switch">
+                <input type="checkbox" id="tuningInvert" ${currentTuning.invert ? 'checked' : ''}>
+                <span class="toggle-slider"></span>
+              </span>
+              <span>${t('environments:tuning.invert', 'Invert Axis')}</span>
+            </label>
+
+            <div class="tuning-section">
+              <div class="tuning-slider-label">
+                <span><svg style="vertical-align: middle; margin-right: 4px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-4-7-4 7h8Z"/><path d="M12 18v-7"/><path d="M4 22v-3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="m6 11 4-7 4 7H6Z"/></svg> ${t('environments:tuning.exponent', 'Curve Exponent')}</span>
+                <span class="tuning-value-badge" id="valExponent">${(currentTuning.exponent || 1.0).toFixed(2)}</span>
+              </div>
+              <input type="range" class="tuning-range" id="tuningExponent" min="0.5" max="3.5" step="0.05" value="${currentTuning.exponent || 1.0}">
+            </div>
+
+            <div class="tuning-section">
+              <div class="tuning-slider-label">
+                <span><svg style="vertical-align: middle; margin-right: 4px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="4" rx="2"/><path d="M12 12v10"/><path d="m16 18-4 4-4-4"/></svg> ${t('environments:tuning.deadzone', 'Deadzone')}</span>
+                <span class="tuning-value-badge" id="valDeadzone">${(axisOption.deadzone || 0.0).toFixed(2)}</span>
+              </div>
+              <input type="range" class="tuning-range" id="tuningDeadzone" min="0" max="0.5" step="0.01" value="${axisOption.deadzone || 0.0}">
+            </div>
+
+            <div class="tuning-section">
+              <div class="tuning-slider-label">
+                <span><svg style="vertical-align: middle; margin-right: 4px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20v-4"/><path d="M9 20v-8"/><path d="M13 20v-12"/><path d="M17 20v-16"/></svg> ${t('environments:tuning.saturation', 'Saturation')}</span>
+                <span class="tuning-value-badge" id="valSaturation">${(axisOption.saturation || 1.0).toFixed(2)}</span>
+              </div>
+              <input type="range" class="tuning-range" id="tuningSaturation" min="0.5" max="1.0" step="0.01" value="${axisOption.saturation || 1.0}">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-action="close-tuning-editor">${t('common:cancel', 'Cancel')}</button>
+          <button class="btn btn-primary" id="btn-save-tuning">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            ${t('common:save', 'Apply Settings')}
+          </button>
+        </div>
+      </div>
+    `;
+
+    const closeTuning = () => {
+      modal.classList.remove('show');
+      setTimeout(() => modal.remove(), 200);
+    };
+    modal.querySelectorAll('[data-action="close-tuning-editor"]').forEach(btn => btn.addEventListener('click', closeTuning));
+
+    const canvas = modal.querySelector('#tuningCurve');
+    const drawCurve = () => {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      const exp = parseFloat(modal.querySelector('#tuningExponent').value);
+      const dz = parseFloat(modal.querySelector('#tuningDeadzone').value);
+      const sat = parseFloat(modal.querySelector('#tuningSaturation').value);
+
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.02)';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.beginPath();
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = 'rgba(6, 182, 212, 0.6)';
+
+      for (let x = 0; x <= w; x++) {
+        const input = x / w;
+        let output = 0;
+
+        if (input > dz) {
+          const tn = Math.max(0, Math.min(1, (input - dz) / (sat - dz)));
+          output = Math.pow(tn, exp);
+        }
+
+        const canvasY = h - (output * h);
+        if (x === 0) ctx.moveTo(x, canvasY);
+        else ctx.lineTo(x, canvasY);
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      if (dz > 0) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        ctx.fillRect(0, 0, dz * w, h);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(dz * w, 0);
+        ctx.lineTo(dz * w, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (sat < 1.0) {
+        ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(sat * w, 0);
+        ctx.lineTo(sat * w, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    };
+
+    modal.querySelectorAll('.tuning-range').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const id = e.target.id;
+        const val = parseFloat(e.target.value).toFixed(2);
+        if (id === 'tuningExponent') modal.querySelector('#valExponent').textContent = val;
+        if (id === 'tuningDeadzone') modal.querySelector('#valDeadzone').textContent = val;
+        if (id === 'tuningSaturation') modal.querySelector('#valSaturation').textContent = val;
+        drawCurve();
+      });
+    });
+
+    modal.querySelector('#btn-save-tuning').addEventListener('click', async () => {
+      try {
+        const exponent = parseFloat(modal.querySelector('#tuningExponent').value);
+        const deadzone = parseFloat(modal.querySelector('#tuningDeadzone').value);
+        const saturation = parseFloat(modal.querySelector('#tuningSaturation').value);
+        const invert = modal.querySelector('#tuningInvert').checked ? 1 : 0;
+
+        const updatedTuning = [...device.tuning.filter(tn => tn.name !== tuningName), { name: tuningName, invert, exponent, sensitivity: currentTuning.sensitivity || 1.0 }];
+        const updatedDeadzones = [...device.axis_options.filter(o => o.input !== axisInput), { input: axisInput, deadzone, saturation }];
+
+        await invoke('update_device_tuning', {
+          v,
+          profileId,
+          instance: targetInstance,
+          deviceType,
+          axisOptions: updatedDeadzones,
+          tuning: updatedTuning,
+        });
+
+        showNotification(t('environments:notification.tuningSaved', 'Tuning saved successfully'), 'success');
+        closeTuning();
+        await loadDeviceTuning();
+        // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments() to refresh active-tuning highlight in matrix
+      } catch (err) {
+        debugLog('TUNING', 'error', `Save failed: ${err}`);
+        showNotification(t('environments:notification.saveError', { error: err }), 'error');
+      }
+    });
+
+    document.body.appendChild(modal);
+    requestAnimationFrame(() => {
+      modal.classList.add('show');
+      drawCurve();
+    });
+  } catch (err) {
+    debugLog('TUNING', 'error', `Failed to open editor: ${err}`);
+    showNotification(t('environments:notification.fetchError', { error: err }), 'error');
+  }
+}

@@ -33,6 +33,7 @@ import { escapeHtml } from '../../utils.js';
 import { t } from '../../i18n.js';
 import { getState, setState, ESSENTIAL_ACTIONS } from './state.js';
 import { debugLog, renderHint, formatCategoryName } from './utils.js';
+import { openTuningEditor } from './tuning.js';
 
 // ==================== Data Loading ====================
 
@@ -333,11 +334,7 @@ export function attachBindingEventListeners() {
       const cell = tuningBtn.closest('.binding-matrix-cell');
       const targetInstance = cell?.dataset.targetInstance ? parseInt(cell.dataset.targetInstance, 10) : null;
       const deviceType = cell?.dataset.deviceType || 'joystick';
-      console.log(`[TUNING-CLICK] Action: ${tuningBtn.dataset.actionName}, Input: ${tuningBtn.dataset.input}, Instance: ${targetInstance}`);
-      // Cross-module: openTuningEditor is on window (from environments.js tuning section)
-      if (typeof window.openTuningEditor === 'function') {
-        window.openTuningEditor(tuningBtn.dataset.actionName, tuningBtn.dataset.category, tuningBtn.dataset.input, deviceType, targetInstance);
-      }
+      openTuningEditor(tuningBtn.dataset.actionName, tuningBtn.dataset.category, tuningBtn.dataset.input, deviceType, targetInstance);
       return;
     }
 
