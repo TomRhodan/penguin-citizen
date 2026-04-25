@@ -235,6 +235,7 @@ function renderEmptyVersionState() {
               </select>
               <button class="btn btn-sm" id="btn-link-p4k" data-version="${escapeHtml(activeScVersion)}" title="${t('environments:version.symlinkTooltip')}">${t('environments:version.symlink')}</button>
               <button class="btn btn-sm" id="btn-copy-p4k" data-version="${escapeHtml(activeScVersion)}" title="${t('environments:version.copyTooltip')}">${t('environments:version.copy')}</button>
+              <button class="btn btn-sm" id="btn-move-p4k" data-version="${escapeHtml(activeScVersion)}" title="${t('environments:version.moveTooltip')}">${t('environments:version.move')}</button>
             </div>
           </div>
         ` : ''}
@@ -382,6 +383,15 @@ function attachProfilesEventListeners() {
     const version = e.currentTarget.dataset.version;
     const source = document.getElementById('data-source-select')?.value;
     if (source) showDataP4kCopyProgressModal(source, version, false, callbacks);
+  });
+
+  document.getElementById('btn-move-p4k')?.addEventListener('click', async () => {
+    const sourceSelect = document.getElementById('data-source-select');
+    const targetVersion = document.getElementById('btn-move-p4k')?.dataset.version;
+    const sourceVersion = sourceSelect?.value;
+    if (!sourceVersion || !targetVersion) return;
+    // Empty-state target by definition has no Data.p4k → replaceExisting=false
+    await moveDataP4k(sourceVersion, targetVersion, false, { renderEnvironments });
   });
 
   // Device drag-and-drop (Pointer Events - works in WebKitGTK)
