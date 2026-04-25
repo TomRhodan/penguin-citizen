@@ -261,3 +261,158 @@ pub async fn abort_copy_data_p4k(gp: String, version: String) -> Result<(), Stri
 
     Ok(())
 }
+
+/// Outcome of attempting an in-place move.
+///
+/// `Renamed` means `fs::rename` succeeded (same-filesystem, atomic, instant).
+/// `CrossFilesystem` means the rename failed because the paths are on
+/// different filesystems and the caller must fall back to copy + delete.
+#[derive(Debug)]
+#[allow(dead_code)] // pub API consumed by move_data_p4k Tauri command (Task 4)
+pub enum MoveOutcome {
+    Renamed,
+    CrossFilesystem,
+}
+
+/// Moves a Data.p4k file from `source` to `target`, optionally replacing an
+/// existing target. Pure filesystem logic — no Tauri events, no progress.
+///
+/// Returns `MoveOutcome::Renamed` on same-filesystem success, or
+/// `MoveOutcome::CrossFilesystem` if the caller must fall back to copy-with-progress.
+///
+/// The source is left intact when this returns `CrossFilesystem` — the caller
+/// is responsible for deleting it after a successful copy.
+#[allow(dead_code)] // called by move_data_p4k Tauri command (Task 4)
+pub fn move_data_p4k_inner(
+    source: &Path,
+    target: &Path,
+    replace_existing: bool,
+) -> Result<MoveOutcome, String> {
+    // Use symlink_metadata so symlinks are detected without following them
+    if std::fs::symlink_metadata(source).is_err() {
+        return Err(format!("Source Data.p4k not found at {}", source.display()));
+    }
+
+    let target_present = std::fs::symlink_metadata(target).is_ok();
+    if target_present {
+        if !replace_existing {
+            return Err("Target already has Data.p4k".to_string());
+        }
+        fs::remove_file(target)
+            .map_err(|e| format!("Failed to remove existing target: {}", e))?;
+    }
+
+    if let Some(parent) = target.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create target parent: {}", e))?;
+        }
+    }
+
+    match fs::rename(source, target) {
+        Ok(()) => Ok(MoveOutcome::Renamed),
+        // EXDEV = 18 on Linux: cross-device rename not permitted
+        Err(e) if e.raw_os_error() == Some(18) => Ok(MoveOutcome::CrossFilesystem),
+        Err(e) => Err(format!("Failed to move Data.p4k: {}", e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    fn make_p4k(path: &Path, contents: &[u8]) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(contents).unwrap();
+    }
+
+    #[test]
+    fn move_inner_same_fs_succeeds_when_target_empty() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("LIVE/Data.p4k");
+        let dst = dir.path().join("PTU/Data.p4k");
+        make_p4k(&src, b"payload");
+        std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
+
+        let outcome = move_data_p4k_inner(&src, &dst, false).unwrap();
+
+        assert!(matches!(outcome, MoveOutcome::Renamed));
+        assert!(!src.exists(), "source should be gone");
+        assert!(dst.exists(), "target should exist");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"payload");
+    }
+
+    #[test]
+    fn move_inner_rejects_when_target_exists_without_replace() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("LIVE/Data.p4k");
+        let dst = dir.path().join("PTU/Data.p4k");
+        make_p4k(&src, b"new");
+        make_p4k(&dst, b"old");
+
+        let err = move_data_p4k_inner(&src, &dst, false).unwrap_err();
+
+        assert!(err.contains("already"), "error: {}", err);
+        assert_eq!(std::fs::read(&src).unwrap(), b"new", "source untouched");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"old", "target untouched");
+    }
+
+    #[test]
+    fn move_inner_replaces_when_flag_set() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("LIVE/Data.p4k");
+        let dst = dir.path().join("PTU/Data.p4k");
+        make_p4k(&src, b"new");
+        make_p4k(&dst, b"old");
+
+        let outcome = move_data_p4k_inner(&src, &dst, true).unwrap();
+
+        assert!(matches!(outcome, MoveOutcome::Renamed));
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dst).unwrap(), b"new");
+    }
+
+    #[test]
+    fn move_inner_rejects_missing_source() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("LIVE/Data.p4k");
+        let dst = dir.path().join("PTU/Data.p4k");
+
+        let err = move_data_p4k_inner(&src, &dst, false).unwrap_err();
+        assert!(err.contains("not found"), "error: {}", err);
+    }
+
+    #[test]
+    fn move_inner_creates_target_parent_dir() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("LIVE/Data.p4k");
+        let dst = dir.path().join("BRAND_NEW/Data.p4k");
+        make_p4k(&src, b"payload");
+
+        move_data_p4k_inner(&src, &dst, false).unwrap();
+
+        assert!(dst.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_inner_moves_symlink_without_following() {
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("real.p4k");
+        let src = dir.path().join("LIVE/Data.p4k");
+        let dst = dir.path().join("PTU/Data.p4k");
+        make_p4k(&real, b"underlying");
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&real, &src).unwrap();
+
+        move_data_p4k_inner(&src, &dst, false).unwrap();
+
+        assert!(!std::fs::symlink_metadata(&src).is_ok(), "source symlink gone");
+        assert!(std::fs::symlink_metadata(&dst).unwrap().file_type().is_symlink(), "target is symlink");
+        assert!(real.exists(), "underlying file untouched");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"underlying", "symlink resolves");
+    }
+}
