@@ -620,6 +620,7 @@ pub fn run() {
                 sc_config::profiles::import_version_as_profile,
                 sc_config::versions::list_exported_layouts,
                 sc_config::p4k::copy_data_p4k,
+                sc_config::p4k::move_data_p4k,
                 sc_config::p4k::get_data_p4k_size,
                 sc_config::p4k::abort_copy_data_p4k,
                 sc_config::versions::delete_sc_version,

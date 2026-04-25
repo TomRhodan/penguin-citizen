@@ -262,13 +262,97 @@ pub async fn abort_copy_data_p4k(gp: String, version: String) -> Result<(), Stri
     Ok(())
 }
 
+/// Moves Data.p4k from a source version to a target version.
+///
+/// Same-filesystem case: instant atomic rename, no progress events.
+/// Cross-filesystem case: falls back to copy-with-progress (emits the same
+/// `data-p4k-progress` events as `copy_data_p4k`), then deletes the source.
+///
+/// When `replace_existing` is true and the target already has a Data.p4k,
+/// it is removed first.
+///
+/// **Partial-failure note:** When `replace_existing` is true, the existing
+/// target is removed before the move/copy is attempted. If the operation
+/// then fails, the original target is NOT restored. Callers should ask
+/// the user to confirm the replace before invoking with
+/// `replace_existing = true`.
+#[tauri::command]
+pub async fn move_data_p4k(
+    gp: String,
+    source_version: String,
+    target_version: String,
+    replace_existing: bool,
+    _window: tauri::Window,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    if source_version == target_version {
+        return Err("Source and target must differ".to_string());
+    }
+
+    let base = get_sc_base_path(&gp)?;
+    let source = base.join(&source_version).join("Data.p4k");
+    let target = base.join(&target_version).join("Data.p4k");
+
+    match move_data_p4k_inner(&source, &target, replace_existing)? {
+        MoveOutcome::Renamed => {
+            log::info!("Moved Data.p4k from {} to {} (same fs)", source_version, target_version);
+            let _ = app_handle.emit("data-p4k-copy-complete", serde_json::json!({
+                "version": target_version,
+                "success": true
+            }));
+            Ok(())
+        }
+        MoveOutcome::CrossFilesystem => {
+            log::info!("Cross-fs move from {} to {}: falling back to copy+delete", source_version, target_version);
+
+            let metadata = fs::metadata(&source).map_err(|e| e.to_string())?;
+            let total_size = metadata.len();
+
+            let source_clone = source.clone();
+            let target_clone = target.clone();
+            let target_version_for_emit = target_version.clone();
+            let app_handle_clone = app_handle.clone();
+            let start_time = std::time::Instant::now();
+
+            tokio::task::spawn_blocking(move || {
+                copy_with_progress(&source_clone, &target_clone, total_size, move |copied, total| {
+                    let elapsed = start_time.elapsed().as_secs_f64();
+                    let speed_bps = if elapsed > 0.0 { (copied as f64 / elapsed) as u64 } else { 0 };
+                    let percent = (copied as f64 / total as f64 * 100.0) as u32;
+                    let _ = app_handle_clone.emit("data-p4k-progress", serde_json::json!({
+                        "version": target_version_for_emit,
+                        "percent": percent,
+                        "copied_bytes": copied,
+                        "total_bytes": total,
+                        "speed_bps": speed_bps
+                    }));
+                })
+            })
+            .await
+            .map_err(|e| format!("Task error: {}", e))??;
+
+            // Copy succeeded — now remove source. If this fails, we have a copy at
+            // target and the original at source: surface the error so user knows.
+            fs::remove_file(&source)
+                .map_err(|e| format!("Copy succeeded but failed to remove source: {}", e))?;
+
+            log::info!("Moved Data.p4k from {} to {} (cross fs)", source_version, target_version);
+
+            let _ = app_handle.emit("data-p4k-copy-complete", serde_json::json!({
+                "version": target_version,
+                "success": true
+            }));
+            Ok(())
+        }
+    }
+}
+
 /// Outcome of attempting an in-place move.
 ///
 /// `Renamed` means `fs::rename` succeeded (same-filesystem, atomic, instant).
 /// `CrossFilesystem` means the rename failed because the paths are on
 /// different filesystems and the caller must fall back to copy + delete.
 #[derive(Debug)]
-#[allow(dead_code)] // pub API consumed by move_data_p4k Tauri command (Task 4)
 pub enum MoveOutcome {
     Renamed,
     CrossFilesystem,
@@ -288,7 +372,6 @@ pub enum MoveOutcome {
 /// non-EXDEV error, the target slot will be empty and the source will be
 /// intact. Callers should present a confirmation dialog before setting
 /// `replace_existing = true`.
-#[allow(dead_code)] // called by move_data_p4k Tauri command (Task 4)
 pub fn move_data_p4k_inner(
     source: &Path,
     target: &Path,
