@@ -108,32 +108,24 @@ pub async fn get_data_p4k_size(gp: String, version: String) -> Result<u64, Strin
 /// Copies Data.p4k from a source version to a target version with progress reporting.
 /// Sends "data-p4k-progress" events to the frontend (percent, copied bytes, speed).
 /// At the end, a "data-p4k-copy-complete" event is sent.
+///
+/// When `replace_existing` is true and the target already has a Data.p4k,
+/// it is removed first.
+///
+/// **Partial-failure note:** When `replace_existing` is true, the existing target
+/// is removed before the new file is copied. If the copy then fails, the original
+/// target is NOT restored. Callers should ask the user to confirm the replace
+/// before invoking with `replace_existing = true`.
 #[tauri::command]
 pub async fn copy_data_p4k(
     gp: String,
     source_version: String,
     target_version: String,
+    replace_existing: bool,
     _window: tauri::Window,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let exp = expand_tilde(&gp);
-
-    // Try multiple possible paths
-    let base_paths: Vec<PathBuf> = vec![
-        Path::new(&exp).join("drive_c/Program Files/Roberts Space Industries/StarCitizen"),
-        Path::new(&exp).join("StarCitizen"),
-        Path::new(&exp).to_path_buf()
-    ];
-
-    let mut base = None;
-    for p in &base_paths {
-        if p.exists() && p.is_dir() {
-            base = Some(p.clone());
-            break;
-        }
-    }
-
-    let base = base.ok_or_else(|| "StarCitizen directory not found".to_string())?;
+    let base = get_sc_base_path(&gp)?;
 
     let source = base.join(&source_version).join("Data.p4k");
     let target = base.join(&target_version).join("Data.p4k");
@@ -142,8 +134,13 @@ pub async fn copy_data_p4k(
         return Err(format!("Source Data.p4k not found at {}", source.display()));
     }
 
-    if target.exists() {
-        return Err("Target already has Data.p4k".to_string());
+    let target_present = std::fs::symlink_metadata(&target).is_ok();
+    if target_present {
+        if !replace_existing {
+            return Err("Target already has Data.p4k".to_string());
+        }
+        fs::remove_file(&target)
+            .map_err(|e| format!("Failed to remove existing target: {}", e))?;
     }
 
     // Get file size for progress calculation
