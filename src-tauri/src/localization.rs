@@ -1024,6 +1024,274 @@ pub async fn fetch_remote_language_info(
     Ok(entries)
 }
 
+// ============================================================
+// Blueprint injection (experimental)
+// ============================================================
+
+/// Root of the bp-contracts_short.json file (as published by rjcncpt's launcher tooling).
+#[derive(Deserialize)]
+#[allow(dead_code)] // Phase 3b will use this via inject_blueprints; suppress until then
+struct BpContractsRoot {
+    _meta: serde_json::Value,
+    entries: Vec<BpEntry>,
+}
+
+/// One blueprint entry — describes how to modify the mission's title and description.
+#[derive(Deserialize)]
+#[allow(dead_code)] // Phase 3b will use this via inject_blueprints; suppress until then
+#[allow(non_snake_case)] // field names match the JSON shape
+struct BpEntry {
+    titleLocKey: String,
+    title: String,
+    descriptionLocKey: String,
+    description: String,
+}
+
+/// Merges blueprint markers and description blocks from the rjcncpt JSON
+/// into a global.ini file. Pure filesystem-free logic.
+///
+/// For each entry whose `titleLocKey` matches a key in the INI, the entry's `title`
+/// string is **prepended** to the existing value. For each entry whose
+/// `descriptionLocKey` matches, the entry's `description` is **appended** to the
+/// existing value. Entries whose keys are absent in the INI are silently skipped
+/// (logged at debug level). Comments, blank lines, and original line order are
+/// preserved verbatim. Backslash-n sequences in JSON (`\\n` → literal `\n`) round-trip
+/// into the INI as the literal two-character sequence — Star Citizen's runtime
+/// parser handles the conversion to actual newlines.
+#[allow(dead_code)] // Phase 3b will call this from the install command
+pub(crate) fn inject_blueprints(
+    global_ini_text: &str,
+    bp_contracts_json: &str,
+) -> Result<String, String> {
+    let bp: BpContractsRoot = serde_json::from_str(bp_contracts_json)
+        .map_err(|e| format!("Failed to parse blueprint JSON: {}", e))?;
+
+    // Parse the INI as a Vec<Line> preserving everything verbatim except modified values.
+    enum Line {
+        KeyValue { key: String, separator: String, value: String },
+        Verbatim(String),
+    }
+
+    // Split into lines, preserving line endings absent — we'll re-join with '\n'.
+    let mut lines: Vec<Line> = global_ini_text
+        .split('\n')
+        .map(|raw| {
+            // Empty trailing line from trailing '\n' becomes Verbatim("")
+            // Comment lines start with ';' or '#' — keep verbatim
+            let trimmed_start = raw.trim_start();
+            if trimmed_start.is_empty() || trimmed_start.starts_with(';') || trimmed_start.starts_with('#') || trimmed_start.starts_with('[') {
+                return Line::Verbatim(raw.to_string());
+            }
+            // Find the first '=' — split into key and value preserving whitespace around it
+            if let Some(eq_pos) = raw.find('=') {
+                let key = raw[..eq_pos].to_string();
+                let value = raw[eq_pos + 1..].to_string();
+                Line::KeyValue {
+                    key,
+                    separator: "=".to_string(),
+                    value,
+                }
+            } else {
+                Line::Verbatim(raw.to_string())
+            }
+        })
+        .collect();
+
+    // Build key → index lookup. If the same key appears more than once, the first wins.
+    let mut key_to_idx = std::collections::HashMap::<String, usize>::new();
+    for (i, line) in lines.iter().enumerate() {
+        if let Line::KeyValue { key, .. } = line {
+            key_to_idx.entry(key.clone()).or_insert(i);
+        }
+    }
+
+    let mut hits = 0_usize;
+    let mut misses = 0_usize;
+    for entry in &bp.entries {
+        if let Some(&idx) = key_to_idx.get(&entry.titleLocKey) {
+            if let Line::KeyValue { value, .. } = &mut lines[idx] {
+                let new_value = format!("{}{}", entry.title, value);
+                *value = new_value;
+                hits += 1;
+            }
+        } else {
+            misses += 1;
+            log::debug!("Blueprint titleLocKey not found in INI: {}", entry.titleLocKey);
+        }
+        if let Some(&idx) = key_to_idx.get(&entry.descriptionLocKey) {
+            if let Line::KeyValue { value, .. } = &mut lines[idx] {
+                let new_value = format!("{}{}", value, entry.description);
+                *value = new_value;
+                hits += 1;
+            }
+        } else {
+            misses += 1;
+            log::debug!("Blueprint descriptionLocKey not found in INI: {}", entry.descriptionLocKey);
+        }
+    }
+    log::info!(
+        "Blueprint injection: {} hits, {} misses across {} entries",
+        hits,
+        misses,
+        bp.entries.len()
+    );
+
+    // Serialize back: each Line becomes its raw form, joined with '\n'.
+    let mut out = String::with_capacity(global_ini_text.len() + 4096);
+    for (i, line) in lines.iter().enumerate() {
+        match line {
+            Line::KeyValue { key, separator, value } => {
+                out.push_str(key);
+                out.push_str(separator);
+                out.push_str(value);
+            }
+            Line::Verbatim(raw) => {
+                out.push_str(raw);
+            }
+        }
+        // Append '\n' between lines (but not after the last "line", because the original
+        // had a trailing '\n' which produced an empty final element via .split('\n')).
+        if i + 1 < lines.len() {
+            out.push('\n');
+        }
+    }
+
+    Ok(out)
+}
+
+#[cfg(test)]
+mod blueprint_inject_tests {
+    use super::*;
+
+    /// Helper to build a small global.ini fixture
+    fn ini(lines: &[&str]) -> String {
+        lines.join("\n") + "\n"
+    }
+
+    #[test]
+    fn inject_appends_description_when_key_present() {
+        let global_ini = ini(&[
+            "headhunters_eliminateall_cfp_M_desc_001=Original description",
+            "other_key=other value",
+        ]);
+        let bp_json = r#"{
+            "_meta": {"version_patch": "4.7.2"},
+            "entries": [
+                {
+                    "titleLocKey": "missing_title_key",
+                    "title": " <EM4>[BP]</EM4>",
+                    "descriptionLocKey": "headhunters_eliminateall_cfp_M_desc_001",
+                    "description": "\\n---\\n<EM4>BP info</EM4>"
+                }
+            ]
+        }"#;
+        let result = inject_blueprints(&global_ini, bp_json).unwrap();
+        assert!(result.contains("headhunters_eliminateall_cfp_M_desc_001=Original description\\n---\\n<EM4>BP info</EM4>"));
+        assert!(result.contains("other_key=other value"));
+    }
+
+    #[test]
+    fn inject_prepends_title_when_key_present() {
+        let global_ini = ini(&[
+            "mission_title=Eliminate Targets",
+        ]);
+        let bp_json = r#"{
+            "_meta": {},
+            "entries": [
+                {
+                    "titleLocKey": "mission_title",
+                    "title": " <EM4>[BP]</EM4>",
+                    "descriptionLocKey": "absent",
+                    "description": ""
+                }
+            ]
+        }"#;
+        let result = inject_blueprints(&global_ini, bp_json).unwrap();
+        assert!(result.contains("mission_title= <EM4>[BP]</EM4>Eliminate Targets"));
+    }
+
+    #[test]
+    fn inject_skips_unknown_keys() {
+        let global_ini = ini(&[
+            "real_key=real value",
+        ]);
+        let bp_json = r#"{
+            "_meta": {},
+            "entries": [
+                {
+                    "titleLocKey": "phantom_title",
+                    "title": " <EM4>[BP]</EM4>",
+                    "descriptionLocKey": "phantom_desc",
+                    "description": "stuff"
+                }
+            ]
+        }"#;
+        let result = inject_blueprints(&global_ini, bp_json).unwrap();
+        // Real value untouched, no spurious lines added
+        assert_eq!(result.trim_end(), "real_key=real value");
+    }
+
+    #[test]
+    fn inject_preserves_original_line_order_and_comments() {
+        let global_ini = "; header comment\n\nfirst_key=first\nsecond_key=second\n; trailing comment\nthird_key=third\n";
+        let bp_json = r#"{
+            "_meta": {},
+            "entries": [
+                {
+                    "titleLocKey": "second_key",
+                    "title": "[BP] ",
+                    "descriptionLocKey": "absent",
+                    "description": ""
+                }
+            ]
+        }"#;
+        let result = inject_blueprints(global_ini, bp_json).unwrap();
+        // Comment lines and blank line must remain in place; relative order unchanged
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "; header comment");
+        assert_eq!(lines[1], "");
+        assert_eq!(lines[2], "first_key=first");
+        assert_eq!(lines[3], "second_key=[BP] second");
+        assert_eq!(lines[4], "; trailing comment");
+        assert_eq!(lines[5], "third_key=third");
+    }
+
+    #[test]
+    fn inject_preserves_backslash_n_literals() {
+        // The JSON source contains "\\n" which serde decodes to literal two chars: backslash + n.
+        // Those must NOT be interpreted as newlines during merge — they must round-trip into the INI value as the literal two chars.
+        let global_ini = ini(&["mission_desc=Base desc"]);
+        let bp_json = r#"{
+            "_meta": {},
+            "entries": [
+                {
+                    "titleLocKey": "absent_title",
+                    "title": "",
+                    "descriptionLocKey": "mission_desc",
+                    "description": "\\n--SEP--\\nMore"
+                }
+            ]
+        }"#;
+        let result = inject_blueprints(&global_ini, bp_json).unwrap();
+        // The output line must contain the literal sequence backslash+n (two chars), not an actual newline within the value
+        let target_line = result.lines().find(|l| l.starts_with("mission_desc=")).expect("line exists");
+        assert_eq!(target_line, r"mission_desc=Base desc\n--SEP--\nMore");
+    }
+
+    #[test]
+    fn inject_handles_empty_entries_array_as_noop() {
+        let global_ini = ini(&[
+            "alpha=1",
+            "beta=2",
+        ]);
+        let bp_json = r#"{"_meta":{},"entries":[]}"#;
+        let result = inject_blueprints(&global_ini, bp_json).unwrap();
+        // Should round-trip (modulo trailing newline normalization)
+        assert!(result.contains("alpha=1"));
+        assert!(result.contains("beta=2"));
+    }
+}
+
 /// Completely removes an installed localization.
 ///
 /// Performs the following cleanup steps:
