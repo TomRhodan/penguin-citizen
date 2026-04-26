@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-04-26
+
+### Added
+- **Data.p4k recycling between environments** — New "Verschieben" (move) action alongside Symlink and Copy. The Storage tab on a populated environment now offers a "Data.p4k mit anderem Environment teilen" panel: pick a target env, then move/copy/symlink with a replace-existing confirmation when the target already has a Data.p4k. Same-filesystem moves use `fs::rename` (instant, atomic). Cross-filesystem moves fall back to copy+delete with progress events. Backed by a new `move_data_p4k` Tauri command and a `replace_existing` flag on `copy_data_p4k`/`link_data_p4k`. Useful for the Hotfix↔Live recycling workflow: minimize re-downloads when both channels share content.
+- **Localization variants for rjcncpt German** — Two German entries instead of one: "Deutsch (Hybrid)" (mission titles in English) and "Deutsch+ (Volle Übersetzung)" (mission titles translated). The install modal lets you pick between the two and optionally enable Blueprint Integration.
+- **Blueprint injection (experimental)** — Optional client-side merge of rjcncpt's `bp-contracts_short.json` into `global.ini`, prepending `[BP]` markers to mission titles and appending blueprint info blocks to descriptions. Opt-in via toggle in the install modal. Includes a hit-rate sanity check that warns after install when the BP data fits poorly with the installed SC build, plus a pre-check command to display the BP version.
+- **HOTFIX support for rjcncpt translation** — German translation can now be installed on HOTFIX environments (treated as LIVE). Previously incorrectly blocked.
+- **Tuning editor for joystick axes** — Restored the modal for configuring per-axis tuning (curve exponent, deadzone, saturation, invert) that was lost during the environments.js split in 0.5.1.
+- **Helper scripts** — `dev.sh` (dev mode for UI iteration) and `sc.sh` (release build for actual SC launches; the Tauri dev build triggers EAC 70003).
+
+### Changed
+- **Localization sources** — Removed Dymerz/StarCitizen-Localization as a German source (no longer maintained). Dymerz remains for French, Spanish, Italian, and Portuguese.
+- **Atomic write for `global.ini`** — Translation install now writes to `global.ini.tmp` and renames over the target, preventing the SC client from observing a half-written file during install.
+- **`ScVersionInfo` extended** — Adds `data_p4k_size`, `data_p4k_mtime`, `data_p4k_is_symlink`, `data_p4k_symlink_target` so the Storage tab can show file sizes and symlink targets in the share-section dropdown.
+
+### Fixed
+- **Starten-page toggles not persisted** — Wayland, ESync, FSync, DXVK Async, MangoHUD, monitor selection, GPU device filter, and Gamescope sub-options now save to disk immediately on change. Previously, navigating away from the Starten page silently discarded toggle changes.
+- **`link_data_p4k` invocation** — JS frontend was sending snake_case keys that Tauri 2's auto-conversion didn't accept, causing the Symlink button to fail with "missing required key srcVersion". Fixed to camelCase to match the convention used by the other p4k commands.
+
+### Security
+- **rustls-webpki bumped to 0.103.12** (RUSTSEC-2026-0098/0099) — Patches two advisories where name constraints were incorrectly accepted for URI names and certificates asserting a wildcard name.
+
 ## [0.5.2] - 2026-04-12
 
 ### Added
@@ -329,6 +351,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prefix Tools** - Winecfg, DPI scaling, PowerShell installation via winetricks
 - **Multi-version Support** - Manage LIVE, PTU, EPTU, and other Star Citizen channels
 
+[0.5.3]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.2-0...v0.5.3-0
 [0.5.2]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.1-0...v0.5.2-0
 [0.5.1]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.0-2...v0.5.1
 [0.5.0]: https://github.com/TomRhodan/penguin-citizen/compare/v0.4.9-0...v0.5.0-2
