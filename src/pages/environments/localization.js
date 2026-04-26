@@ -196,6 +196,22 @@ export function renderLocalizationStatus() {
           <span class="profile-info-value">${escapeHtml(status.installed_at)}</span>
         </div>
       ` : ''}
+      ${status.variant ? `
+        <div class="profile-info-row">
+          <span class="profile-info-label">${t('environments:localization.variant')}</span>
+          <span class="profile-info-value">${escapeHtml(status.variant === 'full' ? t('environments:localization.variantFull') : t('environments:localization.variantHybrid'))}</span>
+        </div>
+      ` : ''}
+      ${status.blueprints_installed != null ? `
+        <div class="profile-info-row">
+          <span class="profile-info-label">${t('environments:localization.blueprintsRow')}</span>
+          <span class="profile-info-value">
+            ${status.blueprints_installed
+              ? t('environments:localization.blueprintsActive', { patch: escapeHtml(status.blueprints_version || '?') })
+              : t('environments:localization.blueprintsInactive')}
+          </span>
+        </div>
+      ` : ''}
       <div class="profile-info-row">
         <span class="profile-info-label">${t('environments:localization.fileSize')}</span>
         <span class="profile-info-value">${sizeStr}</span>
@@ -240,6 +256,7 @@ export function renderLanguageSelector() {
       source_repo: lang.source_repo,
       source_label: lang.source_label,
       repo_url: lang.repo_url,
+      variant: lang.variant || null,
     });
   }
 
@@ -309,6 +326,7 @@ export function renderLanguageSelector() {
                         data-source-repo="${escapeHtml(src.source_repo)}"
                         data-lang-name="${escapeHtml(lang.language_name)}"
                         data-source-label="${escapeHtml(src.source_label)}"
+                        data-variant="${escapeHtml(src.variant || '')}"
                         ${localizationLoading ? 'disabled' : ''}>
                   ${t('environments:localization.install')}
                 </button>
@@ -340,8 +358,9 @@ export function renderLanguageSelector() {
  * @param {string} displayName - Human-readable language name
  * @param {string} sourceLabel - Source label for the translation
  * @param {Object} callbacks - { renderEnvironments, loadUserCfgSettings }
+ * @param {Object} [extra] - Optional extra args: { variant, injectBlueprints }
  */
-export async function installLocalization(langCode, sourceRepo, displayName, sourceLabel, callbacks = {}) {
+export async function installLocalization(langCode, sourceRepo, displayName, sourceLabel, callbacks = {}, extra = {}) {
   const { config, activeScVersion } = getState();
   if (!config?.install_path || !activeScVersion) return;
   setState({ localizationLoading: true });
@@ -355,6 +374,8 @@ export async function installLocalization(langCode, sourceRepo, displayName, sou
       sourceRepo: sourceRepo,
       languageName: displayName,
       sourceLabel: sourceLabel,
+      variant: extra.variant || null,
+      injectBlueprints: extra.injectBlueprints || false,
     });
     showNotification(t('environments:notification.translationInstalled', { language: displayName }), 'success');
     const reloads = [loadLocalizationData()];
@@ -401,6 +422,109 @@ export async function removeLocalization(callbacks = {}) {
 
   setState({ localizationLoading: false });
   if (callbacks.renderEnvironments) callbacks.renderEnvironments(document.getElementById('content'));
+}
+
+/**
+ * Opens a modal for installing a localization variant (currently German only).
+ * Shows the variant name and an experimental Blueprint-injection toggle.
+ * On confirm, calls install_localization with the chosen options via installLocalization().
+ *
+ * @param {Object} options
+ * @param {string} options.languageCode - Star Citizen language code
+ * @param {string} options.languageName - Display name (e.g. "Deutsch" or "Deutsch+")
+ * @param {string} options.sourceRepo - GitHub repo path (e.g. "rjcncpt/StarCitizen-Deutsch-INI")
+ * @param {string} options.sourceLabel - Human-readable source label
+ * @param {string} options.variant - "hybrid" or "full"
+ * @param {Object} callbacks - { renderEnvironments, loadUserCfgSettings } - forwarded to installLocalization
+ */
+export async function openInstallModal({ languageCode, languageName, sourceRepo, sourceLabel, variant }, callbacks = {}) {
+  const variantLabel = variant === 'full'
+    ? t('environments:localization.variantFull')
+    : t('environments:localization.variantHybrid');
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3>${t('environments:localization.installModalTitle', { language: escapeHtml(languageName) })}</h3>
+        <button class="btn-close modal-close-btn" data-action="close-install-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+          ${t('environments:localization.installModalSubtitle', { variant: escapeHtml(variantLabel) })}
+        </p>
+        <label class="filter-toggle" style="margin-bottom: 0.5rem;">
+          <span class="toggle-switch">
+            <input type="checkbox" id="inject-blueprints-cb">
+            <span class="toggle-slider"></span>
+          </span>
+          <span>
+            ${t('environments:localization.injectBlueprintsLabel')}
+            <span class="localization-installed-badge" style="margin-left: 0.5rem; background: rgba(255, 165, 0, 0.15); color: #ffaa00;">
+              ${t('environments:localization.experimentalBadge')}
+            </span>
+          </span>
+        </label>
+        <div id="bp-detail-block" style="display: none; padding: 0.75rem; margin-top: 0.5rem; background: rgba(255, 165, 0, 0.05); border-left: 3px solid rgba(255, 165, 0, 0.5); border-radius: 4px;">
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">
+            ${t('environments:localization.blueprintsExperimentalNote')}
+          </p>
+          <p id="bp-version-info" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;">
+            ${t('environments:localization.blueprintsLoadingPatch')}
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-action="close-install-modal">${t('environments:localization.installBtnCancel')}</button>
+        <button class="btn btn-primary" id="btn-install-confirm">${t('environments:localization.installBtnConfirm')}</button>
+      </div>
+    </div>
+  `;
+
+  const closeModal = () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  modal.querySelectorAll('[data-action="close-install-modal"]').forEach(btn =>
+    btn.addEventListener('click', closeModal)
+  );
+
+  // Reveal detail block + lazy-fetch BP version when checkbox is checked
+  const cb = modal.querySelector('#inject-blueprints-cb');
+  const detailBlock = modal.querySelector('#bp-detail-block');
+  const bpVersionInfo = modal.querySelector('#bp-version-info');
+  let bpCompatLoaded = false;
+  cb.addEventListener('change', async () => {
+    if (cb.checked) {
+      detailBlock.style.display = 'block';
+      if (!bpCompatLoaded) {
+        bpCompatLoaded = true;
+        try {
+          const compat = await invoke('check_blueprints_compat');
+          if (compat.bp_patch) {
+            bpVersionInfo.innerHTML = t('environments:localization.blueprintsVersionMismatch', { bpPatch: escapeHtml(compat.bp_patch) });
+          } else {
+            bpVersionInfo.textContent = '';
+          }
+        } catch (_e) {
+          bpVersionInfo.textContent = '';
+        }
+      }
+    } else {
+      detailBlock.style.display = 'none';
+    }
+  });
+
+  modal.querySelector('#btn-install-confirm').addEventListener('click', () => {
+    const injectBlueprints = cb.checked;
+    closeModal();
+    installLocalization(languageCode, sourceRepo, languageName, sourceLabel, callbacks, { variant, injectBlueprints });
+  });
+
+  document.body.appendChild(modal);
+  requestAnimationFrame(() => modal.classList.add('show'));
 }
 
 /**

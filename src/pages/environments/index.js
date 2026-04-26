@@ -43,7 +43,7 @@ import { debugLog, dismissHint } from './utils.js';
 import {
   loadLocalizationLabels, loadLocalizationData,
   renderLocalizationTab, renderLocalizationStatus, renderLanguageSelector,
-  installLocalization, removeLocalization, resolveSourceRepo,
+  installLocalization, removeLocalization, resolveSourceRepo, openInstallModal,
 } from './localization.js';
 import { loadDeviceTuning, renderDeviceMapCollapsible } from './tuning.js';
 import {
@@ -923,13 +923,25 @@ function attachProfilesEventListeners() {
   // Localization: install language buttons
   document.querySelectorAll('[data-action="install-lang"]').forEach(btn => {
     btn.addEventListener('click', () => {
-      installLocalization(
-        btn.dataset.langCode,
-        btn.dataset.sourceRepo,
-        btn.dataset.langName,
-        btn.dataset.sourceLabel,
-        callbacks,
-      );
+      const variant = btn.dataset.variant || '';
+      // German rows with a variant get the install modal (BP toggle); others go direct
+      if (variant) {
+        openInstallModal({
+          languageCode: btn.dataset.langCode,
+          languageName: btn.dataset.langName,
+          sourceRepo: btn.dataset.sourceRepo,
+          sourceLabel: btn.dataset.sourceLabel,
+          variant,
+        }, callbacks);
+      } else {
+        installLocalization(
+          btn.dataset.langCode,
+          btn.dataset.sourceRepo,
+          btn.dataset.langName,
+          btn.dataset.sourceLabel,
+          callbacks,
+        );
+      }
     });
   });
 
