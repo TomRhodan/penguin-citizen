@@ -253,7 +253,7 @@ fn meta_path(version: &str) -> Result<PathBuf, String> {
 fn build_download_url(source_repo: &str, language_code: &str, version: &str) -> String {
     // PTU-like versions use the ptu branch/folder, everything else uses the main/live branch
     let branch = match version {
-        "PTU" | "EPTU" | "HOTFIX" | "TECH-PREVIEW" => "ptu",
+        "PTU" | "EPTU" | "TECH-PREVIEW" => "ptu",
         _ => "main",
     };
 
@@ -449,7 +449,7 @@ fn delete_meta(version: &str) -> Result<(), String> {
 /// The logic mirrors the folder structure of the respective repositories.
 fn build_github_api_path(source_repo: &str, language_code: &str, version: &str) -> (String, String) {
     let branch = match version {
-        "PTU" | "EPTU" | "HOTFIX" | "TECH-PREVIEW" => "ptu",
+        "PTU" | "EPTU" | "TECH-PREVIEW" => "ptu",
         _ => "main",
     };
 
@@ -621,8 +621,8 @@ pub async fn check_localization_update(
 /// Complete list of all available language sources (unfiltered).
 ///
 /// Contains all known community translation sources.
-/// German has two sources (rjcncpt and Dymerz), all other languages
-/// are only provided by the Dymerz/StarCitizen-Localization repository.
+/// German is provided by the rjcncpt/StarCitizen-Deutsch-INI repository;
+/// all other languages are provided by the Dymerz/StarCitizen-Localization repository.
 fn all_language_sources() -> Vec<LanguageSource> {
     vec![
         LanguageSource {
@@ -632,14 +632,6 @@ fn all_language_sources() -> Vec<LanguageSource> {
             source_repo: "rjcncpt/StarCitizen-Deutsch-INI".to_string(),
             source_label: "rjcncpt German".to_string(),
             repo_url: "https://github.com/rjcncpt/StarCitizen-Deutsch-INI".to_string(),
-        },
-        LanguageSource {
-            language_code: "german_(germany)".to_string(),
-            language_name: "Deutsch".to_string(),
-            flag: "DE".to_string(),
-            source_repo: "Dymerz/StarCitizen-Localization".to_string(),
-            source_label: "Community Localization".to_string(),
-            repo_url: "https://github.com/Dymerz/StarCitizen-Localization".to_string(),
         },
         LanguageSource {
             language_code: "french_(france)".to_string(),
@@ -678,12 +670,13 @@ fn all_language_sources() -> Vec<LanguageSource> {
 
 /// Checks whether a source supports a specific game version.
 ///
-/// The rjcncpt repository only has a reliable `live` folder and
-/// does not support PTU/EPTU/HOTFIX/TECH-PREVIEW versions.
+/// The rjcncpt repository only has reliable `live` and `ptu` folders.
+/// It supports LIVE and HOTFIX (both mapped to the `live` folder) but
+/// does not support PTU/EPTU/TECH-PREVIEW versions.
 /// The Dymerz repository supports all versions via separate branches.
 fn source_supports_version(source_repo: &str, version: &str) -> bool {
     if source_repo == "rjcncpt/StarCitizen-Deutsch-INI" {
-        !matches!(version, "PTU" | "EPTU" | "HOTFIX" | "TECH-PREVIEW")
+        !matches!(version, "PTU" | "EPTU" | "TECH-PREVIEW")
     } else {
         true
     }
