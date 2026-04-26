@@ -56,6 +56,9 @@ pub struct LanguageSource {
     pub source_label: String,
     /// Full URL to the GitHub repository
     pub repo_url: String,
+    /// Variant of the source (rjcncpt only): Some("hybrid") for live/global.ini,
+    /// Some("full") for live/full/global.ini. None for sources without variant concept.
+    pub variant: Option<String>,
 }
 
 /// Status of an installed localization.
@@ -89,6 +92,8 @@ pub struct LocalizationStatus {
     pub source_repo: Option<String>,
     /// URL to the source repository
     pub repo_url: Option<String>,
+    /// Installed variant ("hybrid" or "full") - currently only meaningful for rjcncpt
+    pub variant: Option<String>,
 }
 
 /// Result of a localization installation.
@@ -125,6 +130,9 @@ struct LocalizationMeta {
     /// Source repository - added retroactively for update checking
     #[serde(default)]
     source_repo: Option<String>,
+    /// Variant - added retroactively via serde(default) for older installations
+    #[serde(default)]
+    variant: Option<String>,
 }
 
 /// Progress message during localization installation.
@@ -168,7 +176,7 @@ struct GitHubCommitAuthor {
 
 /// Information about a remote language version.
 ///
-/// Cached per combination of source repository and language code,
+/// Cached per combination of source repository, language code, and variant,
 /// so the GitHub API does not need to be queried on every display.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RemoteLanguageInfo {
@@ -180,6 +188,9 @@ pub struct RemoteLanguageInfo {
     pub commit_date: String,
     /// Timestamp when this information was fetched
     pub fetched_at: String,
+    /// Variant - needed so the frontend can distinguish remote info per variant (rjcncpt only)
+    #[serde(default)]
+    pub variant: Option<String>,
 }
 
 /// On-disk cache for remote metadata.
@@ -246,11 +257,14 @@ fn meta_path(version: &str) -> Result<PathBuf, String> {
 /// Builds the download URL for the global.ini file from the respective repository.
 ///
 /// The URL structure differs depending on the repository:
-/// - **rjcncpt**: Always uses the `main` branch, but distinguishes between `live/` and `ptu/` folders
+/// - **rjcncpt**: Always uses the `main` branch, but distinguishes between `live/` and `ptu/` folders.
+///   The `variant` parameter further controls the path:
+///   - `Some("full")`: uses `{folder}/full/global.ini` (Volle Übersetzung)
+///   - `None` or `Some("hybrid")`: uses `{folder}/global.ini` (Hybrid, default)
 /// - **Dymerz**: Uses different git branches (`main` for LIVE, `ptu` for test server versions)
 ///
 /// The version determines whether the LIVE or PTU variant is downloaded.
-fn build_download_url(source_repo: &str, language_code: &str, version: &str) -> String {
+fn build_download_url(source_repo: &str, language_code: &str, version: &str, variant: Option<&str>) -> String {
     // PTU-like versions use the ptu branch/folder, everything else uses the main/live branch
     let branch = match version {
         "PTU" | "EPTU" | "TECH-PREVIEW" => "ptu",
@@ -260,12 +274,21 @@ fn build_download_url(source_repo: &str, language_code: &str, version: &str) -> 
     if source_repo == "rjcncpt/StarCitizen-Deutsch-INI" {
         // rjcncpt repo: folder-based separation (live/ptu) on the main branch
         let folder = if branch == "ptu" { "ptu" } else { "live" };
-        format!(
-            "https://raw.githubusercontent.com/{}/{}/{}/global.ini",
-            source_repo,
-            "main",
-            folder
-        )
+        if variant == Some("full") {
+            format!(
+                "https://raw.githubusercontent.com/{}/{}/{}/full/global.ini",
+                source_repo,
+                "main",
+                folder
+            )
+        } else {
+            format!(
+                "https://raw.githubusercontent.com/{}/{}/{}/global.ini",
+                source_repo,
+                "main",
+                folder
+            )
+        }
     } else {
         // Dymerz repo: branch-based separation (main/ptu), language in path
         format!(
@@ -443,11 +466,14 @@ fn delete_meta(version: &str) -> Result<(), String> {
 // GitHub API & remote cache
 // ============================================================
 
-/// Builds the GitHub API path for a specific repository, language, and version.
+/// Builds the GitHub API path for a specific repository, language, version, and variant.
 ///
 /// Returns a tuple of (branch, file path) needed for the GitHub commits API.
 /// The logic mirrors the folder structure of the respective repositories.
-fn build_github_api_path(source_repo: &str, language_code: &str, version: &str) -> (String, String) {
+/// For rjcncpt, the `variant` parameter controls the sub-folder:
+/// - `Some("full")`: uses `{folder}/full/global.ini`
+/// - `None` or `Some("hybrid")`: uses `{folder}/global.ini`
+fn build_github_api_path(source_repo: &str, language_code: &str, version: &str, variant: Option<&str>) -> (String, String) {
     let branch = match version {
         "PTU" | "EPTU" | "TECH-PREVIEW" => "ptu",
         _ => "main",
@@ -456,7 +482,11 @@ fn build_github_api_path(source_repo: &str, language_code: &str, version: &str) 
     if source_repo == "rjcncpt/StarCitizen-Deutsch-INI" {
         // rjcncpt: always main branch, but live/ptu as folders
         let folder = if branch == "ptu" { "ptu" } else { "live" };
-        let path = format!("{}/global.ini", folder);
+        let path = if variant == Some("full") {
+            format!("{}/full/global.ini", folder)
+        } else {
+            format!("{}/global.ini", folder)
+        };
         ("main".to_string(), path)
     } else {
         // Dymerz: branch-based separation, language as folder in path
@@ -475,8 +505,9 @@ async fn fetch_github_commit_info(
     source_repo: &str,
     language_code: &str,
     version: &str,
+    variant: Option<&str>,
 ) -> Result<(String, String), String> {
-    let (branch, file_path) = build_github_api_path(source_repo, language_code, version);
+    let (branch, file_path) = build_github_api_path(source_repo, language_code, version, variant);
 
     // GitHub API: query commits for a specific file on a specific branch
     // per_page=1 ensures only the latest commit is returned
@@ -606,7 +637,7 @@ pub async fn check_localization_update(
     // Fetch latest commit from GitHub and compare with local SHA
     let client = http_client();
     let (remote_sha, remote_date) =
-        fetch_github_commit_info(client, &source_repo, &meta.language_code, &version).await?;
+        fetch_github_commit_info(client, &source_repo, &meta.language_code, &version, meta.variant.as_deref()).await?;
 
     let update_available = local_sha.as_deref() != Some(&remote_sha);
 
@@ -630,8 +661,18 @@ fn all_language_sources() -> Vec<LanguageSource> {
             language_name: "Deutsch".to_string(),
             flag: "DE".to_string(),
             source_repo: "rjcncpt/StarCitizen-Deutsch-INI".to_string(),
-            source_label: "rjcncpt German".to_string(),
+            source_label: "rjcncpt \u{2014} Hybrid".to_string(),
             repo_url: "https://github.com/rjcncpt/StarCitizen-Deutsch-INI".to_string(),
+            variant: Some("hybrid".to_string()),
+        },
+        LanguageSource {
+            language_code: "german_(germany)".to_string(),
+            language_name: "Deutsch+".to_string(),
+            flag: "DE".to_string(),
+            source_repo: "rjcncpt/StarCitizen-Deutsch-INI".to_string(),
+            source_label: "rjcncpt \u{2014} Volle \u{dc}bersetzung".to_string(),
+            repo_url: "https://github.com/rjcncpt/StarCitizen-Deutsch-INI".to_string(),
+            variant: Some("full".to_string()),
         },
         LanguageSource {
             language_code: "french_(france)".to_string(),
@@ -640,6 +681,7 @@ fn all_language_sources() -> Vec<LanguageSource> {
             source_repo: "Dymerz/StarCitizen-Localization".to_string(),
             source_label: "Community Localization".to_string(),
             repo_url: "https://github.com/Dymerz/StarCitizen-Localization".to_string(),
+            variant: None,
         },
         LanguageSource {
             language_code: "spanish_(spain)".to_string(),
@@ -648,6 +690,7 @@ fn all_language_sources() -> Vec<LanguageSource> {
             source_repo: "Dymerz/StarCitizen-Localization".to_string(),
             source_label: "Community Localization".to_string(),
             repo_url: "https://github.com/Dymerz/StarCitizen-Localization".to_string(),
+            variant: None,
         },
         LanguageSource {
             language_code: "italian_(italy)".to_string(),
@@ -656,6 +699,7 @@ fn all_language_sources() -> Vec<LanguageSource> {
             source_repo: "Dymerz/StarCitizen-Localization".to_string(),
             source_label: "Community Localization".to_string(),
             repo_url: "https://github.com/Dymerz/StarCitizen-Localization".to_string(),
+            variant: None,
         },
         LanguageSource {
             language_code: "portuguese_(brazil)".to_string(),
@@ -664,6 +708,7 @@ fn all_language_sources() -> Vec<LanguageSource> {
             source_repo: "Dymerz/StarCitizen-Localization".to_string(),
             source_label: "Community Localization".to_string(),
             repo_url: "https://github.com/Dymerz/StarCitizen-Localization".to_string(),
+            variant: None,
         },
     ]
 }
@@ -754,6 +799,7 @@ pub async fn get_localization_status(
                 commit_date: meta.commit_date,
                 source_repo: meta.source_repo,
                 repo_url,
+                variant: meta.variant,
             });
         }
     }
@@ -780,6 +826,7 @@ pub async fn get_localization_status(
                 commit_date: None,
                 source_repo: None,
                 repo_url: None,
+                variant: None,
             });
         }
     }
@@ -797,6 +844,7 @@ pub async fn get_localization_status(
         commit_date: None,
         source_repo: None,
         repo_url: None,
+        variant: None,
     })
 }
 
@@ -811,6 +859,7 @@ pub async fn get_localization_status(
 ///
 /// Progress events are sent to the frontend throughout the entire process.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn install_localization(
     app: AppHandle,
     game_path: String,
@@ -818,7 +867,8 @@ pub async fn install_localization(
     language_code: String,
     source_repo: String,
     language_name: String,
-    source_label: String
+    source_label: String,
+    variant: Option<String>
 ) -> Result<LocalizationInstallResult, String> {
     let expanded = expand_tilde(&game_path);
 
@@ -830,7 +880,7 @@ pub async fn install_localization(
     });
 
     // Build download URL (differs depending on the repository)
-    let url = build_download_url(&source_repo, &language_code, &version);
+    let url = build_download_url(&source_repo, &language_code, &version, variant.as_deref());
 
     // Download translation file
     let client = http_client();
@@ -872,7 +922,7 @@ pub async fn install_localization(
     update_user_cfg_language(&expanded, &version, &language_code)?;
 
     // Fetch commit information from GitHub (errors are tolerated as this is not critical)
-    let commit_info = fetch_github_commit_info(client, &source_repo, &language_code, &version)
+    let commit_info = fetch_github_commit_info(client, &source_repo, &language_code, &version, variant.as_deref())
         .await
         .ok();
 
@@ -887,6 +937,7 @@ pub async fn install_localization(
         commit_sha: commit_info.as_ref().map(|(sha, _)| sha.clone()),
         commit_date: commit_info.as_ref().map(|(_, date)| date.clone()),
         source_repo: Some(source_repo.clone()),
+        variant: variant.clone(),
     };
     save_meta(&version, &meta)?;
 
@@ -928,17 +979,17 @@ pub async fn fetch_remote_language_info(
     let client = http_client();
     let mut entries = Vec::new();
 
-    // Deduplication: each unique (source_repo, language_code) pair
+    // Deduplication: each unique (source_repo, language_code, variant) triple
     // only needs one API call
     let mut seen = std::collections::HashSet::new();
     for lang in &languages {
-        let key = format!("{}:{}", lang.source_repo, lang.language_code);
+        let key = format!("{}:{}:{}", lang.source_repo, lang.language_code, lang.variant.as_deref().unwrap_or(""));
         if !seen.insert(key) {
             continue;
         }
 
         // Use "LIVE" as the default version for remote fetching
-        match fetch_github_commit_info(client, &lang.source_repo, &lang.language_code, "LIVE")
+        match fetch_github_commit_info(client, &lang.source_repo, &lang.language_code, "LIVE", lang.variant.as_deref())
             .await
         {
             Ok((sha, date)) => {
@@ -948,13 +999,15 @@ pub async fn fetch_remote_language_info(
                     commit_sha: sha,
                     commit_date: date,
                     fetched_at: chrono::Utc::now().to_rfc3339(),
+                    variant: lang.variant.clone(),
                 });
             }
             Err(e) => {
                 log::warn!(
-                    "Failed to fetch commit info for {}/{}: {}",
+                    "Failed to fetch commit info for {}/{} (variant: {:?}): {}",
                     lang.source_repo,
                     lang.language_code,
+                    lang.variant,
                     e
                 );
             }
