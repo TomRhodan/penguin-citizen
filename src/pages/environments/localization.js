@@ -367,7 +367,7 @@ export async function installLocalization(langCode, sourceRepo, displayName, sou
   if (callbacks.renderEnvironments) callbacks.renderEnvironments(document.getElementById('content'));
 
   try {
-    await invoke('install_localization', {
+    const result = await invoke('install_localization', {
       gamePath: config.install_path,
       version: activeScVersion,
       languageCode: langCode,
@@ -378,6 +378,10 @@ export async function installLocalization(langCode, sourceRepo, displayName, sou
       injectBlueprints: extra.injectBlueprints || false,
     });
     showNotification(t('environments:notification.translationInstalled', { language: displayName }), 'success');
+    // Surface non-fatal BP warning (e.g. low hit rate against installed SC build)
+    if (result?.bp_warning) {
+      showNotification(result.bp_warning, 'warning');
+    }
     const reloads = [loadLocalizationData()];
     if (callbacks.loadUserCfgSettings) reloads.push(callbacks.loadUserCfgSettings());
     await Promise.all(reloads);

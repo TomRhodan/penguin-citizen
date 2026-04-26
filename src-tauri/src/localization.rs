@@ -111,6 +111,10 @@ pub struct LocalizationInstallResult {
     pub message: String,
     /// Size of the downloaded file in bytes
     pub bytes: u64,
+    /// Non-fatal warning to surface alongside success — currently used for
+    /// blueprint-injection hit-rate warnings. None means no warning.
+    #[serde(default)]
+    pub bp_warning: Option<String>,
 }
 
 /// Metadata of an installed localization (stored locally on disk).
@@ -923,6 +927,9 @@ pub async fn install_localization(
     // Convert downloaded bytes to UTF-8 text for potential BP injection
     let global_ini_text = String::from_utf8_lossy(&bytes).into_owned();
 
+    // Track non-fatal BP warning to surface in the install result
+    let mut bp_low_hit_rate_warning: Option<String> = None;
+
     // Optionally inject blueprint data
     let (final_ini_text, bp_patch_for_meta): (String, Option<String>) = if inject_blueprints {
         // Emit progress event signaling the BP download phase
@@ -966,7 +973,26 @@ pub async fn install_localization(
         });
 
         // `inject_blueprints` as a local name shadows the fn; qualify with self::
-        let merged = self::inject_blueprints(&global_ini_text, &bp_json)?;
+        let (merged, stats) = self::inject_blueprints_with_stats(&global_ini_text, &bp_json)?;
+
+        // Sanity-check: if fewer than half the BP entries matched, the data
+        // probably doesn't fit this SC build. Surface a non-fatal warning in
+        // the install result — the install itself proceeds (user opted in).
+        let max_possible = stats.entries_total.saturating_mul(2);
+        bp_low_hit_rate_warning = if max_possible > 0 && stats.hits * 2 < max_possible {
+            log::warn!(
+                "Blueprint hit rate low: {}/{} (entries={}, misses={})",
+                stats.hits, max_possible, stats.entries_total, stats.misses
+            );
+            Some(format!(
+                "Blueprint-Daten passen nur teilweise zur installierten SC-Version ({} von {} möglichen Treffern). Mission-Markierungen sind eventuell unvollständig.",
+                stats.hits,
+                max_possible
+            ))
+        } else {
+            None
+        };
+
         (merged, bp_patch)
     } else {
         let _ = app.emit("localization-progress", LocalizationProgress {
@@ -984,7 +1010,16 @@ pub async fn install_localization(
         .map_err(|e| format!("Failed to create localization directory: {}", e))?;
 
     let ini_path = loc_dir.join("global.ini");
-    fs::write(&ini_path, final_ini_text.as_bytes()).map_err(|e| format!("Failed to write global.ini: {}", e))?;
+    // Atomic write: write to a sibling .tmp file, then rename. Prevents the SC
+    // launcher / EAC from ever observing a half-written file. rename() on the
+    // same filesystem (the install dir) is atomic on POSIX.
+    let tmp_path = loc_dir.join("global.ini.tmp");
+    fs::write(&tmp_path, final_ini_text.as_bytes())
+        .map_err(|e| format!("Failed to write global.ini.tmp: {}", e))?;
+    if let Err(e) = fs::rename(&tmp_path, &ini_path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(format!("Failed to atomically install global.ini: {}", e));
+    }
 
     // Update USER.cfg so Star Citizen uses the new language
     update_user_cfg_language(&expanded, &version, &language_code)?;
@@ -1021,6 +1056,7 @@ pub async fn install_localization(
         success: true,
         message: format!("{} translation installed successfully", language_name),
         bytes: file_size,
+        bp_warning: bp_low_hit_rate_warning,
     })
 }
 
@@ -1115,6 +1151,26 @@ struct BpEntry {
     description: String,
 }
 
+/// Statistics about a blueprint injection pass — exposed to the install flow so
+/// it can warn the user when the BP data is a poor match for the installed SC build.
+pub(crate) struct BpInjectStats {
+    /// Number of (title or description) keys actually found and modified.
+    pub hits: usize,
+    /// Number of (title or description) keys that were absent in the INI and skipped.
+    pub misses: usize,
+    /// Number of entries in the BP JSON. Maximum possible `hits` is `2 * entries_total`.
+    pub entries_total: usize,
+}
+
+/// Thin wrapper that drops the stats — kept as a stable signature for unit tests.
+#[cfg(test)]
+pub(crate) fn inject_blueprints(
+    global_ini_text: &str,
+    bp_contracts_json: &str,
+) -> Result<String, String> {
+    inject_blueprints_with_stats(global_ini_text, bp_contracts_json).map(|(text, _)| text)
+}
+
 /// Merges blueprint markers and description blocks from the rjcncpt JSON
 /// into a global.ini file. Pure filesystem-free logic.
 ///
@@ -1126,10 +1182,13 @@ struct BpEntry {
 /// preserved verbatim. Backslash-n sequences in JSON (`\\n` → literal `\n`) round-trip
 /// into the INI as the literal two-character sequence — Star Citizen's runtime
 /// parser handles the conversion to actual newlines.
-pub(crate) fn inject_blueprints(
+///
+/// Returns the merged text plus statistics about how well the BP data matched the
+/// INI's keyspace — the caller can decide to warn the user on low hit rates.
+pub(crate) fn inject_blueprints_with_stats(
     global_ini_text: &str,
     bp_contracts_json: &str,
-) -> Result<String, String> {
+) -> Result<(String, BpInjectStats), String> {
     let bp: BpContractsRoot = serde_json::from_str(bp_contracts_json)
         .map_err(|e| format!("Failed to parse blueprint JSON: {}", e))?;
 
@@ -1223,7 +1282,12 @@ pub(crate) fn inject_blueprints(
         }
     }
 
-    Ok(out)
+    let stats = BpInjectStats {
+        hits,
+        misses,
+        entries_total: bp.entries.len(),
+    };
+    Ok((out, stats))
 }
 
 /// Result of the BP compatibility pre-check.
