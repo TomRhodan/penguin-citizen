@@ -655,7 +655,7 @@ export async function linkDataP4k(sourceVersion, targetVersion, replaceExisting,
 
   try {
     showNotification(t('environments:notification.symlinking', { source: sourceVersion, target: targetVersion }), 'info');
-    await invoke('link_data_p4k', { gp: config.install_path, src_version: sourceVersion, dst_version: targetVersion, replace_existing: replaceExisting });
+    await invoke('link_data_p4k', { gp: config.install_path, srcVersion: sourceVersion, dstVersion: targetVersion, replaceExisting });
     showNotification(t('environments:notification.symlinkSuccess'), 'success');
 
     // Reload environments

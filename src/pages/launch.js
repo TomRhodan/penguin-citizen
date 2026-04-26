@@ -765,13 +765,19 @@ function bindMonitorListeners() {
   const select = document.getElementById('launch-monitor-select');
   if (select) {
     select.addEventListener('change', () => {
-      if (launchConfig) launchConfig.performance.primary_monitor = select.value || null;
+      if (launchConfig) {
+        launchConfig.performance.primary_monitor = select.value || null;
+        saveConfigNow();
+      }
     });
   }
   const input = document.getElementById('launch-monitor-input');
   if (input) {
     input.addEventListener('input', () => {
-      if (launchConfig) launchConfig.performance.primary_monitor = input.value.trim() || null;
+      if (launchConfig) {
+        launchConfig.performance.primary_monitor = input.value.trim() || null;
+        debouncedSaveConfig();
+      }
     });
   }
   const refreshBtn = document.getElementById('btn-monitor-refresh');
@@ -906,6 +912,7 @@ function bindEvents(container) {
     cb.addEventListener('change', () => {
       if (launchConfig) {
         launchConfig.performance[cb.dataset.key] = cb.checked;
+        saveConfigNow();
       }
     });
   });
@@ -929,6 +936,7 @@ function bindEvents(container) {
         if (select) select.disabled = true;
         if (input) input.disabled = true;
       }
+      if (launchConfig) saveConfigNow();
     });
   }
 
@@ -941,6 +949,7 @@ function bindEvents(container) {
     gpuFilter.addEventListener('change', () => {
       if (launchConfig) {
         launchConfig.performance.gpu_device_filter = gpuFilter.value || null;
+        saveConfigNow();
       }
     });
   }
@@ -965,6 +974,7 @@ function bindEvents(container) {
           launchConfig.performance.gamescope = { enabled: false, hdr: false, force_grab_cursor: false, keyboard_grab: false };
         }
         launchConfig.performance.gamescope.enabled = gsEnabled.checked;
+        saveConfigNow();
         renderPage(container);
       }
     });
@@ -996,6 +1006,7 @@ function bindEvents(container) {
     gsHdr.addEventListener('change', () => {
       if (launchConfig?.performance?.gamescope) {
         launchConfig.performance.gamescope.hdr = gsHdr.checked;
+        saveConfigNow();
       }
     });
   }
@@ -1004,6 +1015,7 @@ function bindEvents(container) {
     gsGrabCursor.addEventListener('change', () => {
       if (launchConfig?.performance?.gamescope) {
         launchConfig.performance.gamescope.force_grab_cursor = gsGrabCursor.checked;
+        saveConfigNow();
       }
     });
   }
@@ -1012,6 +1024,7 @@ function bindEvents(container) {
     gsKeyboard.addEventListener('change', () => {
       if (launchConfig?.performance?.gamescope) {
         launchConfig.performance.gamescope.keyboard_grab = gsKeyboard.checked;
+        saveConfigNow();
       }
     });
   }
