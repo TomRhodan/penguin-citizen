@@ -94,6 +94,10 @@ pub struct LocalizationStatus {
     pub repo_url: Option<String>,
     /// Installed variant ("hybrid" or "full") - currently only meaningful for rjcncpt
     pub variant: Option<String>,
+    /// Whether blueprint injection was applied during the last install
+    pub blueprints_installed: Option<bool>,
+    /// Patch identifier from the BP data (e.g. "4.7.2-live.11674325")
+    pub blueprints_version: Option<String>,
 }
 
 /// Result of a localization installation.
@@ -133,6 +137,12 @@ struct LocalizationMeta {
     /// Variant - added retroactively via serde(default) for older installations
     #[serde(default)]
     variant: Option<String>,
+    /// Whether blueprint injection was applied during the last install
+    #[serde(default)]
+    blueprints_installed: Option<bool>,
+    /// Patch identifier from the BP data (e.g. "4.7.2-live.11674325")
+    #[serde(default)]
+    blueprints_version: Option<String>,
 }
 
 /// Progress message during localization installation.
@@ -800,6 +810,8 @@ pub async fn get_localization_status(
                 source_repo: meta.source_repo,
                 repo_url,
                 variant: meta.variant,
+                blueprints_installed: meta.blueprints_installed,
+                blueprints_version: meta.blueprints_version.clone(),
             });
         }
     }
@@ -827,6 +839,8 @@ pub async fn get_localization_status(
                 source_repo: None,
                 repo_url: None,
                 variant: None,
+                blueprints_installed: None,
+                blueprints_version: None,
             });
         }
     }
@@ -845,6 +859,8 @@ pub async fn get_localization_status(
         source_repo: None,
         repo_url: None,
         variant: None,
+        blueprints_installed: None,
+        blueprints_version: None,
     })
 }
 
@@ -868,7 +884,8 @@ pub async fn install_localization(
     source_repo: String,
     language_name: String,
     source_label: String,
-    variant: Option<String>
+    variant: Option<String>,
+    inject_blueprints: bool,
 ) -> Result<LocalizationInstallResult, String> {
     let expanded = expand_tilde(&game_path);
 
@@ -903,11 +920,62 @@ pub async fn install_localization(
 
     let file_size = bytes.len() as u64;
 
-    let _ = app.emit("localization-progress", LocalizationProgress {
-        phase: "install".to_string(),
-        percent: 75.0,
-        message: "Installing translation file...".to_string(),
-    });
+    // Convert downloaded bytes to UTF-8 text for potential BP injection
+    let global_ini_text = String::from_utf8_lossy(&bytes).into_owned();
+
+    // Optionally inject blueprint data
+    let (final_ini_text, bp_patch_for_meta): (String, Option<String>) = if inject_blueprints {
+        // Emit progress event signaling the BP download phase
+        let _ = app.emit("localization-progress", LocalizationProgress {
+            phase: "download".into(),
+            percent: 60.0,
+            message: "Lade Blueprint-Daten…".into(),
+        });
+
+        let bp_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/Data/bp-contracts_short.json";
+        let version_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/version.json";
+
+        // Parallel download
+        let bp_client = http_client();
+        let (bp_resp, ver_resp) = tokio::join!(
+            bp_client.get(bp_url).send(),
+            bp_client.get(version_url).send(),
+        );
+
+        let bp_json = bp_resp
+            .map_err(|e| format!("Failed to fetch BP contracts: {}", e))?
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read BP contracts body: {}", e))?;
+
+        let version_json_text = ver_resp
+            .map_err(|e| format!("Failed to fetch BP version.json: {}", e))?
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read BP version body: {}", e))?;
+
+        // Extract bp_patch (best effort — soft-fail if missing)
+        let bp_patch = serde_json::from_str::<serde_json::Value>(&version_json_text)
+            .ok()
+            .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from));
+
+        let _ = app.emit("localization-progress", LocalizationProgress {
+            phase: "install".into(),
+            percent: 80.0,
+            message: "Wende Blueprint-Daten an…".into(),
+        });
+
+        // `inject_blueprints` as a local name shadows the fn; qualify with self::
+        let merged = self::inject_blueprints(&global_ini_text, &bp_json)?;
+        (merged, bp_patch)
+    } else {
+        let _ = app.emit("localization-progress", LocalizationProgress {
+            phase: "install".to_string(),
+            percent: 75.0,
+            message: "Installing translation file...".to_string(),
+        });
+        (global_ini_text, None)
+    };
 
     // Create target directory and save translation file
     let loc_dir = sc_localization_dir(&expanded, &version, &language_code)?;
@@ -916,7 +984,7 @@ pub async fn install_localization(
         .map_err(|e| format!("Failed to create localization directory: {}", e))?;
 
     let ini_path = loc_dir.join("global.ini");
-    fs::write(&ini_path, &bytes).map_err(|e| format!("Failed to write global.ini: {}", e))?;
+    fs::write(&ini_path, final_ini_text.as_bytes()).map_err(|e| format!("Failed to write global.ini: {}", e))?;
 
     // Update USER.cfg so Star Citizen uses the new language
     update_user_cfg_language(&expanded, &version, &language_code)?;
@@ -938,6 +1006,8 @@ pub async fn install_localization(
         commit_date: commit_info.as_ref().map(|(_, date)| date.clone()),
         source_repo: Some(source_repo.clone()),
         variant: variant.clone(),
+        blueprints_installed: Some(inject_blueprints),
+        blueprints_version: bp_patch_for_meta,
     };
     save_meta(&version, &meta)?;
 
@@ -1030,7 +1100,6 @@ pub async fn fetch_remote_language_info(
 
 /// Root of the bp-contracts_short.json file (as published by rjcncpt's launcher tooling).
 #[derive(Deserialize)]
-#[allow(dead_code)] // Phase 3b will use this via inject_blueprints; suppress until then
 struct BpContractsRoot {
     _meta: serde_json::Value,
     entries: Vec<BpEntry>,
@@ -1038,7 +1107,6 @@ struct BpContractsRoot {
 
 /// One blueprint entry — describes how to modify the mission's title and description.
 #[derive(Deserialize)]
-#[allow(dead_code)] // Phase 3b will use this via inject_blueprints; suppress until then
 #[allow(non_snake_case)] // field names match the JSON shape
 struct BpEntry {
     titleLocKey: String,
@@ -1058,7 +1126,6 @@ struct BpEntry {
 /// preserved verbatim. Backslash-n sequences in JSON (`\\n` → literal `\n`) round-trip
 /// into the INI as the literal two-character sequence — Star Citizen's runtime
 /// parser handles the conversion to actual newlines.
-#[allow(dead_code)] // Phase 3b will call this from the install command
 pub(crate) fn inject_blueprints(
     global_ini_text: &str,
     bp_contracts_json: &str,
@@ -1157,6 +1224,54 @@ pub(crate) fn inject_blueprints(
     }
 
     Ok(out)
+}
+
+/// Result of the BP compatibility pre-check.
+/// Returned to the install modal so the user sees what SC patch the BP data targets.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct BpCompat {
+    /// Patch identifier from blueprints/version.json `version` field
+    /// (e.g. "4.7.2-live.11674325"). None if the file could not be fetched/parsed.
+    pub bp_patch: Option<String>,
+    /// Human-readable BP version label from bp-contracts_short.json `_meta.version`
+    /// (e.g. "Beta 22.04.2026"). None if missing.
+    pub bp_version: Option<String>,
+}
+
+/// Fetches the blueprint version metadata from upstream so the install modal can
+/// show the user which SC patch the data was generated for. Read-only; never writes.
+#[tauri::command]
+pub async fn check_blueprints_compat() -> Result<BpCompat, String> {
+    let client = http_client();
+    let bp_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/Data/bp-contracts_short.json";
+    let version_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/version.json";
+
+    let (ver_resp, bp_resp) = tokio::join!(
+        client.get(version_url).send(),
+        client.get(bp_url).send(),
+    );
+
+    let bp_patch = match ver_resp {
+        Ok(r) => match r.text().await {
+            Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from)),
+            Err(_) => None,
+        },
+        Err(_) => None,
+    };
+
+    let bp_version = match bp_resp {
+        Ok(r) => match r.text().await {
+            Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.get("_meta").and_then(|m| m.get("version")).and_then(|x| x.as_str()).map(String::from)),
+            Err(_) => None,
+        },
+        Err(_) => None,
+    };
+
+    Ok(BpCompat { bp_patch, bp_version })
 }
 
 #[cfg(test)]
