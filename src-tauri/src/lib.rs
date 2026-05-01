@@ -508,6 +508,8 @@ pub fn run() {
                 system_check::run_system_check,
                 system_check::fix_mapcount,
                 system_check::fix_filelimit,
+                system_check::check_is_sandboxed,
+                system_check::get_system_fix_command,
                 system_check::detect_monitors,
                 system_check::get_default_install_path,
                 system_check::detect_gpu_vendor,

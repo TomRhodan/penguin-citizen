@@ -127,5 +127,16 @@
   "desc.installHint": "This will create a Wine prefix, install required components (winetricks, DXVK, PowerShell), download and install the RSI Launcher.",
 
   "error.noRunner": "No runner selected. Please go back and select a Wine runner first.",
-  "error.pleaseEnterPath": "Please enter an install path"
+  "error.pleaseEnterPath": "Please enter an install path",
+
+  "sandboxFix.defaultTitle": "Run this command in a terminal",
+  "sandboxFix.defaultExplain": "This Flatpak runs in a sandbox and cannot ask for your password directly. Copy the command below and run it in any terminal on your host system, then click \"Re-run checks\".",
+  "sandboxFix.mapcount.title": "Fix vm.max_map_count",
+  "sandboxFix.mapcount.explain": "Star Citizen needs vm.max_map_count = 16,777,216. Because this Flatpak is sandboxed, it cannot raise the limit for you. Copy the command below, run it in a terminal on your host (you will be asked for your password), then click \"Re-run checks\".",
+  "sandboxFix.filelimit.title": "Fix file descriptor limit",
+  "sandboxFix.filelimit.explain": "Star Citizen needs a higher file descriptor limit (524,288). Because this Flatpak is sandboxed, it cannot raise the limit for you. Copy the command below, run it in a terminal on your host (you will be asked for your password), log out and back in, then click \"Re-run checks\".",
+  "sandboxFix.copy": "Copy command",
+  "sandboxFix.copied": "Copied!",
+  "sandboxFix.copyFailed": "Could not copy to clipboard.",
+  "sandboxFix.rerun": "Re-run checks"
 }

@@ -127,5 +127,16 @@
   "desc.installHint": "Dies erstellt ein Wine-Prefix, installiert erforderliche Komponenten (Winetricks, DXVK, PowerShell) und laedt den RSI Launcher herunter und installiert ihn.",
 
   "error.noRunner": "Kein Runner ausgewaehlt. Bitte gehe zurueck und waehle zuerst einen Wine Runner aus.",
-  "error.pleaseEnterPath": "Bitte gib einen Installationspfad ein"
+  "error.pleaseEnterPath": "Bitte gib einen Installationspfad ein",
+
+  "sandboxFix.defaultTitle": "Befehl im Terminal ausfuehren",
+  "sandboxFix.defaultExplain": "Dieses Flatpak laeuft in einer Sandbox und kann nicht direkt nach deinem Passwort fragen. Kopiere den Befehl unten und fuehre ihn in einem beliebigen Terminal auf deinem System aus, danach klicke auf \"Pruefungen erneut ausfuehren\".",
+  "sandboxFix.mapcount.title": "vm.max_map_count anpassen",
+  "sandboxFix.mapcount.explain": "Star Citizen benoetigt vm.max_map_count = 16.777.216. Da dieses Flatpak in einer Sandbox laeuft, kann der Wert nicht direkt gesetzt werden. Kopiere den Befehl unten, fuehre ihn in einem Terminal auf deinem System aus (du wirst nach deinem Passwort gefragt), dann klicke auf \"Pruefungen erneut ausfuehren\".",
+  "sandboxFix.filelimit.title": "File-Descriptor-Limit anpassen",
+  "sandboxFix.filelimit.explain": "Star Citizen benoetigt ein hoeheres File-Descriptor-Limit (524.288). Da dieses Flatpak in einer Sandbox laeuft, kann der Wert nicht direkt gesetzt werden. Kopiere den Befehl unten, fuehre ihn in einem Terminal auf deinem System aus (du wirst nach deinem Passwort gefragt), melde dich ab und wieder an, dann klicke auf \"Pruefungen erneut ausfuehren\".",
+  "sandboxFix.copy": "Befehl kopieren",
+  "sandboxFix.copied": "Kopiert!",
+  "sandboxFix.copyFailed": "Konnte nicht in die Zwischenablage kopieren.",
+  "sandboxFix.rerun": "Pruefungen erneut ausfuehren"
 }

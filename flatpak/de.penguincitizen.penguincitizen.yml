@@ -1,0 +1,187 @@
+# Flatpak manifest for Penguin Citizen
+#
+# Build locally with ./flatpak/build-local.sh, which patches the git source
+# to a dir source so the working tree is built. For the release-candidate
+# build that goes to Flathub, the manifest is consumed as-is.
+#
+# Required runtimes (installed automatically by the build script):
+#   org.gnome.Platform//49, org.gnome.Sdk//49
+#   org.freedesktop.Sdk.Extension.rust-stable//25.08
+#   org.freedesktop.Sdk.Extension.node20//25.08
+#   org.freedesktop.Sdk.Extension.mingw-w64//25.08
+#
+# cargo-sources.json and node-sources.json must be regenerated whenever
+# Cargo.lock or package-lock.json change — see ./flatpak/regenerate-sources.sh.
+
+id: de.penguincitizen.penguincitizen
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.mingw-w64
+
+command: penguin-citizen
+
+# MangoHud and gamescope are shipped as Vulkan-layer extensions. The user
+# pulls them from Flathub once and they are mounted into the sandbox at
+# runtime; add-ld-path makes their .so files findable so that MANGOHUD=1
+# (or the `mangohud`/`gamescope` wrappers) actually have an effect.
+add-extensions:
+  org.freedesktop.Platform.VulkanLayer.MangoHud:
+    directory: extensions/MangoHud
+    version: '25.08'
+    add-ld-path: lib
+    autodelete: false
+    no-autodownload: false
+    download-if: active-gl-driver
+  org.freedesktop.Platform.VulkanLayer.gamescope:
+    directory: extensions/gamescope
+    version: '25.08'
+    add-ld-path: lib
+    autodelete: false
+    no-autodownload: false
+    download-if: active-gl-driver
+
+# The extension directories must exist in /app at build time so the runtime
+# can mount the sub-extension data into them. We create the empty mounts
+# in cleanup-commands below.
+
+finish-args:
+  # --- Display ---
+  # X11 unconditionally (not fallback-x11): Wine + the Electron-based RSI
+  # Launcher need XWayland to be available even on Wayland sessions, otherwise
+  # the launcher renders as an orphaned tray-shaped mini-window.
+  - --socket=wayland
+  - --socket=x11
+  - --share=ipc
+
+  # --- Audio (Wine subprocess game audio) ---
+  - --socket=pulseaudio
+
+  # --- GPU + input devices ---
+  - --device=dri
+  # Joysticks/Gamepads under /dev/input/event*. Star Citizen requires this.
+  - --device=all
+
+  # --- Filesystem ---
+  # User-chosen Wine prefix and game install paths can live anywhere in $HOME
+  # (~/Games, ~/.wine, custom). Same pattern as Heroic and Lutris.
+  - --filesystem=home
+  # External drives (USB, SD cards, NTFS partitions auto-mounted by udisks2).
+  - --filesystem=/run/media
+  - --filesystem=/mnt
+  - --filesystem=/media
+  # Optional Gamescope socket if the host has it.
+  - --filesystem=xdg-run/gamescope-0:rw
+  # GTK theme detection for Wine GTK decorations + KDE style hints.
+  - --filesystem=xdg-config/dconf:ro
+  - --filesystem=xdg-run/dconf
+  - --filesystem=xdg-config/kdeglobals:ro
+
+  # --- Network ---
+  # Wine/Proton runner downloads from GitHub (~500 MB), DXVK releases,
+  # RSI news feed, GitHub API for version listings.
+  - --share=network
+
+  # --- Wine + Electron specifics ---
+  - --allow=multiarch
+  - --allow=per-app-dev-shm
+  # ptrace + cap_sys_ptrace: Wine's own thread-tracking and Electron's
+  # multi-process renderer require this. Heroic/Lutris/Bottles all set it.
+  - --allow=devel
+  # Bluetooth controller discovery (Wine queries it even without BT hardware).
+  - --allow=bluetooth
+  # Wine queries UDisks2 to enumerate drives (so NTFS mounts appear as D:, E:).
+  - --system-talk-name=org.freedesktop.UDisks2
+
+  # --- D-Bus services for Wine + Electron ---
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # GTK + dconf for theme/settings reads (used by Wine GTK decorations).
+  - --talk-name=ca.desrt.dconf
+  # XDG portals (FileChooser, OpenURI, ScreenCast, etc.) — Electron uses these.
+  - --talk-name=org.freedesktop.portal.*
+  # host-spawn / sandbox introspection — Electron's GPU sandbox checks for it.
+  - --talk-name=org.freedesktop.Flatpak
+
+  # --- Environment ---
+  - --env=FLATPAK=1
+  - --env=DCONF_USER_CONFIG_DIR=.config/dconf
+  # Help downloaded Wine/Proton runners find their bundled libs.
+  - --env=LD_LIBRARY_PATH=/app/lib:/app/lib32
+
+modules:
+  # ---------------------------------------------------------------
+  # Wine helper DLL — built fresh from source with mingw-w64.
+  # Replaces the pre-built src-tauri/resources/penguin-citizen-helper.exe.
+  # ---------------------------------------------------------------
+  - name: penguin-citizen-helper
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/mingw-w64/bin
+    sources:
+      - type: dir
+        path: ../src-tauri/helper
+    build-commands:
+      - x86_64-w64-mingw32-gcc -o penguin-citizen-helper.exe dinput_helper.c
+        -ldinput8 -ldxguid -lole32 -Wall -O2 -static
+      - install -Dm755 penguin-citizen-helper.exe
+        /app/lib/penguin-citizen/penguin-citizen-helper.exe
+
+  # ---------------------------------------------------------------
+  # Main Tauri app
+  # ---------------------------------------------------------------
+  - name: penguin-citizen
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+      env:
+        # cargo-sources.json extracts vendored crates here; .cargo/config is
+        # generated alongside and points cargo at the vendor directory.
+        CARGO_HOME: /run/build/penguin-citizen/cargo
+        CARGO_NET_OFFLINE: 'true'
+        # node-sources.json populates this npm cache via the inline _cacache
+        # entries; npm ci --offline reads from it.
+        npm_config_cache: /run/build/penguin-citizen/flatpak-node/npm-cache
+        npm_config_offline: 'true'
+        # Embed mingw helper path so the Rust binary can find it at runtime.
+        PENGUIN_CITIZEN_FLATPAK_HELPER: /app/lib/penguin-citizen/penguin-citizen-helper.exe
+    sources:
+      # NOTE: pin a release tag here for Flathub submission.
+      - type: git
+        url: https://github.com/TomRhodan/penguin-citizen.git
+        tag: v0.5.5
+        # commit: <fill-in-on-submission>
+      - cargo-sources.json
+      - node-sources.json
+    build-commands:
+      # --- Frontend deps + build ---
+      - npm ci --offline
+      # --- Tauri release build, no bundle (we install manually below) ---
+      - npm run tauri build -- --no-bundle
+
+      # --- Install binary ---
+      - install -Dm755 src-tauri/target/release/penguin-citizen
+        /app/bin/penguin-citizen
+
+      # --- AppStream metadata ---
+      - install -Dm644 flatpak/de.penguincitizen.penguincitizen.metainfo.xml
+        /app/share/metainfo/de.penguincitizen.penguincitizen.metainfo.xml
+
+      # --- Desktop entry ---
+      - install -Dm644 flatpak/de.penguincitizen.penguincitizen.desktop
+        /app/share/applications/de.penguincitizen.penguincitizen.desktop
+
+      # --- Icons ---
+      - |
+        for size in 16 32 48 64 128 256 512; do
+          install -Dm644 flatpak/icons/${size}x${size}/de.penguincitizen.penguincitizen.png \
+            /app/share/icons/hicolor/${size}x${size}/apps/de.penguincitizen.penguincitizen.png
+        done
+
+      # --- Mount points for the MangoHud / gamescope add-extensions ---
+      # Flatpak-builder requires these directories to exist in /app so the
+      # runtime can mount the sub-extension data into them.
+      - mkdir -p /app/extensions/MangoHud /app/extensions/gamescope

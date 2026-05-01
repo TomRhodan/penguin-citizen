@@ -20,7 +20,7 @@
 //! in a background thread. Captured button presses and axis movements
 //! are sent to the frontend to assign key bindings.
 
-use tauri::{ AppHandle, Emitter, Manager };
+use tauri::{ AppHandle, Emitter };
 use gilrs::{ Gilrs, Event, EventType, Button, Axis, GamepadId };
 use std::sync::atomic::{ AtomicBool, Ordering };
 use std::sync::{ Arc, Mutex };
@@ -30,6 +30,7 @@ use once_cell::sync::Lazy;
 use chrono::Local;
 use serde::{ Deserialize, Serialize };
 use crate::action_definitions::DeviceMapping;
+use crate::util::helper_exe_path;
 use crate::runners::resolve_wine_bin;
 
 /// Helper function to map a gilrs gamepad to Star Citizen's device type and instance number.
@@ -315,13 +316,11 @@ pub fn start_input_capture(
         let capturing_wine = IS_CAPTURING.clone();
         let wine_state = WINE_CAPTURE.clone();
 
-        if let Ok(resource_dir) = app.path().resource_dir() {
-            // Tauri 2 preserves the source directory structure when bundling resources.
-            // "resources/penguin-citizen-helper.exe" in tauri.conf.json -> resource_dir/resources/
-            // This holds for dev builds, .deb, AppImage, and the portable tarball.
-            let helper_exe = resource_dir.join("resources").join("penguin-citizen-helper.exe");
-
-            if let (Some(wine_bin), true) = (wine_bin_path, helper_exe.exists()) {
+        // helper_exe_path resolves the bundled helper for whichever
+        // distribution channel we're running under (dev / .deb / AppImage
+        // use Tauri's resource_dir; Flatpak uses /app/lib/penguin-citizen).
+        if let Some(helper_exe) = helper_exe_path(&app) {
+            if let Some(wine_bin) = wine_bin_path {
                 thread::spawn(move || {
                     match std::process::Command::new(&wine_bin)
                         .env("WINEPREFIX", &wine_prefix)
@@ -388,8 +387,10 @@ pub fn start_input_capture(
                     }
                 });
             } else {
-                log_capture("[WINE] Wine binary or helper exe not found — wine axis mapping disabled");
+                log_capture("[WINE] Wine binary not found in runner — wine axis mapping disabled");
             }
+        } else {
+            log_capture("[WINE] Helper exe not found in bundle — wine axis mapping disabled");
         }
     }
 

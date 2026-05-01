@@ -33,7 +33,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { confirm } from '../utils/dialogs.js';
+import { confirm, showNotification } from '../utils/dialogs.js';
 import { router } from '../router.js';
 import { escapeHtml } from '../utils.js';
 import { t } from '../i18n.js';
@@ -455,6 +455,82 @@ function updateCheckItem(check) {
 }
 
 /**
+ * Modal used in the Flatpak sandbox where pkexec cannot be invoked.
+ * Displays the equivalent `sudo sh -c '...'` command in a code block
+ * with a copy-to-clipboard button and a re-run-checks button so the
+ * user can paste the command into a host terminal and then refresh.
+ *
+ * @param {string} checkId - ID of the check item being fixed
+ * @param {string} command - The sudo command string returned by the backend
+ */
+function showSudoFixDialog(checkId, command) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const titleKey = `installation:sandboxFix.${checkId}.title`;
+    const explainKey = `installation:sandboxFix.${checkId}.explain`;
+    const title = t(titleKey, { defaultValue: t('installation:sandboxFix.defaultTitle') });
+    const explain = t(explainKey, { defaultValue: t('installation:sandboxFix.defaultExplain') });
+    const copyLabel = t('installation:sandboxFix.copy');
+    const copiedLabel = t('installation:sandboxFix.copied');
+    const rerunLabel = t('installation:sandboxFix.rerun');
+    const closeLabel = t('dialogs:confirm.defaultCancel');
+
+    overlay.innerHTML = `
+      <div class="modal-container modal-wide modal-kind-warning" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="modal-icon-warning"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <h3>${escapeHtml(title)}</h3>
+          </div>
+        </div>
+        <div class="modal-body">
+          <p>${escapeHtml(explain)}</p>
+          <pre class="sandbox-fix-cmd"><code>${escapeHtml(command)}</code></pre>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="modal-close">${escapeHtml(closeLabel)}</button>
+          <button class="btn btn-secondary" id="modal-rerun">${escapeHtml(rerunLabel)}</button>
+          <button class="btn btn-primary" id="modal-copy">${escapeHtml(copyLabel)}</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('show'));
+
+    const cleanup = (rerun) => {
+      overlay.classList.remove('show');
+      setTimeout(() => {
+        overlay.remove();
+        if (rerun) {
+          const body = document.getElementById('wizard-body');
+          if (body) runChecks(body);
+        }
+        resolve();
+      }, 200);
+    };
+
+    overlay.querySelector('#modal-copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(command);
+        const btn = overlay.querySelector('#modal-copy');
+        btn.textContent = copiedLabel;
+        setTimeout(() => { btn.textContent = copyLabel; }, 1500);
+      } catch (e) {
+        showNotification(t('installation:sandboxFix.copyFailed'), 'error');
+      }
+    });
+    overlay.querySelector('#modal-rerun').addEventListener('click', () => cleanup(true));
+    overlay.querySelector('#modal-close').addEventListener('click', () => cleanup(false));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+    const onEsc = (e) => { if (e.key === 'Escape') { window.removeEventListener('keydown', onEsc); cleanup(false); } };
+    window.addEventListener('keydown', onEsc);
+  });
+}
+
+/**
  * Applies a system fix (e.g. vm.max_map_count or file descriptor limit).
  * Requires root privileges via pkexec. Shows a confirmation dialog
  * and automatically re-runs the checks on success.
@@ -471,6 +547,19 @@ async function applyFix(checkId, btn) {
 
   const command = commandMap[checkId];
   if (!command) return;
+
+  // In a Flatpak sandbox pkexec is unavailable. Fetch the equivalent
+  // sudo-prefixed command from the backend and present it in a modal
+  // for the user to copy and paste into a host terminal.
+  if (await invoke('check_is_sandboxed')) {
+    try {
+      const sudoCmd = await invoke('get_system_fix_command', { fixId: checkId });
+      await showSudoFixDialog(checkId, sudoCmd);
+    } catch (e) {
+      showNotification(String(e), 'error');
+    }
+    return;
+  }
 
   // Descriptions for the confirmation dialog
   const descriptions = {

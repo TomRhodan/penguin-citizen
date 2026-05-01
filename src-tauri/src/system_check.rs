@@ -34,6 +34,18 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+use crate::util::is_sandboxed;
+
+/// Shell pipeline to set vm.max_map_count to 16,777,216 persistently.
+/// Used for the pkexec auto-fix and as the manual `sudo`-prefixed command
+/// shown in sandboxed environments where pkexec is unavailable.
+const MAPCOUNT_FIX_CMD: &str =
+    "printf 'vm.max_map_count = 16777216\\n' > /etc/sysctl.d/99-starcitizen-max_map_count.conf && sysctl --quiet --system";
+
+/// Shell pipeline to set the systemd default file descriptor limit to 524,288.
+const FILELIMIT_FIX_CMD: &str =
+    "mkdir -p /etc/systemd/system.conf.d && printf '[Manager]\\nDefaultLimitNOFILE=524288\\n' > /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf && systemctl daemon-reexec";
+
 /// Status result for individual system checks.
 ///
 /// Three levels: Pass (passed), Warn (warning), Fail (failed).
@@ -806,15 +818,24 @@ pub async fn run_system_check(install_path: String) -> Result<SystemCheckResult,
 /// Creates `/etc/sysctl.d/99-starcitizen-max_map_count.conf` with the value 16,777,216
 /// and applies the setting immediately. The change persists across reboots.
 /// Uses pkexec for the graphical password prompt (root privileges required).
+/// In a Flatpak sandbox pkexec cannot be invoked; the frontend should call
+/// `get_system_fix_command("mapcount")` and present the manual sudo command
+/// for the user to run in a terminal instead.
 #[tauri::command]
 pub async fn fix_mapcount() -> Result<FixResult, String> {
+    if is_sandboxed() {
+        return Ok(FixResult {
+            success: false,
+            message: "sandboxed".into(),
+        });
+    }
     tokio::task
         ::spawn_blocking(move || {
             // Check if pkexec (graphical sudo alternative) is available
             if !Path::new("/usr/bin/pkexec").exists() {
                 return FixResult {
                     success: false,
-                    message: "pkexec not found. Manually run: sudo sysctl -w vm.max_map_count=16777216 && echo 'vm.max_map_count = 16777216' | sudo tee /etc/sysctl.d/99-starcitizen-max_map_count.conf".into(),
+                    message: format!("pkexec not found. Manually run: sudo sh -c '{}'", MAPCOUNT_FIX_CMD),
                 };
             }
 
@@ -822,9 +843,7 @@ pub async fn fix_mapcount() -> Result<FixResult, String> {
             let result = Command::new("pkexec")
                 .arg("sh")
                 .arg("-c")
-                .arg(
-                    "printf 'vm.max_map_count = 16777216\\n' > /etc/sysctl.d/99-starcitizen-max_map_count.conf && sysctl --quiet --system"
-                )
+                .arg(MAPCOUNT_FIX_CMD)
                 .output();
 
             match result {
@@ -867,14 +886,23 @@ pub async fn fix_mapcount() -> Result<FixResult, String> {
 /// and runs `systemctl daemon-reexec`. The change only takes effect after re-login
 /// or a reboot.
 /// Uses pkexec for the graphical password prompt (root privileges required).
+/// In a Flatpak sandbox pkexec cannot be invoked; the frontend should call
+/// `get_system_fix_command("filelimit")` and present the manual sudo command
+/// for the user to run in a terminal instead.
 #[tauri::command]
 pub async fn fix_filelimit() -> Result<FixResult, String> {
+    if is_sandboxed() {
+        return Ok(FixResult {
+            success: false,
+            message: "sandboxed".into(),
+        });
+    }
     tokio::task
         ::spawn_blocking(move || {
             if !Path::new("/usr/bin/pkexec").exists() {
                 return FixResult {
                     success: false,
-                    message: "pkexec not found. Manually create /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf with:\n[Manager]\nDefaultLimitNOFILE=524288".into(),
+                    message: format!("pkexec not found. Manually run: sudo sh -c '{}'", FILELIMIT_FIX_CMD),
                 };
             }
 
@@ -882,9 +910,7 @@ pub async fn fix_filelimit() -> Result<FixResult, String> {
             let result = Command::new("pkexec")
                 .arg("sh")
                 .arg("-c")
-                .arg(
-                    "mkdir -p /etc/systemd/system.conf.d && printf '[Manager]\\nDefaultLimitNOFILE=524288\\n' > /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf && systemctl daemon-reexec"
-                )
+                .arg(FILELIMIT_FIX_CMD)
                 .output();
 
             match result {
@@ -1056,4 +1082,29 @@ pub async fn check_gamemode_installed() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Reports whether the app is running inside a Flatpak sandbox.
+///
+/// The frontend uses this to swap the auto-fix UI for a manual
+/// copy-the-sudo-command UI on the System Check page.
+#[tauri::command]
+pub fn check_is_sandboxed() -> bool {
+    is_sandboxed()
+}
+
+/// Returns the manual `sudo sh -c '...'` command for a system fix.
+///
+/// Used by the frontend in the Flatpak sandbox where pkexec is unavailable.
+/// The user copies the returned string and runs it in a host terminal.
+///
+/// `fix_id` accepts `"mapcount"` and `"filelimit"`; anything else is rejected.
+#[tauri::command]
+pub fn get_system_fix_command(fix_id: String) -> Result<String, String> {
+    let pipeline = match fix_id.as_str() {
+        "mapcount" => MAPCOUNT_FIX_CMD,
+        "filelimit" => FILELIMIT_FIX_CMD,
+        other => return Err(format!("unknown fix id: {}", other)),
+    };
+    Ok(format!("sudo sh -c '{}'", pipeline))
 }

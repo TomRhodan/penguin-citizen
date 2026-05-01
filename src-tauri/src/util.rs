@@ -17,10 +17,38 @@
 //! Shared utility functions used across multiple modules.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use tauri::Window;
+use tauri::{AppHandle, Manager, Window};
 use base64::{Engine as _, engine::general_purpose};
+
+/// True when running inside a Flatpak sandbox.
+///
+/// The Flatpak runtime always sets `FLATPAK_ID` to the application's
+/// reverse-DNS identifier; nothing else does. Used to gate sandbox-specific
+/// code paths (resource resolution, pkexec disable, etc.).
+pub(crate) fn is_sandboxed() -> bool {
+    std::env::var_os("FLATPAK_ID").is_some()
+}
+
+/// Resolves the absolute path to the bundled Wine DirectInput helper.
+///
+/// Layout differs between distribution channels:
+/// - `.deb` / `.AppImage` / dev: Tauri's `resource_dir()` plus
+///   `resources/penguin-citizen-helper.exe` (preserved from `tauri.conf.json`).
+/// - Flatpak: installed by the manifest to `/app/lib/penguin-citizen/`
+///   without a `resources/` subdirectory. We jump straight there when
+///   the sandbox is detected, since `resource_dir()` returns `/app/bin`
+///   in Flatpak and the helper isn't there.
+pub(crate) fn helper_exe_path(app: &AppHandle) -> Option<PathBuf> {
+    if is_sandboxed() {
+        let p = PathBuf::from("/app/lib/penguin-citizen/penguin-citizen-helper.exe");
+        return p.exists().then_some(p);
+    }
+    let resource_dir = app.path().resource_dir().ok()?;
+    let p = resource_dir.join("resources").join("penguin-citizen-helper.exe");
+    p.exists().then_some(p)
+}
 
 /// Global HTTP client with connection pooling, User-Agent, and timeouts.
 ///

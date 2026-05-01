@@ -1,7 +1,7 @@
 {
   "productName": "Penguin Citizen",
   "version": "0.5.4",
-  "identifier": "com.penguincitizen.launcher",
+  "identifier": "de.penguincitizen.penguincitizen",
   "bundle": {
     "active": true,
     "targets": ["deb", "appimage"],
