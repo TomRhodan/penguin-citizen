@@ -679,12 +679,10 @@ pub async fn get_device_tuning(
         if d.product.is_empty() && d.tuning.is_empty() {
             continue;
         }
-        // Correlate deviceoptions by matching "ProductName {GUID}" format
-        let full_product = if let Some(ref guid) = d.guid {
-            format!("{} {{{}}}", d.product.trim(), guid)
-        } else {
-            d.product.clone()
-        };
+        // Correlate deviceoptions by matching SC's canonical "ProductName  {GUID}"
+        // format (note the double space — `format_sc_device_name` is the single
+        // source of truth, used by `write_actionmaps_xml` too).
+        let full_product = format_sc_device_name(&d.product, d.guid.as_deref());
         let axis_options = profile.device_options.iter()
             .find(|do_opts| do_opts.name == full_product)
             .map(|do_opts| do_opts.options.clone())
@@ -734,12 +732,11 @@ pub async fn update_device_tuning(
         .ok_or("Device not found")?;
     dev.tuning = tuning;
 
-    // Update deviceoptions (axis deadzones/saturations)
-    let full_product = if let Some(ref guid) = dev.guid {
-        format!("{} {{{}}}", dev.product.trim(), guid)
-    } else {
-        dev.product.clone()
-    };
+    // Update deviceoptions (axis deadzones/saturations). Use the canonical
+    // "ProductName  {GUID}" format that `write_actionmaps_xml` and SC itself
+    // write — single-space mismatches were silently creating duplicate
+    // deviceoptions blocks and dropping deadzone/saturation values.
+    let full_product = format_sc_device_name(&dev.product, dev.guid.as_deref());
 
     if !axis_options.is_empty() {
         if let Some(do_opts) = profile.device_options.iter_mut()
@@ -1003,6 +1000,30 @@ pub async fn delete_backup(v: String, bid: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns true if the backup actionmaps.xml and the live SC actionmaps.xml
+/// represent the same user intent — i.e. they parse to identical content
+/// after canonicalization. SC's exit-time rewrites (attribute reordering,
+/// whitespace, default-value materialization, split deviceoption elements)
+/// commonly cause raw-byte hash mismatches without any real semantic change,
+/// and we don't want to flag those as "modified" in the profile status.
+///
+/// Returns `false` (i.e. "really modified") on any read or parse error so
+/// the caller's downstream "modified" report is the safe default.
+fn actionmaps_canonically_equal(bdir: &Path, user_base: &Path) -> bool {
+    let backup_path = bdir.join("actionmaps.xml");
+    let live_path = user_base.join("Profiles/default/actionmaps.xml");
+    let (Ok(b_raw), Ok(l_raw)) = (fs::read_to_string(&backup_path), fs::read_to_string(&live_path)) else {
+        return false;
+    };
+    let (Ok(b), Ok(l)) = (parse_actionmaps_xml(&b_raw), parse_actionmaps_xml(&l_raw)) else {
+        return false;
+    };
+    let (Ok(bc), Ok(lc)) = (serialize_actionmaps_xml_canonical(&b), serialize_actionmaps_xml_canonical(&l)) else {
+        return false;
+    };
+    bc == lc
+}
+
 /// Compares current SC files with the stored hashes of a backup.
 /// Detects modified, deleted, and new files since the backup.
 #[tauri::command]
@@ -1025,10 +1046,23 @@ pub async fn check_profile_status(gp: String, v: String, bid: String) -> Result<
     let mut files = vec![];
     let mut all_match = true;
 
-    // Check files from backup
+    // Check files from backup. For actionmaps.xml a byte-level hash mismatch
+    // can be a false positive — SC frequently rewrites the file on exit
+    // (deviceoptions reordered, attribute spacing, default-value entries
+    // materialized) without changing user intent. When the hashes differ,
+    // fall back to a canonical comparison via `serialize_actionmaps_xml_canonical`
+    // and only flag the file as modified if its semantic content really changed.
     for (file, saved_hash) in &meta.file_hashes {
         let status = match current.get(file) {
             Some(cur_hash) if cur_hash == saved_hash => "unchanged",
+            Some(_) if file == "actionmaps.xml" => {
+                if actionmaps_canonically_equal(&bdir, &user_base) {
+                    "unchanged"
+                } else {
+                    all_match = false;
+                    "modified"
+                }
+            }
             Some(_) => { all_match = false; "modified" },
             None => { all_match = false; "deleted" },
         };
@@ -1050,6 +1084,13 @@ pub async fn check_profile_status(gp: String, v: String, bid: String) -> Result<
 
 /// Computes a line-by-line diff between a backup file and the current SC file.
 /// Uses the `similar` library for comparison.
+///
+/// For `actionmaps.xml` the comparison is run on a *canonical* serialization
+/// (via `serialize_actionmaps_xml_canonical`) instead of the raw text. SC
+/// rewrites the file extensively on game exit — moving `<deviceoptions>`
+/// blocks, normalizing whitespace, materializing default-value tuning entries
+/// like `<flight_view exponent="1"/>` — none of which represent user intent.
+/// The canonical form filters those out and surfaces only real differences.
 #[tauri::command]
 pub async fn get_file_diff(file: String, gp: String, v: String, bid: String) -> Result<Vec<DiffLine>, String> {
     validate_backup_id(&bid)?;
@@ -1057,7 +1098,7 @@ pub async fn get_file_diff(file: String, gp: String, v: String, bid: String) -> 
     // Read backup file
     let bdir = backup_version_dir(&v)?.join(&bid);
     let backup_path = bdir.join(&file);
-    let backup_content = fs::read_to_string(&backup_path)
+    let raw_backup = fs::read_to_string(&backup_path)
         .map_err(|e| format!("Cannot read backup file: {}", e))?;
 
     // Read current SC file
@@ -1073,8 +1114,22 @@ pub async fn get_file_diff(file: String, gp: String, v: String, bid: String) -> 
     } else {
         user_base.join("Profiles/default").join(&file)
     };
-    let current_content = fs::read_to_string(&current_path)
+    let raw_current = fs::read_to_string(&current_path)
         .map_err(|e| format!("Cannot read current file: {}", e))?;
+
+    // For actionmaps.xml: parse + re-serialize canonically. Falls back to the
+    // raw text on parse failure so a malformed file still produces a diff.
+    let (backup_content, current_content) = if file == "actionmaps.xml" {
+        match (parse_actionmaps_xml(&raw_backup), parse_actionmaps_xml(&raw_current)) {
+            (Ok(b), Ok(c)) => (
+                serialize_actionmaps_xml_canonical(&b).unwrap_or(raw_backup.clone()),
+                serialize_actionmaps_xml_canonical(&c).unwrap_or(raw_current.clone()),
+            ),
+            _ => (raw_backup, raw_current),
+        }
+    } else {
+        (raw_backup, raw_current)
+    };
 
     // Compute diff
     let diff = TextDiff::from_lines(&backup_content, &current_content);

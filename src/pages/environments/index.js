@@ -1178,6 +1178,11 @@ export function cleanupEnvironments() {
  * @param {HTMLElement} container - DOM container for the page
  */
 export async function renderEnvironments(container) {
+  // Expose globally so non-router modules (e.g. tuning dialog after Apply)
+  // can request a re-render without each having to plumb the container.
+  if (typeof window !== 'undefined') {
+    window.renderEnvironments = () => renderEnvironments(document.getElementById('content'));
+  }
 
   const scrollPos = container.scrollTop;
 

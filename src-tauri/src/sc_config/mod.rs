@@ -861,6 +861,186 @@ pub fn write_actionmaps_xml(path: &Path, res: &ParsedActionMaps) -> Result<(), S
     Ok(())
 }
 
+/// Serializes a parsed actionmaps.xml back to a canonical XML string for diff use.
+///
+/// Unlike `write_actionmaps_xml`, this:
+/// - Drops tuning entries that are pure defaults (`invert=0` and `exponent` and
+///   `sensitivity` either missing or `1.0`). SC writes such entries on game exit
+///   without the user touching anything (e.g. `<flight_view exponent="1"/>`),
+///   which would otherwise appear as spurious additions in a profile-vs-live diff.
+/// - Drops axis options that are pure defaults (`deadzone=0`, `saturation=1`).
+/// - Drops empty joystick slots (no product, no real tuning).
+/// - Sorts action maps and bindings by name for stable line-by-line comparison.
+/// - Omits the XML declaration and uses LF line endings.
+///
+/// The result is meant for `similar::TextDiff` consumption — never for writing to
+/// disk; SC requires the CRLF/declaration form produced by `write_actionmaps_xml`.
+pub fn serialize_actionmaps_xml_canonical(res: &ParsedActionMaps) -> Result<String, String> {
+    use quick_xml::events::{ BytesEnd, BytesStart, Event };
+
+    let is_default_tuning = |t: &ScOptionsTuning| -> bool {
+        t.invert.unwrap_or(0) == 0
+            && t.exponent.is_none_or(|e| (e - 1.0).abs() < 1e-6)
+            && t.sensitivity.is_none_or(|s| (s - 1.0).abs() < 1e-6)
+    };
+    let fmt_float = |v: f64| -> String {
+        format!("{:.6}", v).trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+
+    let mut w = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 1);
+
+    let mut root = BytesStart::new("ActionMaps");
+    root.push_attribute(("version", res.version.as_str()));
+    w.write_event(Event::Start(root)).ok();
+
+    for po in &res.profiles {
+        let mut p_tag = BytesStart::new("ActionProfiles");
+        p_tag.push_attribute(("profileName", po.profile_name.as_str()));
+        p_tag.push_attribute(("version", po.version.as_str()));
+        p_tag.push_attribute(("optionsVersion", po.options_version.as_str()));
+        p_tag.push_attribute(("rebindVersion", po.rebind_version.as_str()));
+        w.write_event(Event::Start(p_tag)).ok();
+
+        // Devices, sorted by instance, with default-only tuning filtered out.
+        let mut devices = po.devices.clone();
+        devices.sort_by_key(|d| d.instance);
+        for d in &devices {
+            let mut real_tuning: Vec<&ScOptionsTuning> = d.tuning.iter()
+                .filter(|t| !is_default_tuning(t))
+                .collect();
+            if d.product.is_empty() && real_tuning.is_empty() {
+                continue;
+            }
+            real_tuning.sort_by(|a, b| a.name.cmp(&b.name));
+
+            let mut d_tag = BytesStart::new("options");
+            d_tag.push_attribute(("type", d.device_type.as_str()));
+            d_tag.push_attribute(("instance", d.instance.to_string().as_str()));
+            if !d.product.is_empty() {
+                let product_with_guid = format_sc_device_name(&d.product, d.guid.as_deref());
+                d_tag.push_attribute(("Product", product_with_guid.as_str()));
+            }
+
+            if real_tuning.is_empty() {
+                w.write_event(Event::Empty(d_tag)).ok();
+            } else {
+                w.write_event(Event::Start(d_tag)).ok();
+                for t in real_tuning {
+                    let mut t_tag = BytesStart::new(t.name.as_str());
+                    if t.invert.unwrap_or(0) != 0 {
+                        t_tag.push_attribute(("invert", "1"));
+                    }
+                    if let Some(exp) = t.exponent {
+                        if (exp - 1.0).abs() > 1e-6 {
+                            t_tag.push_attribute(("exponent", fmt_float(exp).as_str()));
+                        }
+                    }
+                    if let Some(sens) = t.sensitivity {
+                        if (sens - 1.0).abs() > 1e-6 {
+                            t_tag.push_attribute(("sensitivity", fmt_float(sens).as_str()));
+                        }
+                    }
+                    w.write_event(Event::Empty(t_tag)).ok();
+                }
+                w.write_event(Event::End(BytesEnd::new("options"))).ok();
+            }
+        }
+
+        // Device options (deadzones/saturations), sorted by name. Per-input entries
+        // are *coalesced* before emission: SC writes deadzone and saturation as
+        // separate <option> elements (and occasionally duplicates them — observed
+        // in the wild), while our own `write_actionmaps_xml` combines both
+        // attributes into one element. After parsing, both end up as multiple
+        // `ScDeviceOption` entries per input. Merging here makes the canonical
+        // diff structure-agnostic: only real value changes appear.
+        let mut do_list = po.device_options.clone();
+        do_list.sort_by(|a, b| a.name.cmp(&b.name));
+        for do_opts in &do_list {
+            // Merge per input: last non-None value wins for each attribute.
+            let mut by_input: Vec<(String, Option<f64>, Option<f64>)> = Vec::new();
+            for opt in &do_opts.options {
+                if let Some(slot) = by_input.iter_mut().find(|(i, _, _)| i == &opt.input) {
+                    if opt.deadzone.is_some()   { slot.1 = opt.deadzone; }
+                    if opt.saturation.is_some() { slot.2 = opt.saturation; }
+                } else {
+                    by_input.push((opt.input.clone(), opt.deadzone, opt.saturation));
+                }
+            }
+            by_input.sort_by(|a, b| a.0.cmp(&b.0));
+
+            // Drop merged entries that are still pure defaults
+            let real_axis: Vec<&(String, Option<f64>, Option<f64>)> = by_input.iter()
+                .filter(|(_, d, s)| {
+                    let d_default = d.is_none_or(|v| v.abs() < 1e-9);
+                    let s_default = s.is_none_or(|v| (v - 1.0).abs() < 1e-9);
+                    !(d_default && s_default)
+                })
+                .collect();
+            if real_axis.is_empty() {
+                continue;
+            }
+
+            let normalized_name = if let Some(idx) = do_opts.name.find('{') {
+                let name = do_opts.name[..idx].trim();
+                let guid = &do_opts.name[idx + 1..do_opts.name.len() - 1];
+                format_sc_device_name(name, Some(guid))
+            } else {
+                do_opts.name.clone()
+            };
+
+            let mut do_tag = BytesStart::new("deviceoptions");
+            do_tag.push_attribute(("name", normalized_name.as_str()));
+            w.write_event(Event::Start(do_tag)).ok();
+            for (input, deadzone, saturation) in real_axis {
+                let mut o_tag = BytesStart::new("option");
+                o_tag.push_attribute(("input", input.as_str()));
+                if let Some(dz) = deadzone {
+                    if dz.abs() > 1e-9 {
+                        o_tag.push_attribute(("deadzone", fmt_float(*dz).as_str()));
+                    }
+                }
+                if let Some(sat) = saturation {
+                    if (sat - 1.0).abs() > 1e-9 {
+                        o_tag.push_attribute(("saturation", fmt_float(*sat).as_str()));
+                    }
+                }
+                w.write_event(Event::Empty(o_tag)).ok();
+            }
+            w.write_event(Event::End(BytesEnd::new("deviceoptions"))).ok();
+        }
+
+        // Action maps and bindings — sorted for stable diff output.
+        let mut action_maps = po.action_maps.clone();
+        action_maps.sort_by(|a, b| a.name.cmp(&b.name));
+        for am in &action_maps {
+            let mut am_tag = BytesStart::new("actionmap");
+            am_tag.push_attribute(("name", am.name.as_str()));
+            w.write_event(Event::Start(am_tag)).ok();
+
+            let mut bindings = am.bindings.clone();
+            bindings.sort_by(|a, b| a.action_name.cmp(&b.action_name));
+            for b in &bindings {
+                let mut a_tag = BytesStart::new("action");
+                a_tag.push_attribute(("name", b.action_name.as_str()));
+                w.write_event(Event::Start(a_tag)).ok();
+                for input in &b.inputs {
+                    let mut r_tag = BytesStart::new("rebind");
+                    r_tag.push_attribute(("input", input.as_str()));
+                    w.write_event(Event::Empty(r_tag)).ok();
+                }
+                w.write_event(Event::End(BytesEnd::new("action"))).ok();
+            }
+            w.write_event(Event::End(BytesEnd::new("actionmap"))).ok();
+        }
+
+        w.write_event(Event::End(BytesEnd::new("ActionProfiles"))).ok();
+    }
+    w.write_event(Event::End(BytesEnd::new("ActionMaps"))).ok();
+
+    let buffered = w.into_inner().into_inner();
+    String::from_utf8(buffered).map_err(|e| e.to_string())
+}
+
 
 /// Finds the ZIP64 Central Directory in a P4K archive file.
 ///

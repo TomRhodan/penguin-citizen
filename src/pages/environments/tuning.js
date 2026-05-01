@@ -32,6 +32,7 @@ import { escapeHtml } from '../../utils.js';
 import { showNotification } from '../../utils/dialogs.js';
 import { getState, setState } from './state.js';
 import { debugLog, renderHint } from './utils.js';
+import { loadProfileStatus } from './profiles.js';
 
 // ── Constants ──
 
@@ -285,6 +286,90 @@ export function resolveTuningName(actionName) {
 }
 
 /**
+ * Derives a human-readable SC mode label from an action name and its resolved
+ * tuning tag. The action-name prefix is checked first because some tags are
+ * shared across modes (e.g. EVA roll writes to `fps_view_roll`, but conceptually
+ * belongs to EVA, not to On Foot).
+ */
+export function deriveModeLabel(actionName, tuningTag) {
+  const a = actionName || '';
+  const tag = tuningTag || '';
+  if (a.startsWith('eva_'))    return t('environments:tuning.mode.eva', 'EVA');
+  if (a.startsWith('mgv_'))    return t('environments:tuning.mode.groundVehicle', 'Ground Vehicle');
+  if (a.startsWith('player_')) return t('environments:tuning.mode.onFoot', 'On Foot');
+  if (a.startsWith('turret_')) return t('environments:tuning.mode.turrets', 'Turrets');
+  if (a.startsWith('weapon_')) return t('environments:tuning.mode.weapons', 'Weapons');
+  if (a.includes('mining'))    return t('environments:tuning.mode.mining', 'Mining');
+  if (tag.startsWith('flight_')) return t('environments:tuning.mode.flight', 'Flight');
+  if (tag.startsWith('turret_')) return t('environments:tuning.mode.turrets', 'Turrets');
+  if (tag.startsWith('mgv_'))    return t('environments:tuning.mode.groundVehicle', 'Ground Vehicle');
+  if (tag.startsWith('fps_'))    return t('environments:tuning.mode.onFoot', 'On Foot');
+  if (tag.startsWith('weapon_')) return t('environments:tuning.mode.weapons', 'Weapons');
+  if (tag === 'mining')          return t('environments:tuning.mode.mining', 'Mining');
+  return t('environments:tuning.mode.generic', 'Generic');
+}
+
+/**
+ * Finds other bindings on the same hardware axis that resolve to a *different*
+ * tuning tag — i.e. would be edited as separate SC curves. The input prefix
+ * (e.g. `js1_`) implicitly identifies the device; same input + same tag means
+ * the same curve, so those entries are filtered out.
+ */
+export function findRelatedBindingsOnAxis(allBindings, currentInput, currentAction, currentTag) {
+  const found = [];
+  for (const group of (allBindings || [])) {
+    for (const b of (group.bindings || [])) {
+      if (b.current_input !== currentInput) continue;
+      if (group.action_name === currentAction) continue;
+      const otherTag = resolveTuningName(group.action_name);
+      if (otherTag === currentTag) continue;
+      found.push({
+        action_name: group.action_name,
+        display_name: group.display_name || group.action_name,
+        category: group.category,
+        category_label: group.category_label,
+        tag: otherTag,
+        mode_label: deriveModeLabel(group.action_name, otherTag),
+      });
+    }
+  }
+  return found;
+}
+
+/**
+ * Compares profile tuning/axis values to the live SC values for the same
+ * action (via tuning tag + axis input). Returns one of "ok" | "differs" |
+ * "missing" | null. Null means no live data was available — callers should
+ * hide the badge entirely in that case.
+ */
+function compareLiveTuning(liveSettings, deviceType, instance, productName, tag, axisInput, profileTuning, profileAxisOpt) {
+  if (!liveSettings || !Array.isArray(liveSettings.devices)) return null;
+  const liveDevice = liveSettings.devices.find(d =>
+    d.device_type === deviceType
+    && d.instance === instance
+    && (d.product === productName
+        || (productName || '').includes(d.product || '')
+        || (d.product || '').includes(productName || ''))
+  );
+  if (!liveDevice) return 'missing';
+  const liveTuning = (liveDevice.tuning || []).find(tn => tn.name === tag);
+  const liveAxisOpt = (liveDevice.axis_options || []).find(o => o.input === axisInput);
+  if (!liveTuning && !liveAxisOpt) return 'missing';
+
+  const eq = (a, b) => Math.abs((a ?? 0) - (b ?? 0)) < 1e-4;
+  const tuningOk = !liveTuning || (
+    (liveTuning.invert ?? 0) === (profileTuning.invert ?? 0)
+    && eq(liveTuning.exponent ?? 1.0, profileTuning.exponent ?? 1.0)
+    && eq(liveTuning.sensitivity ?? 1.0, profileTuning.sensitivity ?? 1.0)
+  );
+  const axisOk = !liveAxisOpt || (
+    eq(liveAxisOpt.deadzone ?? 0.0, profileAxisOpt.deadzone ?? 0.0)
+    && eq(liveAxisOpt.saturation ?? 1.0, profileAxisOpt.saturation ?? 1.0)
+  );
+  return (tuningOk && axisOk) ? 'ok' : 'differs';
+}
+
+/**
  * Saves tuning data for a specific device instance back to the profile.
  */
 export async function saveTuningForDevice(instance, deviceType) {
@@ -360,12 +445,20 @@ export function renderDeviceMapCollapsible() {
 }
 
 /**
- * Opens a modal to configure tuning (curves, inversions, deadzones) for a single
- * axis binding. Loads the current device tuning, lets the user adjust exponent,
- * deadzone, saturation and invert, and persists the result via update_device_tuning.
+ * Opens a modal to configure tuning for a single axis binding. The dialog is
+ * contextual: the SC mode (Flight, EVA, Ground Vehicle, …) is auto-derived
+ * from the action name and resolved tuning tag — the user never picks a mode.
+ *
+ * The layout makes the *scope* of each control explicit:
+ *   • Per Mode  (invert, sensitivity, exponent) — only this mode's curve
+ *   • Per Axis  (deadzone, saturation)          — every binding on this input
+ * It also surfaces related bindings on the same axis that resolve to a
+ * different curve, and (best-effort) compares profile values to the live SC
+ * installation via `read_live_sc_settings`.
  */
 export async function openTuningEditor(actionName, category, currentInput, deviceType, targetInstance) {
-  const { activeScVersion: v, lastRestoredBackupId: profileId, completeBindingList } = getState();
+  const state = getState();
+  const { activeScVersion: v, lastRestoredBackupId: profileId, completeBindingList, config } = state;
 
   if (!v || !profileId) {
     showNotification(t('environments:notification.noProfileLoaded', 'Kein Profil geladen'), 'error');
@@ -373,12 +466,19 @@ export async function openTuningEditor(actionName, category, currentInput, devic
   }
 
   const tuningName = resolveTuningName(actionName);
+  const modeLabel = deriveModeLabel(actionName, tuningName);
   const axisInput = currentInput.split('_').pop();
   const displayName = (completeBindingList.find(b => b.action_name === actionName) || {}).display_name || '';
+  const relatedBindings = findRelatedBindingsOnAxis(completeBindingList, currentInput, actionName, tuningName);
 
   try {
     debugLog('TUNING', 'info', `Fetching tuning data: v=${v}, profile_id=${profileId}`);
-    const devices = await invoke('get_device_tuning', { v, profileId });
+    const [devices, liveSettings] = await Promise.all([
+      invoke('get_device_tuning', { v, profileId }),
+      config?.install_path
+        ? invoke('read_live_sc_settings', { gp: config.install_path, v }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
     debugLog('TUNING', 'info', `Fetched ${devices.length} devices from profile`);
 
     const device = devices.find(d => d.instance === targetInstance && d.device_type === deviceType);
@@ -388,8 +488,49 @@ export async function openTuningEditor(actionName, category, currentInput, devic
       return;
     }
 
-    const currentTuning = device.tuning.find(tn => tn.name === tuningName) || { name: tuningName, invert: 0, exponent: 1.0, sensitivity: 1.0 };
-    const axisOption = device.axis_options.find(o => o.input === axisInput) || { input: axisInput, deadzone: 0.0, saturation: 1.0 };
+    const currentTuning = device.tuning.find(tn => tn.name === tuningName)
+      || { name: tuningName, invert: 0, exponent: 1.0, sensitivity: 1.0 };
+    const axisOption = device.axis_options.find(o => o.input === axisInput)
+      || { input: axisInput, deadzone: 0.0, saturation: 1.0 };
+
+    const syncState = compareLiveTuning(
+      liveSettings, deviceType, targetInstance, device.product,
+      tuningName, axisInput, currentTuning, axisOption,
+    );
+
+    const relatedHtml = relatedBindings.length === 0 ? '' : `
+      <div class="tuning-related">
+        <div class="tuning-section-header tuning-section-header--neutral">
+          ${t('environments:tuning.relatedBindings.header', { input: currentInput })}
+        </div>
+        <div class="tuning-related-list">
+          ${relatedBindings.map(rb => `
+            <div class="tuning-related-row">
+              <span class="tuning-mode-pill tuning-mode-pill--alt">${escapeHtml(rb.mode_label)}</span>
+              <span class="tuning-related-name">${escapeHtml(rb.display_name)}</span>
+              <span class="tuning-related-tag">→ ${escapeHtml(rb.tag)} <span class="tuning-related-meta">(${t('environments:tuning.relatedBindings.separateCurve', 'separate curve')})</span></span>
+              <button class="tuning-related-tune"
+                      data-action="tune-related"
+                      data-action-name="${escapeHtml(rb.action_name)}"
+                      data-category="${escapeHtml(rb.category || '')}">
+                ${t('environments:tuning.relatedBindings.tune', 'Tune ↗')}
+              </button>
+            </div>
+          `).join('')}
+        </div>
+        <div class="tuning-related-note">${t('environments:tuning.relatedBindings.note')}</div>
+      </div>
+    `;
+
+    const syncHtml = syncState === null ? '' : `
+      <div class="tuning-sync tuning-sync--${syncState}">
+        <span class="tuning-sync-pill">
+          ${syncState === 'ok' ? '✓' : (syncState === 'differs' ? '⚠' : '·')}
+          ${t(`environments:tuning.sync.${syncState}`)}
+        </span>
+        <span class="tuning-sync-desc">${t(`environments:tuning.sync.${syncState}Desc`)}</span>
+      </div>
+    `;
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -403,6 +544,24 @@ export async function openTuningEditor(actionName, category, currentInput, devic
           <button class="btn-close modal-close-btn" data-action="close-tuning-editor">×</button>
         </div>
         <div class="modal-body">
+
+          <div class="tuning-mode-banner">
+            <div class="tuning-mode-banner-label">${t('environments:tuning.modeBanner.label', 'MODE · auto-detected')}</div>
+            <div class="tuning-mode-banner-name">${escapeHtml(modeLabel)}</div>
+            <div class="tuning-mode-banner-tag">${escapeHtml(tuningName)}</div>
+          </div>
+
+          <div class="tuning-action-context">
+            <div class="tuning-action-display">${escapeHtml(displayName || actionName)}</div>
+            <div class="tuning-action-meta">
+              <span class="tuning-action-meta-mono">${escapeHtml(actionName)}</span>
+              <span class="tuning-action-meta-sep">·</span>
+              <span>${escapeHtml(device.product || '')}</span>
+              <span class="tuning-action-meta-sep">·</span>
+              <span class="tuning-action-meta-mono">${escapeHtml(currentInput)}</span>
+            </div>
+          </div>
+
           <div class="tuning-canvas-container">
             <div class="tuning-grid-overlay"></div>
             <div class="tuning-axis-labels">
@@ -418,46 +577,62 @@ export async function openTuningEditor(actionName, category, currentInput, devic
             <canvas id="tuningCurve" width="470" height="220" style="position: relative; z-index: 2;"></canvas>
           </div>
 
-          <div class="tuning-info">
-            <div class="tuning-device-name">${escapeHtml(device.product)}</div>
-            <div class="tuning-action-name">${displayName ? escapeHtml(displayName) : actionName} <span class="text-muted">(${currentInput})</span></div>
-          </div>
-
-          <div class="tuning-grid">
-            <label class="filter-toggle">
+          <div class="tuning-scope-block tuning-scope-block--per-mode">
+            <div class="tuning-section-header tuning-section-header--per-mode">
+              ⚡ ${t('environments:tuning.perMode.header', { mode: modeLabel })}
+            </div>
+            <label class="filter-toggle tuning-toggle-row">
               <span class="toggle-switch">
                 <input type="checkbox" id="tuningInvert" ${currentTuning.invert ? 'checked' : ''}>
                 <span class="toggle-slider"></span>
               </span>
-              <span>${t('environments:tuning.invert', 'Invert Axis')}</span>
+              <span>${t('environments:tuning.invert', 'Invert axis')}</span>
             </label>
-
             <div class="tuning-section">
               <div class="tuning-slider-label">
-                <span><svg style="vertical-align: middle; margin-right: 4px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-4-7-4 7h8Z"/><path d="M12 18v-7"/><path d="M4 22v-3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3"/><path d="m6 11 4-7 4 7H6Z"/></svg> ${t('environments:tuning.exponent', 'Curve Exponent')}</span>
+                <span>${t('environments:tuning.sensitivity', 'Sensitivity')}</span>
+                <span class="tuning-value-badge" id="valSensitivity">${(currentTuning.sensitivity || 1.0).toFixed(2)}</span>
+              </div>
+              <input type="range" class="tuning-range" id="tuningSensitivity" min="0.1" max="2.0" step="0.05" value="${currentTuning.sensitivity || 1.0}">
+            </div>
+            <div class="tuning-section">
+              <div class="tuning-slider-label">
+                <span>${t('environments:tuning.exponent', 'Curve Exponent')}</span>
                 <span class="tuning-value-badge" id="valExponent">${(currentTuning.exponent || 1.0).toFixed(2)}</span>
               </div>
               <input type="range" class="tuning-range" id="tuningExponent" min="0.5" max="3.5" step="0.05" value="${currentTuning.exponent || 1.0}">
             </div>
+          </div>
 
+          <div class="tuning-scope-block tuning-scope-block--per-axis">
+            <div class="tuning-section-header tuning-section-header--per-axis">
+              ⚠ ${t('environments:tuning.perAxis.header', { input: currentInput })}
+            </div>
             <div class="tuning-section">
               <div class="tuning-slider-label">
-                <span><svg style="vertical-align: middle; margin-right: 4px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="4" rx="2"/><path d="M12 12v10"/><path d="m16 18-4 4-4-4"/></svg> ${t('environments:tuning.deadzone', 'Deadzone')}</span>
+                <span>${t('environments:tuning.deadzone', 'Deadzone')}</span>
                 <span class="tuning-value-badge" id="valDeadzone">${(axisOption.deadzone || 0.0).toFixed(2)}</span>
               </div>
               <input type="range" class="tuning-range" id="tuningDeadzone" min="0" max="0.5" step="0.01" value="${axisOption.deadzone || 0.0}">
             </div>
-
             <div class="tuning-section">
               <div class="tuning-slider-label">
-                <span><svg style="vertical-align: middle; margin-right: 4px;" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M5 20v-4"/><path d="M9 20v-8"/><path d="M13 20v-12"/><path d="M17 20v-16"/></svg> ${t('environments:tuning.saturation', 'Saturation')}</span>
+                <span>${t('environments:tuning.saturation', 'Saturation')}</span>
                 <span class="tuning-value-badge" id="valSaturation">${(axisOption.saturation || 1.0).toFixed(2)}</span>
               </div>
               <input type="range" class="tuning-range" id="tuningSaturation" min="0.5" max="1.0" step="0.01" value="${axisOption.saturation || 1.0}">
             </div>
           </div>
+
+          ${relatedHtml}
+          ${syncHtml}
+
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer modal-footer--tuning">
+          <button class="btn btn-secondary" id="btn-tuning-reset" title="${t('environments:tuning.reset', 'Reset to defaults')}">
+            ↺ ${t('environments:tuning.reset', 'Reset to defaults')}
+          </button>
+          <span class="modal-footer-spacer"></span>
           <button class="btn btn-secondary" data-action="close-tuning-editor">${t('common:cancel', 'Cancel')}</button>
           <button class="btn btn-primary" id="btn-save-tuning">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -473,6 +648,16 @@ export async function openTuningEditor(actionName, category, currentInput, devic
     };
     modal.querySelectorAll('[data-action="close-tuning-editor"]').forEach(btn => btn.addEventListener('click', closeTuning));
 
+    modal.querySelectorAll('[data-action="tune-related"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const otherAction = btn.dataset.actionName;
+        const otherCategory = btn.dataset.category;
+        closeTuning();
+        // Reopen for the related curve on the same hardware axis/device.
+        setTimeout(() => openTuningEditor(otherAction, otherCategory, currentInput, deviceType, targetInstance), 220);
+      });
+    });
+
     const canvas = modal.querySelector('#tuningCurve');
     const drawCurve = () => {
       const ctx = canvas.getContext('2d');
@@ -483,7 +668,6 @@ export async function openTuningEditor(actionName, category, currentInput, devic
       const sat = parseFloat(modal.querySelector('#tuningSaturation').value);
 
       ctx.clearRect(0, 0, w, h);
-
       ctx.fillStyle = 'rgba(6, 182, 212, 0.02)';
       ctx.fillRect(0, 0, w, h);
 
@@ -497,12 +681,10 @@ export async function openTuningEditor(actionName, category, currentInput, devic
       for (let x = 0; x <= w; x++) {
         const input = x / w;
         let output = 0;
-
         if (input > dz) {
           const tn = Math.max(0, Math.min(1, (input - dz) / (sat - dz)));
           output = Math.pow(tn, exp);
         }
-
         const canvasY = h - (output * h);
         if (x === 0) ctx.moveTo(x, canvasY);
         else ctx.lineTo(x, canvasY);
@@ -521,7 +703,6 @@ export async function openTuningEditor(actionName, category, currentInput, devic
         ctx.stroke();
         ctx.setLineDash([]);
       }
-
       if (sat < 1.0) {
         ctx.strokeStyle = 'rgba(234, 179, 8, 0.4)';
         ctx.setLineDash([4, 4]);
@@ -537,36 +718,66 @@ export async function openTuningEditor(actionName, category, currentInput, devic
       input.addEventListener('input', (e) => {
         const id = e.target.id;
         const val = parseFloat(e.target.value).toFixed(2);
-        if (id === 'tuningExponent') modal.querySelector('#valExponent').textContent = val;
-        if (id === 'tuningDeadzone') modal.querySelector('#valDeadzone').textContent = val;
-        if (id === 'tuningSaturation') modal.querySelector('#valSaturation').textContent = val;
+        if (id === 'tuningSensitivity') modal.querySelector('#valSensitivity').textContent = val;
+        if (id === 'tuningExponent')    modal.querySelector('#valExponent').textContent = val;
+        if (id === 'tuningDeadzone')    modal.querySelector('#valDeadzone').textContent = val;
+        if (id === 'tuningSaturation')  modal.querySelector('#valSaturation').textContent = val;
         drawCurve();
       });
     });
 
+    modal.querySelector('#btn-tuning-reset').addEventListener('click', () => {
+      // Reset only the controls in this dialog. Per-axis defaults (deadzone=0,
+      // saturation=1) still affect every binding on this input — same scope
+      // semantics as a manual edit.
+      modal.querySelector('#tuningInvert').checked = false;
+      const setRange = (id, value, badgeId) => {
+        const el = modal.querySelector(`#${id}`);
+        el.value = String(value);
+        modal.querySelector(`#${badgeId}`).textContent = value.toFixed(2);
+      };
+      setRange('tuningSensitivity', 1.0, 'valSensitivity');
+      setRange('tuningExponent',    1.0, 'valExponent');
+      setRange('tuningDeadzone',    0.0, 'valDeadzone');
+      setRange('tuningSaturation',  1.0, 'valSaturation');
+      drawCurve();
+    });
+
     modal.querySelector('#btn-save-tuning').addEventListener('click', async () => {
       try {
-        const exponent = parseFloat(modal.querySelector('#tuningExponent').value);
-        const deadzone = parseFloat(modal.querySelector('#tuningDeadzone').value);
+        const sensitivity = parseFloat(modal.querySelector('#tuningSensitivity').value);
+        const exponent   = parseFloat(modal.querySelector('#tuningExponent').value);
+        const deadzone   = parseFloat(modal.querySelector('#tuningDeadzone').value);
         const saturation = parseFloat(modal.querySelector('#tuningSaturation').value);
-        const invert = modal.querySelector('#tuningInvert').checked ? 1 : 0;
+        const invert     = modal.querySelector('#tuningInvert').checked ? 1 : 0;
 
-        const updatedTuning = [...device.tuning.filter(tn => tn.name !== tuningName), { name: tuningName, invert, exponent, sensitivity: currentTuning.sensitivity || 1.0 }];
-        const updatedDeadzones = [...device.axis_options.filter(o => o.input !== axisInput), { input: axisInput, deadzone, saturation }];
+        const updatedTuning = [
+          ...device.tuning.filter(tn => tn.name !== tuningName),
+          { name: tuningName, invert, exponent, sensitivity },
+        ];
+        const updatedAxisOptions = [
+          ...device.axis_options.filter(o => o.input !== axisInput),
+          { input: axisInput, deadzone, saturation },
+        ];
 
         await invoke('update_device_tuning', {
           v,
           profileId,
           instance: targetInstance,
           deviceType,
-          axisOptions: updatedDeadzones,
+          axisOptions: updatedAxisOptions,
           tuning: updatedTuning,
         });
 
         showNotification(t('environments:notification.tuningSaved', 'Tuning saved successfully'), 'success');
         closeTuning();
-        await loadDeviceTuning();
-        // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments() to refresh active-tuning highlight in matrix
+        await Promise.all([loadDeviceTuning(), loadProfileStatus()]);
+        // Re-render so the profile-status banner ("Synchron"/"Profil weicht ab") and
+        // the per-binding tuning glow reflect the new state. The render hook lives
+        // on window so this module stays decoupled from index.js.
+        if (typeof window !== 'undefined' && typeof window.renderEnvironments === 'function') {
+          window.renderEnvironments();
+        }
       } catch (err) {
         debugLog('TUNING', 'error', `Save failed: ${err}`);
         showNotification(t('environments:notification.saveError', { error: err }), 'error');

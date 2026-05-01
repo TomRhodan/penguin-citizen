@@ -801,6 +801,29 @@ export async function loadUserCfgSettings() {
 }
 
 /**
+ * Returns true when two attribute values represent the same setting. SC
+ * reformats floats on game exit ("1.4" ↔ "1.40000" ↔ "1.3999999") and
+ * sometimes pads/strips trailing zeros — those are not user-intent changes
+ * and shouldn't surface as sync conflicts. Numeric values are compared with a
+ * small tolerance; everything else falls back to string equality.
+ */
+function attrValuesEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  const sa = String(a).trim();
+  const sb = String(b).trim();
+  if (sa === sb) return true;
+  const fa = parseFloat(sa);
+  const fb = parseFloat(sb);
+  if (Number.isFinite(fa) && Number.isFinite(fb)
+      && /^-?\d*\.?\d+(?:[eE][+-]?\d+)?$/.test(sa)
+      && /^-?\d*\.?\d+(?:[eE][+-]?\d+)?$/.test(sb)) {
+    return Math.abs(fa - fb) < 1e-4;
+  }
+  return false;
+}
+
+/**
  * Detects conflicts between our last known attribute values and the current ones.
  * Called when the attributes hash has changed since our last read.
  */
@@ -811,7 +834,7 @@ export function detectAttributeConflicts(currentAttrsMap) {
     if (setting.target !== 'attributes' || !setting.attrName) continue;
     const ourValue = s.savedAttributesValues[setting.attrName];
     const scValue = currentAttrsMap[setting.attrName];
-    if (ourValue !== undefined && scValue !== undefined && ourValue !== scValue) {
+    if (ourValue !== undefined && scValue !== undefined && !attrValuesEqual(ourValue, scValue)) {
       pendingConflicts.push({
         key,
         label: setting.label,
