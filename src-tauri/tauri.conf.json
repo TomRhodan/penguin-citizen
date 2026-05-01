@@ -1,11 +1,16 @@
 {
   "productName": "Penguin Citizen",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "identifier": "de.penguincitizen.penguincitizen",
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage"],
-    "resources": ["resources/penguin-citizen-helper.exe"],
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "resources": [
+      "resources/penguin-citizen-helper.exe"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
