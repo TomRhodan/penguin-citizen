@@ -33,7 +33,7 @@ import { escapeHtml } from '../../utils.js';
 import { t } from '../../i18n.js';
 import { getState, setState, ESSENTIAL_ACTIONS } from './state.js';
 import { debugLog, renderHint, formatCategoryName } from './utils.js';
-import { openTuningEditor } from './tuning.js';
+import { openTuningEditor, resolveTuningName } from './tuning.js';
 
 // ==================== Data Loading ====================
 
@@ -610,30 +610,9 @@ export function renderBindingRows(items, categoryKey, columns) {
            lower.includes('_rot') || lower.includes('_throttle') || lower.includes('_slider');
   };
 
-  // Cross-module: needs deviceTuningData and resolveTuningName from environments.js tuning section
+  // Tuning state — uses the canonical resolveTuningName imported from tuning.js
+  // so the action→tag mapping stays single-source-of-truth (SC_ACTION_TO_TUNING_MAP).
   const deviceTuningData = s.deviceTuningData || [];
-
-  // Inline tuning name resolver (mirrors SC_ACTION_TO_TUNING_MAP from environments.js)
-  const resolveTuningName = (actionName) => {
-    if (!actionName) return 'master';
-    const map = {
-      'v_pitch': 'flight_move_pitch', 'v_yaw': 'flight_move_yaw', 'v_roll': 'flight_move_roll',
-      'v_strafe_vertical': 'flight_move_strafe_vertical', 'v_strafe_up': 'flight_move_strafe_vertical',
-      'v_strafe_down': 'flight_move_strafe_vertical', 'v_strafe_horizontal': 'flight_move_strafe_lateral',
-      'v_strafe_lateral': 'flight_move_strafe_lateral', 'v_strafe_left': 'flight_move_strafe_lateral',
-      'v_strafe_right': 'flight_move_strafe_lateral', 'v_strafe_longitudinal': 'flight_move_strafe_longitudinal',
-      'v_strafe_forward': 'flight_strafe_forward', 'v_strafe_backward': 'flight_strafe_backward',
-      'v_ifcs_speed_limiter_abs': 'flight_move_speed_range_abs', 'v_ifcs_speed_limiter_rel': 'flight_move_speed_range_rel',
-      'v_ifcs_throttle_abs': 'flight_throttle_abs', 'v_ifcs_throttle_rel': 'flight_throttle_rel',
-      'v_throttle_abs': 'flight_throttle_abs', 'v_throttle_rel': 'flight_throttle_rel',
-      'v_view_pitch': 'flight_view', 'v_view_yaw': 'flight_view',
-      'v_mining_throttle': 'mining_throttle', 'v_increase_mining_throttle': 'mining_throttle',
-      'v_decrease_mining_throttle': 'mining_throttle', 'v_aim_pitch': 'flight_aim', 'v_aim_yaw': 'flight_aim',
-      'turret_pitch': 'turret_aim', 'turret_yaw': 'turret_aim',
-      'v_ifcs_accel_limiter_abs': 'flight_move_accel_range_abs', 'v_ifcs_accel_limiter_rel': 'flight_move_accel_range_rel',
-    };
-    return map[actionName] || actionName;
-  };
 
   return filteredGroups.map(group => {
     let rowHtml = `
@@ -896,7 +875,7 @@ export async function openBindingEditor(actionName, category, currentInput, defa
         </div>
         <div class="binding-editor-device">
           <label>${t('environments:binding.editor.device')}</label>
-          <select id="capture-device-select" class="capture-device-select" aria-label="${t('environments:binding.editor.device')}">
+          <select id="capture-device-select" class="input input-sm capture-device-select" aria-label="${t('environments:binding.editor.device')}">
             <option value="">${t('environments:binding.editor.loadingDevices')}</option>
           </select>
         </div>

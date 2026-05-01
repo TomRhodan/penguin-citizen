@@ -292,7 +292,11 @@ html, body {
   font-size: var(--font-sm);
   font-family: var(--font-mono);
   width: 100%;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+}
+
+.input:hover:not(:disabled):not(:focus) {
+  border-color: var(--border-hover);
 }
 
 .input:focus {
@@ -301,19 +305,47 @@ html, body {
   box-shadow: var(--input-focus-ring);
 }
 
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Compact input variant for inline rows where the full-size input is too tall */
+.input-sm {
+  padding: 7px 12px;
+  font-size: var(--font-sm);
+  width: auto;
+}
+
+/* Native <select> styled to match other inputs: hidden chevron replaced by a
+ * clean cyan-tinged SVG that lifts on hover. The native option list still uses
+ * the OS theme — that's a deliberate trade-off for accessibility. */
 select.input {
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b9ab0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  /* chevron-down icon, stroke uses --text-secondary so it sits quietly when idle */
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238899aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  padding-right: 32px;
+  padding-right: 36px;
+}
+
+select.input.input-sm {
+  background-position: right 8px center;
+  padding-right: 28px;
+}
+
+/* Hover and focus: chevron switches to cyan to mirror the border treatment */
+select.input:hover:not(:disabled):not(:focus),
+select.input:focus {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2306b6d4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 select.input option {
   background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 /* Page Header */
@@ -434,6 +466,42 @@ select.input option {
 
 .modal-kind-danger { border-color: rgba(239, 68, 68, 0.5); }
 .modal-kind-warning { border-color: rgba(234, 179, 8, 0.5); }
+
+/* Apply-target dialog (environment confirmation) */
+.apply-target-message {
+  margin: 0 0 16px 0;
+}
+
+.apply-target-env {
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 16px;
+  margin: 0 0 16px 0;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: 6px;
+  font-family: monospace;
+  letter-spacing: 0.05em;
+  color: var(--warning);
+}
+
+.apply-target-skip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  user-select: none;
+  margin-top: 8px;
+}
+
+.apply-target-skip input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
 
 /* Wide modal variant (for diffs) */
 .modal-wide {

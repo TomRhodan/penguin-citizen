@@ -574,6 +574,7 @@ pub fn run() {
                 sc_config::versions::read_attributes_map,
                 sc_config::versions::write_attributes_partial,
                 sc_config::versions::get_attributes_hash,
+                sc_config::versions::read_live_sc_settings,
 
                 // Binding editor (parse actionmaps, assign/remove bindings)
                 sc_config::bindings::parse_actionmaps,

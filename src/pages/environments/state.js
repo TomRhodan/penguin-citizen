@@ -86,6 +86,13 @@ const INITIAL_STATE = Object.freeze({
 
   // ── Tuning ──
   deviceTuningData: [],
+
+  // ── Compare-with-SC diagnose panel ──
+  liveSettings: null,
+  liveSettingsLoadedAt: null,
+  liveSettingsError: null,
+  compareFilter: 'diff-only',
+  compareSearch: '',
 });
 
 /** Live state — the single mutable source of truth */
@@ -111,7 +118,7 @@ export const ESSENTIAL_ACTIONS = new Set([
 function createState() {
   return {
     ...INITIAL_STATE,
-    collapsedCategories: new Set(['quality', 'shaders', 'textures', 'effects', 'clarity', 'lod', 'input', 'advanced']),
+    collapsedCategories: new Set(['quality', 'shaders', 'textures', 'effects', 'clarity', 'audio', 'combat', 'cameralead', 'tracking', 'lod', 'input', 'advanced']),
   };
 }
 

@@ -127,6 +127,106 @@ export function confirm(message, options = {}) {
 }
 
 /**
+ * Session-scoped skip flags for confirmApplyTarget. Keyed by a caller-provided
+ * scope string so e.g. "usercfg" and "profile" skips are independent.
+ */
+const _applyTargetSkipScopes = new Set();
+
+/**
+ * Confirmation dialog specifically for "apply to environment" actions, which
+ * the user wanted to be made unmistakable so settings cannot land in the wrong
+ * Star Citizen environment by accident. Highlights the target env name visually
+ * and offers a "don't ask again this session" checkbox per scope.
+ *
+ * @param {string} envName - The environment that will be written to (LIVE/PTU/...).
+ * @param {Object} [options]
+ * @param {string} [options.title] - Modal title.
+ * @param {string} [options.message] - Body text. {{env}} is replaced with envName.
+ * @param {string} [options.okLabel] - OK button label.
+ * @param {string} [options.skipScope] - Session-skip scope key (e.g. "usercfg").
+ * @returns {Promise<boolean>} true if confirmed, false if cancelled.
+ */
+export function confirmApplyTarget(envName, options = {}) {
+  const {
+    title = t('dialogs:applyTarget.defaultTitle', { defaultValue: 'Confirm target environment' }),
+    message = t('dialogs:applyTarget.defaultMessage', {
+      env: envName,
+      defaultValue: 'These changes will be written to the Star Citizen "{{env}}" environment.',
+    }),
+    okLabel = t('dialogs:applyTarget.defaultOk', { env: envName, defaultValue: 'Apply to {{env}}' }),
+    cancelLabel = t('dialogs:confirm.defaultCancel'),
+    skipScope = null,
+  } = options;
+
+  if (skipScope && _applyTargetSkipScopes.has(skipScope)) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-container modal-kind-warning" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="modal-icon-warning"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <h3>${escapeHtml(title)}</h3>
+          </div>
+        </div>
+        <div class="modal-body">
+          <p class="apply-target-message">${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+          <div class="apply-target-env">${escapeHtml(envName)}</div>
+          ${skipScope ? `
+            <label class="apply-target-skip">
+              <input type="checkbox" id="apply-target-skip">
+              ${escapeHtml(t('dialogs:applyTarget.skipSession', { defaultValue: "Don't ask again this session" }))}
+            </label>
+          ` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="modal-cancel">${escapeHtml(cancelLabel)}</button>
+          <button class="btn btn-primary" id="modal-ok">${escapeHtml(okLabel)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('show'));
+
+    const cleanup = (result) => {
+      if (result && skipScope) {
+        const cb = overlay.querySelector('#apply-target-skip');
+        if (cb && cb.checked) _applyTargetSkipScopes.add(skipScope);
+      }
+      overlay.classList.remove('show');
+      setTimeout(() => {
+        overlay.remove();
+        resolve(result);
+      }, 200);
+    };
+
+    overlay.querySelector('#modal-cancel').addEventListener('click', () => cleanup(false));
+    overlay.querySelector('#modal-ok').addEventListener('click', () => cleanup(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        window.removeEventListener('keydown', handleEscape);
+        cleanup(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+  });
+}
+
+/**
+ * Resets the session skip flags for confirmApplyTarget. Useful when the user
+ * switches environments — keeps the safety net active across env changes.
+ */
+export function resetApplyTargetSkip(scope) {
+  if (scope) _applyTargetSkipScopes.delete(scope);
+  else _applyTargetSkipScopes.clear();
+}
+
+/**
  * Displays a custom input dialog with a text field.
  *
  * Replaces the native `prompt()` dialog with a styled modal.

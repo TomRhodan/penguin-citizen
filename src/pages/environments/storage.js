@@ -81,7 +81,7 @@ function renderShareDataP4kSection(activeVersion, scVersions) {
         </div>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
           <label for="share-target-select" style="white-space: nowrap;">${t('environments:storage.targetLabel')}:</label>
-          <select id="share-target-select" class="btn btn-sm" style="flex: 1; background: var(--bg-secondary);">
+          <select id="share-target-select" class="input input-sm" style="flex: 1;">
             ${targetOptions}
           </select>
         </div>

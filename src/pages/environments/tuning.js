@@ -35,38 +35,75 @@ import { debugLog, renderHint } from './utils.js';
 
 // ── Constants ──
 
-/** SC tuning categories with human-readable labels */
+/**
+ * SC tuning category tag names with human-readable labels.
+ * All tag names verified empirically by changing each slider in SC's in-game
+ * Joystick Sensitivity Curves UI and observing the resulting actionmaps.xml.
+ * SC organises curves into 7 modes: Flight, Turrets, On Foot, FPS EVA,
+ * Ground Vehicle, Mining, Aiming and Weapons.
+ */
 export const SC_TUNING_LABELS = {
+  // ── Generic ──
   'master': 'Master',
-  'flight_move_pitch': 'Pitch',
-  'flight_move_yaw': 'Yaw',
-  'flight_move_roll': 'Roll',
-  'flight_move_strafe_vertical': 'Strafe Vertical',
-  'flight_move_strafe_lateral': 'Strafe Lateral',
-  'flight_move_strafe_longitudinal': 'Strafe Longitudinal',
-  'flight_strafe_longitudinal': 'Strafe Longitudinal',
-  'flight_strafe_forward': 'Strafe Forward',
-  'flight_strafe_backward': 'Strafe Backward',
-  'flight_throttle_abs': 'Throttle (Absolute)',
-  'flight_throttle_rel': 'Throttle (Relative)',
-  'flight_aim': 'Aim',
-  'flight_view': 'Free Look',
-  'turret_aim': 'Turret Aim',
-  'mining_throttle': 'Mining Throttle',
-  'mining_aim': 'Mining Aim',
-  'flight_move_speed_range_abs': 'Speed Range (Abs)',
-  'flight_move_speed_range_rel': 'Speed Range (Rel)',
-  'flight_move_accel_range_abs': 'Accel Range (Abs)',
-  'flight_move_accel_range_rel': 'Accel Range (Rel)',
   'throttle': 'Throttle',
   'viewaim': 'View / Aim',
+  // ── Flight ──
+  'flight_move_pitch': 'Flight — Pitch',
+  'flight_move_yaw': 'Flight — Yaw',
+  'flight_move_roll': 'Flight — Roll',
+  'flight_move_strafe_vertical': 'Flight — Strafe Vertical',
+  'flight_move_strafe_lateral': 'Flight — Strafe Lateral',
+  'flight_move_strafe_longitudinal': 'Flight — Strafe Longitudinal',
+  'flight_strafe_longitudinal': 'Flight — Strafe Longitudinal',
+  'flight_strafe_forward': 'Flight — Strafe Forward',
+  'flight_strafe_backward': 'Flight — Strafe Backward',
+  'flight_throttle_abs': 'Flight — Throttle (Absolute)',
+  'flight_throttle_rel': 'Flight — Throttle (Relative)',
+  'flight_move_speed_range_abs': 'Flight — Speed Range (Abs)',
+  'flight_move_speed_range_rel': 'Flight — Speed Range (Rel)',
+  'flight_move_accel_range_abs': 'Flight — Accel Range (Abs)',
+  'flight_move_accel_range_rel': 'Flight — Accel Range (Rel)',
+  'flight_aim': 'Flight — Aim',
+  'flight_view': 'Flight — Free Look',
+  // ── Turrets ──
+  'turret_aim': 'Turret — Aim',
+  // ── On Foot (verified) ──
+  'fps_view': 'On Foot — View',
+  'fps_move': 'On Foot — Movement',
+  // ── FPS EVA (verified) ──
+  // SC stores EVA's Roll under the fps_view_roll tag (shared with FPS view roll),
+  // but the strafe axes have dedicated eva_move_strafe_* tags.
+  'fps_view_roll': 'EVA — Roll',
+  'eva_move_strafe_lateral': 'EVA — Strafe Lateral',
+  'eva_move_strafe_longitudinal': 'EVA — Strafe Longitudinal',
+  'eva_move_strafe_vertical': 'EVA — Strafe Vertical',
+  // ── Ground Vehicle (verified) ──
+  'mgv_view_pitch': 'Ground Vehicle — View Pitch',
+  'mgv_view_yaw': 'Ground Vehicle — View Yaw',
+  'mgv_move': 'Ground Vehicle — Move (Forward/Backward)',
+  'mgv_move_forward': 'Ground Vehicle — Move Forward',
+  'mgv_move_backward': 'Ground Vehicle — Move Backward',
+  'mgv_move_pitch': 'Ground Vehicle — View Pitch (button)',
+  'mgv_move_yaw': 'Ground Vehicle — View Yaw (button)',
+  // ── Mining (verified) ──
+  // SC's "Mining" + "Mining Throttle" sliders both write to the single `mining`
+  // tag. The previously assumed `mining_throttle` tag is not used by current SC.
+  'mining': 'Mining',
+  'mining_throttle': 'Mining (legacy)',
+  'mining_aim': 'Mining — Aim',
+  // ── Aiming and Weapons (verified) ──
+  'weapon_convergence_distance_rel': 'Weapon — Convergence Distance (rel.)',
+  'weapon_convergence_distance_abs': 'Weapon — Convergence Distance (abs.)',
 };
 
 /**
- * Mapping between Star Citizen action names (bindings) and their
- * internal tuning category names (options tags).
+ * Mapping between Star Citizen action names (bindings) and their internal
+ * tuning category names (options tags). Used by the binding editor to surface
+ * the relevant curve next to a given action. Tag names verified by reading
+ * actionmaps.xml after toggling each slider in SC's in-game UI.
  */
 export const SC_ACTION_TO_TUNING_MAP = {
+  // ── Spaceship / Flight ──
   'v_pitch': 'flight_move_pitch',
   'v_yaw': 'flight_move_yaw',
   'v_roll': 'flight_move_roll',
@@ -80,7 +117,6 @@ export const SC_ACTION_TO_TUNING_MAP = {
   'v_strafe_longitudinal': 'flight_move_strafe_longitudinal',
   'v_strafe_forward': 'flight_strafe_forward',
   'v_strafe_backward': 'flight_strafe_backward',
-
   'v_ifcs_speed_limiter_abs': 'flight_move_speed_range_abs',
   'v_ifcs_speed_limiter_rel': 'flight_move_speed_range_rel',
   'v_ifcs_throttle_abs': 'flight_throttle_abs',
@@ -89,26 +125,74 @@ export const SC_ACTION_TO_TUNING_MAP = {
   'v_throttle_rel': 'flight_throttle_rel',
   'v_view_pitch': 'flight_view',
   'v_view_yaw': 'flight_view',
-  'v_mining_throttle': 'mining_throttle',
-  'v_increase_mining_throttle': 'mining_throttle',
-  'v_decrease_mining_throttle': 'mining_throttle',
   'v_aim_pitch': 'flight_aim',
   'v_aim_yaw': 'flight_aim',
-  'turret_pitch': 'turret_aim',
-  'turret_yaw': 'turret_aim',
   'v_ifcs_accel_limiter_abs': 'flight_move_accel_range_abs',
   'v_ifcs_accel_limiter_rel': 'flight_move_accel_range_rel',
+  // ── Turret ──
+  'turret_pitch': 'turret_aim',
+  'turret_yaw': 'turret_aim',
+  // ── EVA (verified) ──
+  // EVA's view (pitch/yaw/roll) shares the fps_view_* tags with On Foot;
+  // its strafe axes have dedicated eva_move_strafe_* tags.
+  'eva_view_pitch': 'fps_view',
+  'eva_view_pitch_up': 'fps_view',
+  'eva_view_pitch_down': 'fps_view',
+  'eva_view_pitch_mouse': 'fps_view',
+  'eva_view_yaw': 'fps_view',
+  'eva_view_yaw_left': 'fps_view',
+  'eva_view_yaw_right': 'fps_view',
+  'eva_view_yaw_mouse': 'fps_view',
+  'eva_roll': 'fps_view_roll',
+  'eva_roll_left': 'fps_view_roll',
+  'eva_roll_right': 'fps_view_roll',
+  'eva_strafe_lateral': 'eva_move_strafe_lateral',
+  'eva_strafe_left': 'eva_move_strafe_lateral',
+  'eva_strafe_right': 'eva_move_strafe_lateral',
+  'eva_strafe_longitudinal': 'eva_move_strafe_longitudinal',
+  'eva_strafe_forward': 'eva_move_strafe_longitudinal',
+  'eva_strafe_back': 'eva_move_strafe_longitudinal',
+  'eva_strafe_vertical': 'eva_move_strafe_vertical',
+  'eva_strafe_up': 'eva_move_strafe_vertical',
+  'eva_strafe_down': 'eva_move_strafe_vertical',
+  // ── Mining (verified) ──
+  // SC writes a single `mining` tag for the Mining and Mining Throttle sliders.
+  // Older internal mappings used `mining_throttle`; we now write to `mining`.
+  'v_mining_throttle': 'mining',
+  'v_increase_mining_throttle': 'mining',
+  'v_decrease_mining_throttle': 'mining',
 };
 
-/** All SC tuning categories that apply to joystick devices */
+/**
+ * Full list of SC tuning category tags that the editor exposes for joystick
+ * devices. Covers all 7 modes that SC's in-game Joystick Sensitivity Curves UI
+ * exposes (Flight, Turrets, On Foot, FPS EVA, Ground Vehicle, Mining,
+ * Aiming and Weapons). Tag names verified empirically.
+ */
 export const SC_TUNING_DEFAULTS = [
+  // Flight
   'flight_move_pitch', 'flight_move_yaw', 'flight_move_roll',
   'flight_move_strafe_vertical', 'flight_move_strafe_lateral', 'flight_move_strafe_longitudinal',
   'flight_strafe_forward', 'flight_strafe_backward', 'flight_strafe_longitudinal',
   'flight_throttle_abs', 'flight_throttle_rel',
   'flight_move_speed_range_abs', 'flight_move_speed_range_rel',
   'flight_move_accel_range_abs', 'flight_move_accel_range_rel',
-  'flight_aim', 'flight_view', 'turret_aim', 'mining_throttle',
+  'flight_aim', 'flight_view',
+  // Turrets
+  'turret_aim',
+  // On Foot
+  'fps_view', 'fps_move',
+  // FPS EVA (Roll shared with FPS view; strafe axes are EVA-specific)
+  'fps_view_roll',
+  'eva_move_strafe_lateral', 'eva_move_strafe_longitudinal', 'eva_move_strafe_vertical',
+  // Ground Vehicle
+  'mgv_view_pitch', 'mgv_view_yaw',
+  'mgv_move', 'mgv_move_forward', 'mgv_move_backward',
+  'mgv_move_pitch', 'mgv_move_yaw',
+  // Mining
+  'mining',
+  // Aiming and Weapons
+  'weapon_convergence_distance_rel', 'weapon_convergence_distance_abs',
 ];
 
 // ── Tuning Functions ──

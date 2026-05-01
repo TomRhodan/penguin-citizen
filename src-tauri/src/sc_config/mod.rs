@@ -353,6 +353,22 @@ pub struct DeviceTuningResponse {
     pub tuning: Vec<ScOptionsTuning>,
 }
 
+/// Snapshot of all settings sources for one SC environment, freshly read from disk.
+/// Used by the Compare-with-SC diagnose panel to verify mappings without launching SC.
+#[derive(Serialize, Clone)]
+pub struct ScLiveSettings {
+    /// Raw USER.cfg content (frontend parses with parseUserCfg)
+    pub user_cfg_raw: String,
+    /// Parsed attributes.xml as flat key-value map
+    pub attributes: HashMap<String, String>,
+    /// Per-device tuning entries from the live actionmaps.xml
+    pub devices: Vec<DeviceTuningResponse>,
+    /// File presence flags
+    pub user_cfg_exists: bool,
+    pub attributes_exists: bool,
+    pub actionmaps_exists: bool,
+}
+
 /// A single line in a file diff.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DiffLine {

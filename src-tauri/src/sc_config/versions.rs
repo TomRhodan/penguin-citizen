@@ -586,3 +586,77 @@ pub async fn import_from_version(gp: String, source_version: String, target_vers
 
     Ok(ImportResult { profiles_copied, controls_copied, characters_copied })
 }
+
+/// Reads all live SC settings sources for one environment in a single call.
+/// Used by the Compare-with-SC diagnose panel to display the on-disk state
+/// alongside the app's pending UI values, so mappings can be verified without
+/// starting the game.
+#[tauri::command]
+pub async fn read_live_sc_settings(gp: String, v: String) -> Result<ScLiveSettings, String> {
+    let base = sc_base_dir(&expand_tilde(&gp), &v)?;
+    let user_cfg_path = base.join("USER.cfg");
+    let attrs_path = base.join("user/client/0/Profiles/default/attributes.xml");
+    let actionmaps_path = base.join("user/client/0/Profiles/default/actionmaps.xml");
+
+    let user_cfg_exists = user_cfg_path.exists();
+    let user_cfg_raw = if user_cfg_exists {
+        fs::read_to_string(&user_cfg_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let attributes_exists = attrs_path.exists();
+    let attributes: HashMap<String, String> = if attributes_exists {
+        match fs::read_to_string(&attrs_path) {
+            Ok(c) => parse_attributes_str(&c)
+                .attrs
+                .into_iter()
+                .map(|a| (a.name, a.value))
+                .collect(),
+            Err(_) => HashMap::new(),
+        }
+    } else {
+        HashMap::new()
+    };
+
+    let actionmaps_exists = actionmaps_path.exists();
+    let mut devices: Vec<DeviceTuningResponse> = Vec::new();
+    if actionmaps_exists {
+        if let Ok(xml) = fs::read_to_string(&actionmaps_path) {
+            if let Ok(parsed) = parse_actionmaps_xml(&xml) {
+                let mut profiles = parsed.profiles;
+                let profile = profiles
+                    .iter()
+                    .position(|p| p.profile_name == "default")
+                    .map(|i| profiles.remove(i))
+                    .or_else(|| (!profiles.is_empty()).then(|| profiles.remove(0)));
+                if let Some(profile) = profile {
+                    let device_options = profile.device_options;
+                    for d in profile.devices {
+                        let axis_options = device_options
+                            .iter()
+                            .find(|o| o.name == d.product)
+                            .map(|o| o.options.clone())
+                            .unwrap_or_default();
+                        devices.push(DeviceTuningResponse {
+                            product: d.product,
+                            device_type: d.device_type,
+                            instance: d.instance,
+                            axis_options,
+                            tuning: d.tuning,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ScLiveSettings {
+        user_cfg_raw,
+        attributes,
+        devices,
+        user_cfg_exists,
+        attributes_exists,
+        actionmaps_exists,
+    })
+}

@@ -1949,6 +1949,66 @@
   background: rgba(99, 179, 237, 0.15);
 }
 
+/* Fresh-install banner: prominent prompt when env has no Penguin Citizen settings yet */
+.usercfg-fresh-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  margin-bottom: 12px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: 6px;
+  color: var(--text-primary, #ddd);
+}
+
+.usercfg-fresh-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.usercfg-fresh-banner-text strong {
+  color: var(--warning, #eab308);
+  font-size: var(--font-md, 14px);
+}
+
+.usercfg-fresh-banner-text span {
+  font-size: var(--font-sm, 13px);
+  color: var(--text-muted, #888);
+}
+
+.usercfg-fresh-banner button {
+  white-space: nowrap;
+}
+
+/* Cross-env settings import row — sits above the categories, near the sync bar.
+ * Uses the global .input/.input-sm select styling so it stays consistent with
+ * every other dropdown in the app. */
+.usercfg-import-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+
+.usercfg-import-label {
+  color: var(--text-secondary);
+  flex: 1;
+  font-family: var(--font-sans);
+}
+
+.usercfg-import-row select.input {
+  min-width: 130px;
+}
+
 /* Conflict resolution panel */
 .usercfg-conflict-panel {
   background: var(--surface, #1a1a2e);
@@ -2188,8 +2248,11 @@
   user-select: none;
 }
 
+/* Inline resolution preset select — kept intentionally tiny so it fits inside
+ * the width × height composer. Chevron behaviour mirrors the global select
+ * styling (idle muted, hover/focus cyan). */
 .usercfg-res-preset {
-  padding: 5px 24px 5px 8px;
+  padding: 5px 22px 5px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
@@ -2201,23 +2264,25 @@
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%235a6a7a' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238899aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 6px center;
+  transition: border-color var(--transition-fast), background-image 0s;
 }
 
 .usercfg-res-preset option {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
-.usercfg-res-preset:hover {
-  border-color: var(--border-hover);
+.usercfg-res-preset:hover,
+.usercfg-res-preset:focus {
+  border-color: var(--accent);
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2306b6d4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 .usercfg-res-preset:focus {
   outline: none;
-  border-color: var(--accent);
 }
 
 .usercfg-value {
@@ -3517,31 +3582,10 @@
   50% { opacity: 1; }
 }
 
+/* capture-device-select uses .input.input-sm for the look; this class only adds
+ * the full-width binding-editor layout override. */
 .capture-device-select {
   width: 100%;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  outline: none;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235a6a7a' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 28px;
-}
-
-.capture-device-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-dim);
-}
-
-.capture-device-select option {
-  background: var(--bg-card);
-  color: var(--text-primary);
 }
 
 .joystick-helper {
@@ -5144,4 +5188,324 @@
   height: 18px;
   cursor: pointer;
   accent-color: var(--accent);
+}
+
+/* ============================================================
+   Compare-with-SC diagnose panel
+   ============================================================ */
+
+.compare-panel {
+  padding: 16px;
+}
+
+.compare-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.compare-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 1.25rem;
+}
+
+.compare-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+}
+
+.compare-files {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.compare-file-badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: monospace;
+  border: 1px solid var(--border, #333);
+}
+
+.compare-file-badge.present {
+  background: rgba(80, 200, 120, 0.1);
+  border-color: rgba(80, 200, 120, 0.4);
+  color: rgb(120, 220, 150);
+}
+
+.compare-file-badge.missing {
+  background: rgba(220, 90, 90, 0.1);
+  border-color: rgba(220, 90, 90, 0.4);
+  color: rgb(240, 130, 130);
+}
+
+.compare-summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.compare-pill {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  background: var(--bg-tertiary, #2a2a35);
+  border: 1px solid var(--border, #333);
+}
+
+.compare-pill[data-filter] {
+  cursor: pointer;
+}
+
+.compare-pill[data-filter]:hover {
+  border-color: var(--border-hover, #555);
+}
+
+.compare-pill.diff,
+.compare-pill.mismatch {
+  background: rgba(240, 180, 60, 0.12);
+  border-color: rgba(240, 180, 60, 0.3);
+  color: rgb(245, 200, 100);
+}
+
+.compare-pill.match {
+  background: rgba(80, 200, 120, 0.1);
+  border-color: rgba(80, 200, 120, 0.3);
+  color: rgb(120, 220, 150);
+}
+
+.compare-pill.only-sc {
+  background: rgba(140, 160, 200, 0.08);
+  border-color: rgba(140, 160, 200, 0.25);
+  color: rgb(170, 190, 220);
+}
+
+.compare-pill.only-app {
+  background: rgba(220, 90, 90, 0.1);
+  border-color: rgba(220, 90, 90, 0.3);
+  color: rgb(240, 130, 130);
+}
+
+.compare-pill.tuning {
+  background: rgba(120, 160, 240, 0.1);
+  border-color: rgba(120, 160, 240, 0.3);
+  color: rgb(150, 190, 250);
+}
+
+.compare-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border, #333);
+  padding-bottom: 12px;
+}
+
+.compare-filter-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--border, #333);
+  color: var(--text-primary, #ddd);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.15s;
+}
+
+.compare-filter-btn:hover {
+  background: var(--bg-tertiary, #2a2a35);
+  border-color: var(--border-hover, #555);
+}
+
+.compare-filter-btn.active {
+  background: var(--accent, #4a90e2);
+  border-color: var(--accent, #4a90e2);
+  color: white;
+}
+
+.compare-search-input {
+  flex: 1;
+  min-width: 200px;
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #2a2a35);
+  border: 1px solid var(--border, #333);
+  color: var(--text-primary, #ddd);
+  font-size: 0.9rem;
+}
+
+.compare-search-input:focus {
+  outline: none;
+  border-color: var(--accent, #4a90e2);
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #333);
+  font-size: 0.9rem;
+}
+
+.compare-table th {
+  background: var(--bg-tertiary, #2a2a35);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.compare-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.compare-row .compare-label {
+  font-weight: 500;
+}
+
+.compare-row .compare-attr {
+  font-size: 0.78rem;
+  color: var(--text-muted, #888);
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+.compare-row .compare-value {
+  font-family: monospace;
+  font-size: 0.88rem;
+}
+
+.compare-row .compare-source {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+}
+
+.compare-row.status-diff {
+  background: rgba(240, 180, 60, 0.06);
+}
+
+.compare-row.status-diff .compare-value {
+  color: rgb(245, 200, 100);
+  font-weight: 600;
+}
+
+.compare-row.status-only-in-sc {
+  background: rgba(120, 160, 240, 0.04);
+}
+
+.compare-row.status-only-in-app {
+  background: rgba(220, 90, 90, 0.04);
+}
+
+.compare-row.status-match td {
+  opacity: 0.7;
+}
+
+/* Out-of-range warning: SC has a numeric value outside our labels[] array,
+ * meaning we are missing a label entry (e.g. FSR support for Upscaling).
+ * Highlights the row even if status is "match" so the user can spot it. */
+.compare-row.out-of-range {
+  background: rgba(220, 90, 90, 0.08);
+  outline: 1px solid rgba(220, 90, 90, 0.3);
+  outline-offset: -1px;
+}
+
+.compare-row.out-of-range td {
+  opacity: 1;
+}
+
+.compare-warn-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(220, 90, 90, 0.18);
+  color: rgb(240, 130, 130);
+  cursor: help;
+}
+
+.status-icon {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.status-icon.match {
+  color: rgb(120, 220, 150);
+}
+
+.status-icon.diff {
+  background: rgba(240, 180, 60, 0.18);
+  color: rgb(245, 200, 100);
+}
+
+.status-icon.only-sc {
+  background: rgba(120, 160, 240, 0.15);
+  color: rgb(150, 190, 250);
+}
+
+.status-icon.only-app {
+  background: rgba(220, 90, 90, 0.15);
+  color: rgb(240, 130, 130);
+}
+
+.status-icon.unset {
+  color: var(--text-muted, #888);
+}
+
+.compare-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted, #888);
+}
+
+.compare-tuning-device {
+  margin-bottom: 20px;
+}
+
+.compare-tuning-device h3 {
+  font-size: 0.95rem;
+  margin: 0 0 8px 0;
+  color: var(--text-primary, #ddd);
+  font-family: monospace;
+}
+
+.compare-table-tuning code {
+  background: var(--bg-tertiary, #2a2a35);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.85rem;
+}
+
+.compare-table-tuning .tuning-default td {
+  opacity: 0.5;
+}
+
+.compare-table-tuning .tuning-customized {
+  background: rgba(80, 200, 120, 0.05);
+}
+
+.compare-table-tuning .tuning-customized td {
+  font-weight: 500;
 }

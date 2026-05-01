@@ -32,7 +32,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { confirm, showDiff, showNotification, prompt } from '../../utils/dialogs.js';
+import { confirm, showDiff, showNotification, prompt, resetApplyTargetSkip } from '../../utils/dialogs.js';
 import { logError } from '../../utils/error-handler.js';
 import { escapeHtml } from '../../utils.js';
 import { t } from '../../i18n.js';
@@ -54,7 +54,7 @@ import {
 } from './storage.js';
 import {
   loadUserCfgSettings, detectAttributeConflicts,
-  renderUserCfgUI, applyUserCfg, resetUserCfg,
+  renderUserCfgUI, applyUserCfg, resetUserCfg, importSettingsFromEnv,
   updateResolutionHighlight, updateSettingHighlight, updateChangedCounts,
   hasUnsavedChanges, getChangedSettingsCount,
   DEFAULT_SETTINGS, QUALITY_KEYS, SHADER_KEYS, RESOLUTION_PRESETS,
@@ -71,6 +71,9 @@ import {
   loadBackups, loadProfileStatus, renderProfileTab,
   saveProfile, loadProfile, deleteProfile, handleDeviceDrop,
 } from './profiles.js';
+import {
+  renderCompareTab, attachCompareEventListeners, loadLiveSettings,
+} from './compare.js';
 
 // ── Globals expected by inline onclick handlers in rendered HTML ──
 /** @type {Set<string>} Which binding categories are expanded */
@@ -176,6 +179,7 @@ function renderMainContent() {
     { key: 'usercfg', label: t('environments:tab.usercfg'), tooltip: t('environments:tab.usercfgTooltip') },
     { key: 'localization', label: t('environments:tab.localization'), tooltip: t('environments:tab.localizationTooltip') },
     { key: 'storage', label: t('environments:tab.storage'), tooltip: t('environments:tab.storageTooltip') },
+    { key: 'compare', label: t('environments:tab.compare', { defaultValue: 'Compare' }), tooltip: t('environments:tab.compareTooltip', { defaultValue: 'Diff app values against the live Star Citizen state' }) },
   ];
 
   let tabContent = '';
@@ -187,6 +191,8 @@ function renderMainContent() {
     tabContent = renderUserCfgUI();
   } else if (activeProfileTab === 'storage') {
     tabContent = renderStorageTab();
+  } else if (activeProfileTab === 'compare') {
+    tabContent = renderCompareTab();
   }
 
   return `
@@ -230,7 +236,7 @@ function renderEmptyVersionState() {
           <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">${t('environments:version.initWithDataP4k')}</p>
             <div style="display: flex; gap: 0.5rem;">
-              <select id="data-source-select" class="btn btn-sm" style="flex: 1; background: var(--bg-secondary);">
+              <select id="data-source-select" class="input input-sm" style="flex: 1;">
                 ${versionsWithP4k.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}
               </select>
               <button class="btn btn-sm" id="btn-link-p4k" data-version="${escapeHtml(activeScVersion)}" title="${t('environments:version.symlinkTooltip')}">${t('environments:version.symlink')}</button>
@@ -298,6 +304,10 @@ function resetEnvironmentState() {
 
   // Reset state to initial values (preserves cross-version fields)
   resetState();
+
+  // Reset the apply-target session skip — switching envs is exactly the moment
+  // the safety net should re-engage so the user re-confirms for the new env
+  resetApplyTargetSkip();
 }
 
 // ==================== Event Hub ====================
@@ -319,8 +329,13 @@ function attachProfilesEventListeners() {
 
   // Tab navigation — use rerenderFromState() to avoid full reload + skeleton flash
   document.querySelectorAll('.profile-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
+    tab.addEventListener('click', async () => {
       setState({ activeProfileTab: tab.dataset.tab });
+      // Auto-load live SC state on first visit to Compare tab
+      if (tab.dataset.tab === 'compare' && !getState().liveSettings) {
+        rerenderFromState();
+        await loadLiveSettings();
+      }
       rerenderFromState();
     });
   });
@@ -756,6 +771,19 @@ function attachProfilesEventListeners() {
   document.getElementById('btn-apply-usercfg')?.addEventListener('click', applyUserCfg);
   document.getElementById('btn-reset-usercfg')?.addEventListener('click', resetUserCfg);
 
+  // Fresh-install banner: same write path as Apply (alwaysWrite settings get written too)
+  document.getElementById('btn-apply-fresh-install')?.addEventListener('click', applyUserCfg);
+
+  // Cross-env settings import: copy USER.cfg + attributes.xml from another env
+  document.getElementById('btn-import-from-env')?.addEventListener('click', async () => {
+    const sel = document.getElementById('usercfg-import-source');
+    if (!sel || !sel.value) return;
+    await importSettingsFromEnv(sel.value, async () => {
+      await loadUserCfgSettings();
+      renderEnvironments(document.getElementById('content'));
+    });
+  });
+
   // Sync conflict resolution
   document.getElementById('btn-resolve-conflicts')?.addEventListener('click', () => {
     const panel = document.getElementById('usercfg-conflict-panel');
@@ -1062,6 +1090,8 @@ function attachProfilesEventListeners() {
     updateSettingHighlight(row, key, setting, setting.value);
   });
 
+  // Compare-with-SC tab listeners
+  attachCompareEventListeners(rerenderFromState);
 }
 
 // ==================== App Close Blocker ====================
