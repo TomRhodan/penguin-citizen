@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-05-01
+
+### Added
+- **Compare-with-SC panel** — New "Compare" tab on the Environments page that diffs the app's saved settings against the live Star Citizen state (USER.cfg + attributes.xml). Highlights mismatches, hides SC-internal noise (entitlement IDs, ship URN, FoIP camera handle), and supports a search filter. Verifies Apply-to-SC roundtrips without launching the game.
+- **Mode-aware Joystick-Tuning-Dialog** — The tuning dialog now auto-derives the SC mode (Flight, EVA, Ground Vehicle, On Foot, Mining, Turrets, Weapons) from the binding context and shows it transparently. New layout splits per-mode controls (invert, sensitivity, exponent) and per-axis controls (deadzone, saturation) into clearly-labelled scope blocks; exposes the previously-hidden Sensitivity slider; lists related bindings on the same hardware axis with a "Tune" jump; shows live-SC sync state; adds a Reset-to-defaults button.
+- **Settings parity** — ~70 new graphics/audio/combat/tracking/camera-lead settings exposed in the USER.cfg / attributes.xml editor, routed to the file SC actually reads.
+- **Two-row binding pills** — Binding cells show the input label on row 1 (full pill width, no more mid-name truncation) and delete + tuning chips on row 2 with a discoverable rest-state opacity.
+
+### Changed
+- **Joystick tuning mapping** — Full mapping for all 7 SC modes (22 tags), verified empirically against `actionmaps.xml`.
+- **Window Mode label order** — Now `[Windowed, Borderless, Fullscreen]`, matching the values SC writes.
+- **`sc.sh` always rebuilds** — The script is only invoked for actual SC launches anyway, so a stale binary defeats the point. `--rebuild` flag dropped as redundant. `dev.sh` remains the fast path for UI iteration without game launch.
+
+### Fixed
+- **`actionmaps.xml` diff polluted with SC internals** — The profile-vs-live diff now uses a canonical XML serialization that filters all-default tuning entries (`<flight_view exponent="1"/>`), merges duplicate/split per-input `<option>` elements, and ignores attribute-order/whitespace changes. Previously every SC exit produced thousands of false-positive diff lines from SC's exit-time normalization.
+- **Profile-status falsely "modified"** — `check_profile_status` falls back to canonical comparison when the byte hash of `actionmaps.xml` differs, so the "X Datei(en) geändert" banner only fires for real value changes.
+- **Float-precision sync conflicts** — `detectAttributeConflicts` uses numeric comparison with an epsilon. SC's `1.4` ↔ `1.40000` ↔ `1.39999998` reformatting no longer triggers spurious sync conflicts.
+- **Deadzone/Saturation lost on save** — `get_device_tuning` and `update_device_tuning` matched device-options blocks with single-space format (`"Name {GUID}"`) while SC and our writer use double-space. The match silently failed, creating duplicate `<deviceoptions>` blocks and dropping values on the next read. Both call sites now use `format_sc_device_name` consistently.
+- **Binding mutations didn't refresh UI** — Add/Remove/Edit succeeded on the backend (toast fired) but the matrix never reloaded — the binding appeared stuck until a manual reload. Now triggers a scoped in-place refresh that preserves scroll position, search filter, and active category.
+- **Tuning save left "Synchron" stale** — The profile-status banner stayed green after writing tuning to the profile. Now refreshes the active-profile-header in place after every binding/tuning mutation.
+- **Header buttons died after in-place refresh** — Apply-to-SC, "Profil aktualisieren", "Zurücksetzen" lost their listeners whenever the header re-rendered. Moved into the existing delegated click handler so they survive arbitrary DOM rebuilds.
+- **`QRCode` attribute** — Replaced the incorrect `r_DisplaySessionInfo` USER.cfg cvar with the actual `QRCode` attribute SC writes.
+- **Several tracked attributes routed correctly** — HDR (`HDRMaxBrightness` / `HDRRefWhite`), Gamma, Brightness, Contrast, split Upscaling Mode + Technique, MotionBlur, FilmGrain, VSync, ChromaticAberration moved to `attributes.xml` with verified ranges and `alwaysWrite` flags where SC strips defaults.
+
 ## [0.5.3] - 2026-04-26
 
 ### Added
@@ -351,6 +375,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prefix Tools** - Winecfg, DPI scaling, PowerShell installation via winetricks
 - **Multi-version Support** - Manage LIVE, PTU, EPTU, and other Star Citizen channels
 
+[0.5.4]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.3-0...v0.5.4-0
 [0.5.3]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.2-0...v0.5.3-0
 [0.5.2]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.1-0...v0.5.2-0
 [0.5.1]: https://github.com/TomRhodan/penguin-citizen/compare/v0.5.0-2...v0.5.1

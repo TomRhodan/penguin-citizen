@@ -12,7 +12,7 @@
 <p align="center">
   Built with <a href="https://tauri.app/">Tauri 2</a> and vanilla JavaScript.
   <br>
-  <strong>Version 0.5.3</strong>
+  <strong>Version 0.5.4</strong>
 </p>
 
 ---
