@@ -19,6 +19,11 @@
 #
 # Environment:
 #   FLATHUB_SUBMISSION_FORK   Where to clone the fork (default: ~/flathub-fork)
+#   FLATHUB_SSH_HOST          SSH host alias for the fork remote (default:
+#                             github.com). Set this to a ~/.ssh/config alias
+#                             when you use multiple GitHub accounts and the
+#                             default key on github.com is not the right one
+#                             for the account that owns the fork.
 
 set -euo pipefail
 
@@ -27,6 +32,7 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 APP_ID="de.penguincitizen.penguincitizen"
 SRC_MANIFEST="$SCRIPT_DIR/$APP_ID.yml"
 FORK_DIR="${FLATHUB_SUBMISSION_FORK:-$HOME/flathub-fork}"
+SSH_HOST="${FLATHUB_SSH_HOST:-github.com}"
 APP_DIR="$FORK_DIR/$APP_ID"
 BRANCH="$APP_ID"
 
@@ -89,16 +95,19 @@ fork_repo="$gh_user/flathub"
 
 if ! gh repo view "$fork_repo" >/dev/null 2>&1; then
   echo "  forking flathub/flathub to $fork_repo"
-  gh repo fork flathub/flathub --clone=false --remote=false
+  # No --clone/--remote flags: those are not supported alongside a repo arg
+  # in newer gh. Default behaviour is "fork only, don't clone, don't add remote".
+  gh repo fork flathub/flathub
 else
   echo "  fork $fork_repo already exists"
 fi
 
 if [[ ! -d "$FORK_DIR/.git" ]]; then
-  git clone --branch=new-pr "git@github.com:$fork_repo.git" "$FORK_DIR"
+  git clone --branch=new-pr "git@${SSH_HOST}:$fork_repo.git" "$FORK_DIR"
 else
   echo "  clone $FORK_DIR already exists, pulling latest new-pr"
-  ( cd "$FORK_DIR" && git fetch origin new-pr && git checkout new-pr && git reset --hard origin/new-pr )
+  ( cd "$FORK_DIR" && git remote set-url origin "git@${SSH_HOST}:$fork_repo.git" \
+      && git fetch origin new-pr && git checkout new-pr && git reset --hard origin/new-pr )
 fi
 
 # ----- branch + copy files -------------------------------------------
