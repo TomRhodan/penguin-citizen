@@ -32,7 +32,8 @@ import { escapeHtml } from '../../utils.js';
 import { showNotification } from '../../utils/dialogs.js';
 import { getState, setState } from './state.js';
 import { debugLog, renderHint } from './utils.js';
-import { loadProfileStatus } from './profiles.js';
+import { loadProfileStatus, refreshActiveProfileHeader } from './profiles.js';
+import { refreshBindingsInPlace } from './bindings.js';
 
 // ── Constants ──
 
@@ -772,12 +773,11 @@ export async function openTuningEditor(actionName, category, currentInput, devic
         showNotification(t('environments:notification.tuningSaved', 'Tuning saved successfully'), 'success');
         closeTuning();
         await Promise.all([loadDeviceTuning(), loadProfileStatus()]);
-        // Re-render so the profile-status banner ("Synchron"/"Profil weicht ab") and
-        // the per-binding tuning glow reflect the new state. The render hook lives
-        // on window so this module stays decoupled from index.js.
-        if (typeof window !== 'undefined' && typeof window.renderEnvironments === 'function') {
-          window.renderEnvironments();
-        }
+        // Scoped refreshes only — preserves matrix scroll, search filter, and
+        // the active category. The matrix update repaints the per-binding
+        // tuning indicator; the header update flips "Synchron" → "geändert".
+        refreshBindingsInPlace();
+        refreshActiveProfileHeader();
       } catch (err) {
         debugLog('TUNING', 'error', `Save failed: ${err}`);
         showNotification(t('environments:notification.saveError', { error: err }), 'error');

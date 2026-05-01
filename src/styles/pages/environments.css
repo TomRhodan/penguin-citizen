@@ -583,15 +583,22 @@
   min-height: 3.28rem;
 }
 
-/* ── Binding Pill ──────────────────────────────────── */
+/* ── Binding Pill ──────────────────────────────────────────────────────────
+ *
+ * Two-row layout: the input label sits in row 1 with full pill width (no more
+ * mid-name ellipsis fights), and the secondary actions live on a slim "shelf"
+ * below. The shelf appears on row hover so the matrix stays calm at rest, but
+ * an actively-tuned axis keeps its curve icon lit so customizations are still
+ * legible at a glance. All sizes are in rem so the WebView zoom/HiDPI
+ * compensation in lib.rs scales the pill cleanly with the rest of the UI.
+ * ──────────────────────────────────────────────────────────────────────── */
 .binding-pill {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   width: 100%;
-  height: 2rem;
   border-radius: 0.28rem;
   overflow: hidden;
-  transition: opacity 0.1s;
+  transition: opacity 0.1s, border-color 0.15s;
 }
 
 .binding-pill.custom {
@@ -606,69 +613,95 @@
   border-left: 2px solid rgba(255, 255, 255, 0.12);
 }
 
+.binding-row:hover .binding-pill.default { opacity: 1; }
+
+/* Row 1 — the input identity. Tight top/bottom padding so the label sits
+ * close to the action chips below; the whole pill reads as one block. */
 .binding-pill-label {
-  flex: 1;
-  padding: 0 0.64rem;
+  display: block;
+  padding: 0.3rem 0.5rem 0.1rem;
   font-size: var(--font-sm);
   font-weight: 500;
-  line-height: 2rem;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  display: block;
+  transition: color 0.12s;
 }
 
 .binding-pill.custom .binding-pill-label { color: #cce8f5; }
 .binding-pill.default .binding-pill-label { color: rgba(255, 255, 255, 0.35); }
 
-.binding-row:hover .binding-pill.default { opacity: 1; }
+.binding-pill-label:hover { color: var(--primary-color, #00d2ff); }
 
-.binding-pill-label:hover {
-  color: var(--primary-color, #00d2ff);
+/* Row 2 — action chips. No shelf bg, no border-top: same surface as the label
+ * so the pill reads as one continuous block. Buttons are tiny rounded chips
+ * with a subtle baseline opacity (visible at rest, brighten on hover). */
+.binding-pill-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0 0.32rem 0.22rem;
 }
 
-/* Tuning + Remove buttons share the same base style */
 .binding-pill-tuning,
 .binding-pill-remove {
-  flex-shrink: 0;
-  width: 1.71rem;
-  height: 2rem;
+  flex: 0 0 auto;
+  width: 1.05rem;
+  height: 0.95rem;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  border-radius: 0.2rem;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  opacity: 0.35;
+  transition: opacity 0.12s, color 0.12s, background 0.12s, border-color 0.12s;
   padding: 0;
 }
 
 .binding-pill-tuning {
-  color: rgba(255, 255, 255, 0.22);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.binding-pill-tuning svg {
+  width: 0.7rem;
+  height: 0.7rem;
 }
 
 .binding-pill-tuning.has-active-tuning {
   opacity: 1;
   color: var(--primary-color, #00d2ff);
+  background: rgba(0, 210, 255, 0.08);
+  border-color: rgba(0, 210, 255, 0.25);
 }
 
-.binding-row:hover .binding-pill-tuning { opacity: 1; }
-.binding-pill-tuning:hover { color: var(--primary-color, #00d2ff); background: rgba(0,210,255,0.06); }
+.binding-row:hover .binding-pill-tuning,
+.binding-pill:hover .binding-pill-tuning { opacity: 1; }
+
+.binding-pill-tuning:hover {
+  color: var(--primary-color, #00d2ff);
+  background: rgba(0, 210, 255, 0.12);
+  border-color: rgba(0, 210, 255, 0.3);
+}
 
 .binding-pill-remove {
-  color: rgba(255, 255, 255, 0.18);
-  font-size: 15px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
   line-height: 1;
 }
 
-.binding-row:hover .binding-pill-remove { opacity: 1; }
+.binding-row:hover .binding-pill-remove,
+.binding-pill:hover .binding-pill-remove { opacity: 1; }
+
 .binding-pill-remove:hover {
-  background: rgba(220, 50, 50, 0.14);
+  background: rgba(220, 50, 50, 0.18);
   color: #f87171;
-  border-left-color: rgba(220, 50, 50, 0.1);
+  border-color: rgba(220, 50, 50, 0.35);
+  opacity: 1;
 }
 
 /* ── Mouse Binding Dialog ─────────────────────────── */

@@ -86,6 +86,79 @@ export async function loadProfileStatus() {
 // ==================== Rendering ====================
 
 /**
+ * Builds the HTML for the active-profile header banner: profile name, sync
+ * status pill, action buttons (Revert / Update Profile / Apply-to-SC), the
+ * "apply explain" hint, and the changes-panel if expanded.
+ *
+ * Extracted so the banner can be re-rendered in place after a binding/tuning
+ * mutation changes profile-vs-SC sync state, without triggering a full page
+ * rebuild that would reset scroll and filters.
+ */
+export function buildActiveProfileHeaderHtml(activeBackup, activeProfileStatus, isDirty, activeScVersion, showChangesPanel) {
+  if (!activeBackup) return '';
+  const displayLabel = escapeHtml(activeBackup.label || activeBackup.created_at);
+  let statusText = '';
+  let statusClass = '';
+  const isOutOfSync = activeProfileStatus && activeProfileStatus.files.length > 0 && !activeProfileStatus.matched;
+  const showApplyButton = isDirty || isOutOfSync;
+
+  if (isDirty) {
+    statusText = t('environments:profile.unsavedChanges');
+    statusClass = 'profile-status-changed';
+  } else if (activeProfileStatus && activeProfileStatus.files.length > 0) {
+    if (activeProfileStatus.matched) {
+      statusText = t('environments:profile.inSync');
+      statusClass = 'profile-status-ok';
+    } else {
+      const changedCount = activeProfileStatus.files.filter(f => f.status !== 'unchanged').length;
+      statusText = t('environments:profile.filesChanged', { count: changedCount });
+      statusClass = 'profile-status-changed';
+    }
+  }
+
+  return `
+    <div class="profile-active-header">
+      <div class="profile-active-info">
+        <span class="profile-active-label">
+          <span class="profile-active-star">★</span>
+          ${displayLabel}
+        </span>
+        ${statusText ? `<span class="${statusClass}" ${statusClass === 'profile-status-changed' ? 'id="btn-toggle-changes"' : ''}>${statusText}</span>` : ''}
+      </div>
+      <div class="profile-active-actions">
+        ${isOutOfSync ? `
+          <button class="btn btn-sm btn-ghost" id="btn-revert-changes" title="${t('environments:profile.revertTooltip')}">${t('environments:profile.revert')}</button>
+          <button class="btn btn-sm" id="btn-update-profile" title="${t('environments:profile.updateProfileTooltip')}">${t('environments:profile.updateProfile')}</button>
+        ` : ''}
+        ${showApplyButton ? `<button class="btn btn-primary btn-sm" id="btn-apply-to-sc" title="${t('environments:profile.applyToScTooltip')}">${t('environments:profile.applyToSc', { version: escapeHtml(activeScVersion) })}</button>` : ''}
+      </div>
+    </div>
+    ${showApplyButton ? renderHint('apply-explain', t('environments:hint.applyExplain')) : ''}
+    ${showChangesPanel && activeProfileStatus && !activeProfileStatus.matched ? renderChangesPanel(activeProfileStatus.files) : ''}
+  `;
+}
+
+/**
+ * Re-renders the active-profile header in place, scoped to its DOM region so
+ * scroll and filter state elsewhere on the page stay intact. The wrapper
+ * element is identified by `data-profile-header-slot`; everything inside is
+ * replaced with a fresh banner built from current state.
+ *
+ * Returns true if the slot was found and updated, false if the page is in a
+ * state where there's nothing to refresh (no active profile, slot missing).
+ */
+export function refreshActiveProfileHeader() {
+  const slot = document.querySelector('[data-profile-header-slot]');
+  if (!slot) return false;
+  const { activeScVersion, backups, lastRestoredBackupId, activeProfileStatus, showChangesPanel } = getState();
+  const activeBackup = lastRestoredBackupId ? backups.find(b => b.id === lastRestoredBackupId) : null;
+  const isDirty = activeBackup?.dirty === true;
+  slot.innerHTML = buildActiveProfileHeaderHtml(activeBackup, activeProfileStatus, isDirty, activeScVersion, showChangesPanel);
+  return true;
+}
+
+
+/**
  * Renders the Profile tab: active profile, profile card grid, import banner.
  * Shows the sync status (in sync / changed / unsaved changes),
  * and when a profile is loaded, also the collapsible keybinding and joystick sections.
@@ -151,48 +224,9 @@ export function renderProfileTab(renderEnvironments) {
     `;
   } else if (hasProfiles) {
     // Active profile header + profile cards
-    let activeHeader = '';
+    let activeHeader;
     if (activeBackup) {
-      const displayLabel = escapeHtml(activeBackup.label || activeBackup.created_at);
-      let statusText = '';
-      let statusClass = '';
-      const isOutOfSync = activeProfileStatus && activeProfileStatus.files.length > 0 && !activeProfileStatus.matched;
-      const showApplyButton = isDirty || isOutOfSync;
-
-      if (isDirty) {
-        statusText = t('environments:profile.unsavedChanges');
-        statusClass = 'profile-status-changed';
-      } else if (activeProfileStatus && activeProfileStatus.files.length > 0) {
-        if (activeProfileStatus.matched) {
-          statusText = t('environments:profile.inSync');
-          statusClass = 'profile-status-ok';
-        } else {
-          const changedCount = activeProfileStatus.files.filter(f => f.status !== 'unchanged').length;
-          statusText = t('environments:profile.filesChanged', { count: changedCount });
-          statusClass = 'profile-status-changed';
-        }
-      }
-
-      activeHeader = `
-        <div class="profile-active-header">
-          <div class="profile-active-info">
-            <span class="profile-active-label">
-              <span class="profile-active-star">★</span>
-              ${displayLabel}
-            </span>
-            ${statusText ? `<span class="${statusClass}" ${statusClass === 'profile-status-changed' ? 'id="btn-toggle-changes"' : ''}>${statusText}</span>` : ''}
-          </div>
-          <div class="profile-active-actions">
-            ${isOutOfSync ? `
-              <button class="btn btn-sm btn-ghost" id="btn-revert-changes" title="${t('environments:profile.revertTooltip')}">${t('environments:profile.revert')}</button>
-              <button class="btn btn-sm" id="btn-update-profile" title="${t('environments:profile.updateProfileTooltip')}">${t('environments:profile.updateProfile')}</button>
-            ` : ''}
-            ${showApplyButton ? `<button class="btn btn-primary btn-sm" id="btn-apply-to-sc" title="${t('environments:profile.applyToScTooltip')}">${t('environments:profile.applyToSc', { version: escapeHtml(activeScVersion) })}</button>` : ''}
-          </div>
-        </div>
-        ${showApplyButton ? renderHint('apply-explain', t('environments:hint.applyExplain')) : ''}
-        ${showChangesPanel && activeProfileStatus && !activeProfileStatus.matched ? renderChangesPanel(activeProfileStatus.files) : ''}
-      `;
+      activeHeader = buildActiveProfileHeaderHtml(activeBackup, activeProfileStatus, isDirty, activeScVersion, showChangesPanel);
     } else if (hasScFiles) {
       activeHeader = `
         <div class="profile-active-header profile-active-none">
@@ -201,12 +235,14 @@ export function renderProfileTab(renderEnvironments) {
           </div>
         </div>
       `;
+    } else {
+      activeHeader = '';
     }
 
     profilesSection = `
       <div class="sc-section profiles-section">
         ${renderHint('profiles-intro', t('environments:hint.profilesIntro'))}
-        ${activeHeader}
+        <div data-profile-header-slot>${activeHeader}</div>
         <div class="profiles-card-grid">
           ${backups.map(b => {
             const isActive = lastRestoredBackupId === b.id;

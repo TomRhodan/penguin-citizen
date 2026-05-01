@@ -34,6 +34,7 @@ import { t } from '../../i18n.js';
 import { getState, setState, ESSENTIAL_ACTIONS } from './state.js';
 import { debugLog, renderHint, formatCategoryName } from './utils.js';
 import { openTuningEditor, resolveTuningName } from './tuning.js';
+import { loadProfileStatus, refreshActiveProfileHeader } from './profiles.js';
 
 // ==================== Data Loading ====================
 
@@ -85,6 +86,28 @@ export async function loadCompleteBindingList() {
     setState({ completeBindingList: [] });
     bindingStats = { total: 0, custom: 0 };
   }
+}
+
+/**
+ * Reloads binding list + profile-sync status and refreshes the binding view
+ * scoped to the affected DOM regions. Used after every binding mutation
+ * (remove, add, edit, apply) so the matrix reflects the new state without
+ * each call site having to plumb the render callback itself.
+ *
+ * Uses `refreshBindingsInPlace` (not a full page rebuild) for two reasons:
+ * the scroll position inside the matrix is preserved, and the search-filter
+ * + active-category state are applied correctly — `renderBindingsCollapsible`
+ * (the full-render path) only filters by toggles, while
+ * `refreshBindingsInPlace` matches the live filtering logic the user expects.
+ *
+ * The profile-status banner is not refreshed here — that's a separate concern
+ * handled by the apply-to-SC flow. A stale banner after a mutation is
+ * acceptable; a reset filter is not.
+ */
+async function refreshBindingsUi() {
+  await Promise.all([loadCompleteBindingList(), loadProfileStatus()]);
+  refreshBindingsInPlace();
+  refreshActiveProfileHeader();
 }
 
 /**
@@ -277,7 +300,7 @@ export function attachBindingEventListeners() {
             input: input || null,
           });
           showNotification(t('environments:notification.bindingRemoved'), 'success');
-          // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+          await refreshBindingsUi();
         } catch (err) {
           showNotification(t('environments:notification.removeBindingFailed', { error: err }), 'error');
         }
@@ -373,7 +396,7 @@ export function attachBindingEventListeners() {
             input: input || null,
           });
           showNotification(t('environments:notification.bindingRemoved'), 'success');
-          // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+          await refreshBindingsUi();
         } catch (err) {
           showNotification(t('environments:notification.removeBindingFailed', { error: err }), 'error');
         }
@@ -520,7 +543,7 @@ export function renderBindingsCollapsible() {
                 </div>
               `).join('')}
             </div>
-            <div class="bindings-table-body" id="bindings-table-body">
+            <div class="bindings-table-body" id="bindings-table-body" data-preserve-scroll="bindings-table">
               <table class="bindings-matrix-table">
                 <colgroup>
                   <col style="width: 28%">
@@ -664,22 +687,24 @@ export function renderBindingRows(items, categoryKey, columns) {
                     data-action-name="${escapeHtml(b.action_name)}"
                     data-category="${escapeHtml(categoryKey)}"
                     data-input="${escapeHtml(b.current_input)}">${escapeHtml(inputDisplay)}</span>
-              ${isAxis && col.type !== 'mouse' ? `
-                <button class="binding-pill-tuning ${hasActiveTuning ? 'has-active-tuning' : ''}"
-                        data-action="open-tuning"
+              <div class="binding-pill-actions">
+                ${isAxis && col.type !== 'mouse' ? `
+                  <button class="binding-pill-tuning ${hasActiveTuning ? 'has-active-tuning' : ''}"
+                          data-action="open-tuning"
+                          data-action-name="${escapeHtml(b.action_name)}"
+                          data-category="${escapeHtml(categoryKey)}"
+                          data-input="${escapeHtml(b.current_input)}"
+                          title="${hasActiveTuning ? t('environments:binding.hasTuning') : t('environments:binding.tuning')}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 19s4-15 9-15 9 15 9 15"/></svg>
+                  </button>
+                ` : ''}
+                <button class="binding-pill-remove"
+                        data-action="remove-binding-direct"
                         data-action-name="${escapeHtml(b.action_name)}"
                         data-category="${escapeHtml(categoryKey)}"
                         data-input="${escapeHtml(b.current_input)}"
-                        title="${hasActiveTuning ? t('environments:binding.hasTuning') : t('environments:binding.tuning')}">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 19s4-15 9-15 9 15 9 15"/></svg>
-                </button>
-              ` : ''}
-              <button class="binding-pill-remove"
-                      data-action="remove-binding-direct"
-                      data-action-name="${escapeHtml(b.action_name)}"
-                      data-category="${escapeHtml(categoryKey)}"
-                      data-input="${escapeHtml(b.current_input)}"
-                      title="${t('environments:binding.remove')}">×</button>
+                        title="${t('environments:binding.remove')}">×</button>
+              </div>
             </div>
           `;
         });
@@ -1076,7 +1101,7 @@ export async function openBindingEditor(actionName, category, currentInput, defa
         window.expandedBindingCategories.add(s.bindingEditorAction.category);
       }
       cleanupAndClose();
-      // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+      await refreshBindingsUi();
     } catch (err) {
       console.error('[EDITOR] Delete failed:', err);
       showNotification(t('environments:notification.deleteError', { error: err }), 'error');
@@ -1099,7 +1124,7 @@ export async function openBindingEditor(actionName, category, currentInput, defa
         window.expandedBindingCategories.add(s.bindingEditorAction.category);
       }
       cleanupAndClose();
-      // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+      await refreshBindingsUi();
     } catch (err) {
       console.error('[EDITOR] Reset failed:', err);
       showNotification(t('environments:notification.resetError', { error: err }), 'error');
@@ -1174,7 +1199,7 @@ export async function openBindingEditor(actionName, category, currentInput, defa
         window.expandedBindingCategories.add(s.bindingEditorAction.category);
       }
       cleanupAndClose();
-      // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+      await refreshBindingsUi();
     } catch (err) {
       console.error('[EDITOR] Save failed. Error:', err);
       showNotification(t('environments:notification.saveError', { error: err }), 'error');
@@ -1323,7 +1348,7 @@ export async function openMouseBindingEditor(actionName, category, currentInput)
       showNotification(t('environments:notification.bindingReset', 'Binding reset to default'), 'success');
       window.expandedBindingCategories?.add(category);
       cleanupAndClose();
-      // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+      await refreshBindingsUi();
     } catch (err) {
       showNotification(t('environments:notification.resetError', { error: err }), 'error');
     }
@@ -1350,7 +1375,7 @@ export async function openMouseBindingEditor(actionName, category, currentInput)
       showNotification(t('environments:notification.bindingSaved'), 'success');
       window.expandedBindingCategories?.add(category);
       cleanupAndClose();
-      // Cross-module: caller should trigger loadProfileStatus() + renderEnvironments()
+      await refreshBindingsUi();
     } catch (err) {
       showNotification(t('environments:notification.saveError', { error: err }), 'error');
     }

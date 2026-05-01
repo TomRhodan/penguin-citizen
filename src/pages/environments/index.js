@@ -261,6 +261,13 @@ function rerenderFromState() {
   const container = document.getElementById('content');
   if (!container) return;
   const scrollPos = container.scrollTop;
+  // Preserve inner scroll containers too (e.g. the binding matrix scrolls
+  // independently inside the page). Without this, mutations like "remove
+  // binding" would jump the user back to the top of the table.
+  const innerScrolls = [];
+  container.querySelectorAll('[data-preserve-scroll]').forEach(el => {
+    innerScrolls.push({ key: el.dataset.preserveScroll, top: el.scrollTop });
+  });
   container.innerHTML = `
     <div class="page-header">
       <h1>${t('environments:title')}</h1>
@@ -272,11 +279,19 @@ function rerenderFromState() {
     </div>
   `;
   attachProfilesEventListeners();
-  if (scrollPos > 0) {
-    requestAnimationFrame(() => {
-      container.scrollTop = scrollPos;
-    });
-  }
+  requestAnimationFrame(() => {
+    if (scrollPos > 0) container.scrollTop = scrollPos;
+    for (const { key, top } of innerScrolls) {
+      const el = container.querySelector(`[data-preserve-scroll="${key}"]`);
+      if (el && top > 0) el.scrollTop = top;
+    }
+  });
+}
+
+// Expose so non-router modules (binding mutations, tuning save) can request
+// a state-only re-render — preserves scroll, no skeleton flash, no data refetch.
+if (typeof window !== 'undefined') {
+  window.rerenderFromState = rerenderFromState;
 }
 
 // ==================== Reset Environment State ====================
@@ -477,42 +492,6 @@ function attachProfilesEventListeners() {
     showNotification(t('environments:notification.profileReloaded'), 'success');
   });
 
-  document.getElementById('btn-update-profile')?.addEventListener('click', async () => {
-    const { lastRestoredBackupId } = getState();
-    if (lastRestoredBackupId) {
-      const confirmed = await confirm(t('environments:notification.updateConfirm'), {
-        title: t('environments:notification.updateTitle'),
-        kind: 'warning',
-      });
-      if (confirmed) await updateProfileFromSc(lastRestoredBackupId, callbacks);
-    }
-  });
-
-  document.getElementById('btn-revert-changes')?.addEventListener('click', async () => {
-    const { lastRestoredBackupId, config, activeScVersion } = getState();
-    if (lastRestoredBackupId) {
-      const confirmed = await confirm(t('environments:notification.revertConfirm'), {
-        title: t('environments:notification.revertTitle'),
-        kind: 'warning',
-      });
-      if (confirmed) {
-        try {
-          await invoke('restore_profile', {
-            gp: config.install_path,
-            v: activeScVersion,
-            bid: lastRestoredBackupId,
-          });
-          showNotification(t('environments:notification.profileReverted'), 'success');
-          await Promise.all([loadActionDefinitions(), loadDevicesAndBindings(), loadCompleteBindingList(), loadBackups(), loadUserCfgSettings()]);
-          await loadProfileStatus();
-          renderEnvironments(document.getElementById('content'));
-        } catch (e) {
-          showNotification(t('environments:notification.revertFailed', { error: e }), 'error');
-        }
-      }
-    }
-  });
-
   // Binding source select
   document.getElementById('binding-source-select')?.addEventListener('change', async (e) => {
     setState({ selectedBindingSource: e.target.value || null });
@@ -589,6 +568,65 @@ function attachProfilesEventListeners() {
       renderEnvironments(document.getElementById('content'));
       return;
     }
+    if (e.target.closest('#btn-apply-to-sc')) {
+      const { config, activeScVersion, lastRestoredBackupId } = getState();
+      if (!config?.install_path || !activeScVersion || !lastRestoredBackupId) return;
+      try {
+        const corrections = await invoke('apply_profile_to_sc', {
+          gp: config.install_path,
+          v: activeScVersion,
+          profileId: lastRestoredBackupId,
+        });
+        showNotification(t('environments:notification.profileApplied'), 'success');
+        if (corrections > 0) {
+          showNotification(
+            t('environments:notification.bindingsSanitized', { count: corrections }),
+            'warning'
+          );
+        }
+        await loadBackups();
+        await loadProfileStatus();
+        renderEnvironments(document.getElementById('content'));
+      } catch (err) {
+        showNotification(t('environments:notification.applyFailed', { error: err }), 'error');
+      }
+      return;
+    }
+    if (e.target.closest('#btn-update-profile')) {
+      const { lastRestoredBackupId } = getState();
+      if (!lastRestoredBackupId) return;
+      const confirmed = await confirm(t('environments:notification.updateConfirm'), {
+        title: t('environments:notification.updateTitle'),
+        kind: 'warning',
+      });
+      if (confirmed) {
+        await updateProfileFromSc(lastRestoredBackupId, callbacks);
+      }
+      return;
+    }
+    if (e.target.closest('#btn-revert-changes')) {
+      const { lastRestoredBackupId, config, activeScVersion } = getState();
+      if (!lastRestoredBackupId) return;
+      const confirmed = await confirm(t('environments:notification.revertConfirm'), {
+        title: t('environments:notification.revertTitle'),
+        kind: 'warning',
+      });
+      if (!confirmed) return;
+      try {
+        await invoke('restore_profile', {
+          gp: config.install_path,
+          v: activeScVersion,
+          bid: lastRestoredBackupId,
+        });
+        showNotification(t('environments:notification.profileReverted'), 'success');
+        await Promise.all([loadActionDefinitions(), loadDevicesAndBindings(), loadCompleteBindingList(), loadBackups(), loadUserCfgSettings()]);
+        await loadProfileStatus();
+        renderEnvironments(document.getElementById('content'));
+      } catch (err) {
+        showNotification(t('environments:notification.revertFailed', { error: err }), 'error');
+      }
+      return;
+    }
     const row = e.target.closest('.profile-changes-panel .file-clickable');
     if (!row) return;
     const file = row.dataset.file;
@@ -608,31 +646,6 @@ function attachProfilesEventListeners() {
   };
   setState({ _profilesDelegatedClickHandler: delegatedHandler });
   document.addEventListener('click', delegatedHandler);
-
-  // Apply to SC button
-  document.getElementById('btn-apply-to-sc')?.addEventListener('click', async () => {
-    const { config, activeScVersion, lastRestoredBackupId } = getState();
-    if (!config?.install_path || !activeScVersion || !lastRestoredBackupId) return;
-    try {
-      const corrections = await invoke('apply_profile_to_sc', {
-        gp: config.install_path,
-        v: activeScVersion,
-        profileId: lastRestoredBackupId,
-      });
-      showNotification(t('environments:notification.profileApplied'), 'success');
-      if (corrections > 0) {
-        showNotification(
-          t('environments:notification.bindingsSanitized', { count: corrections }),
-          'warning'
-        );
-      }
-      await loadBackups();
-      await loadProfileStatus();
-      renderEnvironments(document.getElementById('content'));
-    } catch (e) {
-      showNotification(t('environments:notification.applyFailed', { error: e }), 'error');
-    }
-  });
 
   // Customized only toggle
   document.getElementById('customized-only-toggle')?.addEventListener('change', (e) => {
