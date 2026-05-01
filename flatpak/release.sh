@@ -21,6 +21,10 @@
 #   --install            Install the built Flatpak as --user
 #   --bundle             Produce flatpak/dist/penguin-citizen-<v>.flatpak
 #   --publish-flathub    Push the manifest update to the Flathub fork (see notes)
+#   --gh-release         Attach the .flatpak bundle to the GitHub release for
+#                        this tag. Requires --bundle. Creates the release on
+#                        the fly if CI hasn't done so yet; otherwise uploads
+#                        with --clobber so re-runs are idempotent.
 #   --no-build           Skip the build step (e.g. just bump + tag)
 #   --no-tag             Skip git tag + push (default: tag and push origin)
 #   --no-deps-bump       Skip cargo update / npm install --package-lock-only
@@ -48,6 +52,7 @@ VENV_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/penguin-citizen/flatpak-tools/venv"
 INSTALL=0
 BUNDLE=0
 PUBLISH=0
+GH_RELEASE=0
 DO_BUILD=1
 DO_TAG=1
 DO_DEPS_BUMP=1
@@ -63,6 +68,7 @@ for arg in "$@"; do
     --install)          INSTALL=1 ;;
     --bundle)           BUNDLE=1 ;;
     --publish-flathub)  PUBLISH=1 ;;
+    --gh-release)       GH_RELEASE=1 ;;
     --no-build)         DO_BUILD=0 ;;
     --no-tag)           DO_TAG=0 ;;
     --no-deps-bump)     DO_DEPS_BUMP=0 ;;
@@ -180,6 +186,7 @@ cat <<EOF
    tag + push:     $([[ $DO_TAG -eq 1 ]] && echo "yes (origin)" || echo "skip")
    deps refresh:   $([[ $DO_DEPS_BUMP -eq 1 ]] && echo "cargo update + npm i" || echo "skip")
    publish flathub: $([[ $PUBLISH -eq 1 ]] && echo "yes" || echo "skip")
+   gh release upload: $([[ $GH_RELEASE -eq 1 ]] && echo "yes" || echo "skip")
    dry run:        $([[ $DRY_RUN -eq 1 ]] && echo "yes — nothing will change" || echo "no")
 EOF
 
@@ -365,7 +372,35 @@ else
   step "Skipping git tag + push (--no-tag)"
 fi
 
-# ----- 8. Flathub update PR (optional) --------------------------------
+# ----- 8. Upload .flatpak bundle to GitHub release (optional) ----------
+
+if (( GH_RELEASE )); then
+  step "Attaching .flatpak bundle to GitHub release $TAG"
+  if (( ! BUNDLE )); then
+    echo "ERROR: --gh-release requires --bundle (no .flatpak file to upload)" >&2
+    exit 1
+  fi
+  command -v gh >/dev/null || {
+    echo "ERROR: gh (GitHub CLI) is not installed; cannot upload to release." >&2
+    exit 1
+  }
+  bundle_path="$DIST_DIR/penguin-citizen-$VERSION.flatpak"
+  if (( ! DRY_RUN )) && [[ ! -f "$bundle_path" ]]; then
+    echo "ERROR: bundle not found at $bundle_path" >&2
+    exit 1
+  fi
+  # Race with the CI: if release.yml already created the GitHub release for
+  # this tag, just upload the asset; if not, create the release first.
+  if ! gh release view "$TAG" >/dev/null 2>&1; then
+    run gh release create "$TAG" \
+      --title "Penguin Citizen $VERSION" \
+      --notes "Flatpak bundle attached. Install with: \`flatpak install --user penguin-citizen-$VERSION.flatpak\`"
+  fi
+  run gh release upload "$TAG" "$bundle_path" --clobber
+  echo "  -> uploaded penguin-citizen-$VERSION.flatpak to release $TAG"
+fi
+
+# ----- 9. Flathub update PR (optional) --------------------------------
 
 if (( PUBLISH )); then
   step "Publishing Flathub manifest update"
