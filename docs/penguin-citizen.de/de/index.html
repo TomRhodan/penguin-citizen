@@ -519,10 +519,14 @@
       <div class="modal-dialog">
         <button type="button" class="modal-close" aria-label="Schließen" data-modal-close><span aria-hidden="true">&#x2715;</span></button>
         <h3 id="aur-modal-title">Penguin Citizen aus dem AUR installieren</h3>
-        <p>Führe diesen Befehl in deinem Terminal aus:</p>
+        <p>Führe einen dieser Befehle in deinem Terminal aus (je nach AUR-Helper):</p>
         <div class="modal-code-row">
-          <code id="aur-command">yay -S penguin-citizen-bin</code>
-          <button type="button" class="modal-copy" data-copy-target="aur-command">Kopieren</button>
+          <code id="aur-command-yay">yay -S penguin-citizen-bin</code>
+          <button type="button" class="modal-copy" data-copy-target="aur-command-yay">Kopieren</button>
+        </div>
+        <div class="modal-code-row">
+          <code id="aur-command-paru">paru -S penguin-citizen-bin</code>
+          <button type="button" class="modal-copy" data-copy-target="aur-command-paru">Kopieren</button>
         </div>
         <p class="modal-footer-link">
           <a href="https://aur.archlinux.org/packages/penguin-citizen-bin" target="_blank" rel="noopener noreferrer">Paket auf AUR ansehen &#8599;</a>

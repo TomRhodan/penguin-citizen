@@ -519,10 +519,14 @@
       <div class="modal-dialog">
         <button type="button" class="modal-close" aria-label="Close" data-modal-close><span aria-hidden="true">&#x2715;</span></button>
         <h3 id="aur-modal-title">Install from AUR</h3>
-        <p>Run this command in your terminal:</p>
+        <p>Run one of these commands in your terminal (depending on your AUR helper):</p>
         <div class="modal-code-row">
-          <code id="aur-command">yay -S penguin-citizen-bin</code>
-          <button type="button" class="modal-copy" data-copy-target="aur-command">Copy</button>
+          <code id="aur-command-yay">yay -S penguin-citizen-bin</code>
+          <button type="button" class="modal-copy" data-copy-target="aur-command-yay">Copy</button>
+        </div>
+        <div class="modal-code-row">
+          <code id="aur-command-paru">paru -S penguin-citizen-bin</code>
+          <button type="button" class="modal-copy" data-copy-target="aur-command-paru">Copy</button>
         </div>
         <p class="modal-footer-link">
           <a href="https://aur.archlinux.org/packages/penguin-citizen-bin" target="_blank" rel="noopener noreferrer">View package on AUR &#8599;</a>
