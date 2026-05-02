@@ -131,6 +131,7 @@ function hydrateCards(payload) {
 
 async function init() {
   bindModalEvents();
+  bindCopyButtons();
   const browserFetch = (url) => fetch(url);
   let payload = readCache(window.localStorage, Date.now());
   if (!payload) {
@@ -220,5 +221,48 @@ function bindModalEvents() {
       e.preventDefault();
       first.focus();
     }
+  });
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // permission denied or browser refused — fall through to selection fallback
+    }
+  }
+  return false;
+}
+
+function bindCopyButtons() {
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.modal-copy');
+    if (!btn) return;
+    const targetId = btn.getAttribute('data-copy-target');
+    const targetEl = document.getElementById(targetId);
+    if (!targetEl) return;
+    const text = targetEl.textContent;
+    const ok = await copyTextToClipboard(text);
+    const isDE = document.documentElement.lang === 'de';
+    const originalLabel = btn.dataset.originalLabel || btn.textContent;
+    btn.dataset.originalLabel = originalLabel;
+    if (ok) {
+      btn.textContent = isDE ? 'Kopiert!' : 'Copied!';
+      btn.classList.add('is-copied');
+    } else {
+      // Selection fallback so the user can Ctrl+C manually
+      const range = document.createRange();
+      range.selectNodeContents(targetEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      btn.textContent = isDE ? 'Markiert' : 'Selected';
+    }
+    setTimeout(() => {
+      btn.textContent = originalLabel;
+      btn.classList.remove('is-copied');
+    }, 1500);
   });
 }
