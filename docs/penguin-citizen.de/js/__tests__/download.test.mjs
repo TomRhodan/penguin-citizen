@@ -130,3 +130,99 @@ test('readCache: handles missing timestamp', () => {
   ls.setItem(CACHE_KEY, JSON.stringify({ payload: { x: 1 } }));
   assert.equal(readCache(ls, Date.now()), null);
 });
+
+import { parseRelease, FALLBACK, fetchLatestRelease } from '../download.js';
+
+const MOCK_RELEASE = {
+  tag_name: 'v0.5.6-0',
+  assets: [
+    {
+      name: 'Penguin.Citizen_0.5.6_amd64.deb',
+      size: 9_537_454,
+      browser_download_url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.deb',
+    },
+    {
+      name: 'Penguin.Citizen_0.5.6_amd64.AppImage',
+      size: 81_762_808,
+      browser_download_url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.AppImage',
+    },
+    {
+      name: 'penguin-citizen_0.5.6_amd64_portable.tar.gz',
+      size: 97_204_144,
+      browser_download_url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/penguin-citizen_0.5.6_amd64_portable.tar.gz',
+    },
+  ],
+};
+
+test('parseRelease: extracts version + 3 assets', () => {
+  const out = parseRelease(MOCK_RELEASE);
+  assert.equal(out.version, '0.5.6');
+  assert.equal(out.assets.deb.url, MOCK_RELEASE.assets[0].browser_download_url);
+  assert.equal(out.assets.deb.size, 9_537_454);
+  assert.equal(out.assets.appimage.url, MOCK_RELEASE.assets[1].browser_download_url);
+  assert.equal(out.assets.portable.url, MOCK_RELEASE.assets[2].browser_download_url);
+});
+
+test('parseRelease: drops asset with non-whitelisted URL', () => {
+  const evil = {
+    tag_name: 'v0.5.6-0',
+    assets: [
+      {
+        name: 'Penguin.Citizen_0.5.6_amd64.deb',
+        size: 1,
+        browser_download_url: 'https://evil.example.com/x.deb',
+      },
+    ],
+  };
+  const out = parseRelease(evil);
+  assert.equal(out.assets.deb, undefined);
+});
+
+test('parseRelease: drops asset with unknown format', () => {
+  const out = parseRelease({
+    tag_name: 'v0.5.6-0',
+    assets: [
+      {
+        name: 'random.iso',
+        size: 1,
+        browser_download_url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/random.iso',
+      },
+    ],
+  });
+  assert.deepEqual(out.assets, {});
+});
+
+test('parseRelease: throws on missing tag_name', () => {
+  assert.throws(() => parseRelease({ assets: [] }));
+});
+
+test('FALLBACK: shape is the same as parseRelease output', () => {
+  assert.equal(typeof FALLBACK.version, 'string');
+  assert.ok(FALLBACK.version.length > 0);
+  assert.equal(typeof FALLBACK.assets, 'object');
+  // Fallback URLs must pass our own whitelist
+  for (const fmt of Object.keys(FALLBACK.assets)) {
+    assert.equal(isAllowedAssetUrl(FALLBACK.assets[fmt].url), true, `fallback ${fmt} url should be allowed`);
+  }
+});
+
+test('fetchLatestRelease: returns parsed payload on success', async () => {
+  const fakeFetch = async (url) => ({
+    ok: true,
+    json: async () => MOCK_RELEASE,
+  });
+  const out = await fetchLatestRelease(fakeFetch);
+  assert.equal(out.version, '0.5.6');
+});
+
+test('fetchLatestRelease: returns null on HTTP error', async () => {
+  const fakeFetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
+  const out = await fetchLatestRelease(fakeFetch);
+  assert.equal(out, null);
+});
+
+test('fetchLatestRelease: returns null on network throw', async () => {
+  const fakeFetch = async () => { throw new Error('network down'); };
+  const out = await fetchLatestRelease(fakeFetch);
+  assert.equal(out, null);
+});

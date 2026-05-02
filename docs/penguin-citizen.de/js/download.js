@@ -57,3 +57,52 @@ export function writeCache(storage, payload, nowMs) {
     // Quota exceeded or storage unavailable — ignore, app still works
   }
 }
+
+const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+
+// Hardcoded fallback. Update at release time only if the URL pattern changes.
+export const FALLBACK = {
+  version: '0.5.6',
+  assets: {
+    deb: {
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.deb',
+      size: 9_536_646,
+    },
+    appimage: {
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.AppImage',
+      size: 81_762_808,
+    },
+    portable: {
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/penguin-citizen_0.5.6_amd64_portable.tar.gz',
+      size: 97_204_144,
+    },
+  },
+};
+
+export function parseRelease(json) {
+  if (!json || typeof json.tag_name !== 'string') {
+    throw new Error('Invalid release JSON: missing tag_name');
+  }
+  const out = { version: normalizeVersion(json.tag_name), assets: {} };
+  for (const asset of json.assets ?? []) {
+    const fmt = matchAssetFormat(asset.name);
+    if (!fmt) continue;
+    if (!isAllowedAssetUrl(asset.browser_download_url)) continue;
+    out.assets[fmt] = {
+      url: asset.browser_download_url,
+      size: asset.size,
+    };
+  }
+  return out;
+}
+
+export async function fetchLatestRelease(fetcher) {
+  try {
+    const res = await fetcher(RELEASES_API);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return parseRelease(json);
+  } catch {
+    return null;
+  }
+}
