@@ -157,6 +157,9 @@ let lastFocusedBeforeModal = null;
 function openModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
+  // Guard against double-open: rapid double-click would otherwise overwrite
+  // lastFocusedBeforeModal with the close button (focused by the first open).
+  if (!modal.hidden) return;
   lastFocusedBeforeModal = document.activeElement;
   modal.hidden = false;
   const closeBtn = modal.querySelector('.modal-close');
@@ -176,8 +179,10 @@ function bindModalEvents() {
   document.addEventListener('click', (e) => {
     const opener = e.target.closest('[data-modal-open]');
     if (opener) {
-      // The AUR card is an <a> with a fallback href. Prevent navigation when JS is active.
-      e.preventDefault();
+      // Only prevent navigation on anchors with an href (e.g. the AUR card's no-JS fallback link).
+      if (opener.tagName === 'A' && opener.hasAttribute('href')) {
+        e.preventDefault();
+      }
       const targetId = opener.getAttribute('data-modal-open') === 'aur'
         ? 'aur-modal'
         : opener.getAttribute('data-modal-open');
