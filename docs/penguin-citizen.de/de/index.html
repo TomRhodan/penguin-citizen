@@ -359,30 +359,60 @@
           <p>Lade Penguin Citizen herunter und spiele Star Citizen noch heute unter Linux.</p>
         </div>
         <div class="download-options">
-          <div class="download-card">
-            <div class="download-icon">&#127968;</div>
-            <h3>AUR (Arch Linux)</h3>
-            <p>Für Arch, Manjaro, EndeavourOS, CachyOS und Derivate</p>
-            <code>yay -S penguin-citizen-bin</code>
-          </div>
-          <div class="download-card">
+          <a
+            href="https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.deb"
+            download
+            class="download-card"
+            data-format="deb"
+          >
             <div class="download-icon">&#128230;</div>
             <h3>DEB-Paket</h3>
             <p>Für Debian, Ubuntu, Linux Mint und Derivate</p>
-            <code>sudo dpkg -i penguin-citizen_*.deb</code>
-          </div>
-          <div class="download-card">
+            <span class="download-cta">
+              <span class="download-cta-icon" aria-hidden="true">&#11015;</span>
+              <span class="download-cta-text">v<span data-version>0.5.6</span> · <span data-size>9 MB</span> .deb</span>
+            </span>
+          </a>
+
+          <a
+            href="https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.AppImage"
+            download
+            class="download-card"
+            data-format="appimage"
+          >
             <div class="download-icon">&#9889;</div>
             <h3>AppImage</h3>
             <p>Portabel - funktioniert auf jeder Linux-Distribution</p>
-            <code>chmod +x Penguin-Citizen_*.AppImage</code>
-          </div>
-          <div class="download-card">
+            <span class="download-cta">
+              <span class="download-cta-icon" aria-hidden="true">&#11015;</span>
+              <span class="download-cta-text">v<span data-version>0.5.6</span> · <span data-size>78 MB</span> .AppImage</span>
+            </span>
+          </a>
+
+          <a
+            href="https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/penguin-citizen_0.5.6_amd64_portable.tar.gz"
+            download
+            class="download-card"
+            data-format="portable"
+          >
             <div class="download-icon">&#128187;</div>
             <h3>Portable ZIP</h3>
             <p>Entpacken und starten - funktioniert auf jeder Linux-Distribution</p>
-            <code>unzip penguin-citizen_*.zip</code>
-          </div>
+            <span class="download-cta">
+              <span class="download-cta-icon" aria-hidden="true">&#11015;</span>
+              <span class="download-cta-text">v<span data-version>0.5.6</span> · <span data-size>93 MB</span> .tar.gz</span>
+            </span>
+          </a>
+
+          <button type="button" class="download-card" data-format="aur" data-modal-open="aur">
+            <div class="download-icon">&#127968;</div>
+            <h3>AUR (Arch Linux)</h3>
+            <p>Für Arch, Manjaro, EndeavourOS, CachyOS und Derivate</p>
+            <span class="download-cta">
+              <span class="download-cta-icon" aria-hidden="true">&#9000;</span>
+              <span class="download-cta-text">Install-Befehl anzeigen</span>
+            </span>
+          </button>
         </div>
         <a
           href="https://github.com/TomRhodan/penguin-citizen/releases"
