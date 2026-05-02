@@ -1136,3 +1136,21 @@ footer {
 .modal-footer-link a {
   color: var(--accent-cyan);
 }
+
+.download-secondary-link {
+  text-align: center;
+  margin-top: 2rem;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.download-secondary-link a {
+  color: var(--accent-cyan);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.2s ease;
+}
+
+.download-secondary-link a:hover {
+  border-bottom-color: var(--accent-cyan);
+}
