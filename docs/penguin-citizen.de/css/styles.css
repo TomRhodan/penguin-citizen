@@ -530,10 +530,10 @@ section {
 
 .download-options {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.5rem;
   margin-top: 3rem;
-  max-width: 900px;
+  max-width: 1180px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -548,6 +548,14 @@ section {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Neutralize anchor/button defaults so card semantics don't leak into visuals */
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  width: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .download-card::before {
@@ -597,16 +605,30 @@ section {
   padding-bottom: 1.5rem;
 }
 
-.download-card code {
-  display: block;
+.download-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   width: 100%;
   background: rgba(0, 0, 0, 0.4);
-  padding: 0.6rem 0.75rem;
+  padding: 0.7rem 0.75rem;
   border-radius: 6px;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: var(--accent-cyan);
   font-family: monospace;
-  text-align: center;
+  font-weight: 600;
+}
+
+.download-cta-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.download-card[data-format="aur"] .download-cta {
+  /* Slightly different tone so users perceive the AUR card opens info, not a file */
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .download-main-btn {
@@ -753,11 +775,20 @@ footer {
     grid-template-columns: 1fr;
   }
 
+}
+
+@media (max-width: 1140px) {
+  .download-options {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 720px;
+  }
+}
+
+@media (max-width: 640px) {
   .download-options {
     grid-template-columns: 1fr;
-    max-width: 400px;
+    max-width: 360px;
   }
-
 }
 
 /* Scroll animations */
