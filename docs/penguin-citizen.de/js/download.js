@@ -130,6 +130,7 @@ function hydrateCards(payload) {
 }
 
 async function init() {
+  bindModalEvents();
   const browserFetch = (url) => fetch(url);
   let payload = readCache(window.localStorage, Date.now());
   if (!payload) {
@@ -149,4 +150,70 @@ if (typeof window !== 'undefined') {
   } else {
     init();
   }
+}
+
+let lastFocusedBeforeModal = null;
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  lastFocusedBeforeModal = document.activeElement;
+  modal.hidden = false;
+  const closeBtn = modal.querySelector('.modal-close');
+  if (closeBtn) closeBtn.focus();
+}
+
+function closeModal(modal) {
+  if (!modal || modal.hidden) return;
+  modal.hidden = true;
+  if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+    lastFocusedBeforeModal.focus();
+  }
+  lastFocusedBeforeModal = null;
+}
+
+function bindModalEvents() {
+  document.addEventListener('click', (e) => {
+    const opener = e.target.closest('[data-modal-open]');
+    if (opener) {
+      // The AUR card is an <a> with a fallback href. Prevent navigation when JS is active.
+      e.preventDefault();
+      const targetId = opener.getAttribute('data-modal-open') === 'aur'
+        ? 'aur-modal'
+        : opener.getAttribute('data-modal-open');
+      openModal(targetId);
+      return;
+    }
+    const closer = e.target.closest('[data-modal-close]');
+    if (closer) {
+      const modal = closer.closest('.modal');
+      closeModal(modal);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const visibleModal = document.querySelector('.modal:not([hidden])');
+    if (visibleModal) closeModal(visibleModal);
+  });
+
+  // Focus trap
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const modal = document.querySelector('.modal:not([hidden])');
+    if (!modal) return;
+    const focusables = modal.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
 }
