@@ -75,3 +75,58 @@ test('normalizeVersion: strips v prefix and -N suffix', () => {
   assert.equal(normalizeVersion('0.5.6'), '0.5.6');
   assert.equal(normalizeVersion('v1.2.3-42'), '1.2.3');
 });
+
+import { readCache, writeCache, CACHE_KEY, CACHE_TTL_MS } from '../download.js';
+
+// Minimal localStorage shim for Node
+function makeStorage() {
+  const store = new Map();
+  return {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+    clear: () => store.clear(),
+  };
+}
+
+test('readCache: returns null when empty', () => {
+  const ls = makeStorage();
+  assert.equal(readCache(ls, Date.now()), null);
+});
+
+test('writeCache + readCache: round-trips fresh entry', () => {
+  const ls = makeStorage();
+  const payload = { version: '0.5.6', assets: { deb: 'https://x' } };
+  const now = 1_700_000_000_000;
+  writeCache(ls, payload, now);
+  assert.deepEqual(readCache(ls, now), payload);
+});
+
+test('readCache: returns null when expired', () => {
+  const ls = makeStorage();
+  const payload = { version: '0.5.6' };
+  const written = 1_700_000_000_000;
+  writeCache(ls, payload, written);
+  // 5 min + 1ms after write -> expired
+  assert.equal(readCache(ls, written + CACHE_TTL_MS + 1), null);
+});
+
+test('readCache: returns payload at exact TTL boundary (still valid)', () => {
+  const ls = makeStorage();
+  const payload = { version: '0.5.6' };
+  const written = 1_700_000_000_000;
+  writeCache(ls, payload, written);
+  assert.deepEqual(readCache(ls, written + CACHE_TTL_MS), payload);
+});
+
+test('readCache: handles malformed JSON', () => {
+  const ls = makeStorage();
+  ls.setItem(CACHE_KEY, 'not json {');
+  assert.equal(readCache(ls, Date.now()), null);
+});
+
+test('readCache: handles missing timestamp', () => {
+  const ls = makeStorage();
+  ls.setItem(CACHE_KEY, JSON.stringify({ payload: { x: 1 } }));
+  assert.equal(readCache(ls, Date.now()), null);
+});

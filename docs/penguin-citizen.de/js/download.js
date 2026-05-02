@@ -31,3 +31,29 @@ export function normalizeVersion(tag) {
   if (typeof tag !== 'string') return '';
   return tag.replace(/^v/, '').replace(/-\d+$/, '');
 }
+
+export const CACHE_KEY = 'pc_latest_release_v1';
+export const CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function readCache(storage, nowMs) {
+  const raw = storage.getItem(CACHE_KEY);
+  if (!raw) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  if (typeof parsed.ts !== 'number') return null;
+  if (nowMs - parsed.ts > CACHE_TTL_MS) return null;
+  return parsed.payload ?? null;
+}
+
+export function writeCache(storage, payload, nowMs) {
+  try {
+    storage.setItem(CACHE_KEY, JSON.stringify({ ts: nowMs, payload }));
+  } catch {
+    // Quota exceeded or storage unavailable — ignore, app still works
+  }
+}
