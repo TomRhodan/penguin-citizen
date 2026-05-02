@@ -12,7 +12,7 @@
 <p align="center">
   Built with <a href="https://tauri.app/">Tauri 2</a> and vanilla JavaScript.
   <br>
-  <strong>Version 0.5.4</strong>
+  <strong>Version 0.5.6</strong>
 </p>
 
 ---
@@ -85,6 +85,20 @@
 - **Prefix Tools** - Integrated access to Winecfg, DPI scaling, and PowerShell installation via winetricks.
 
 ## Installation
+
+### Arch Linux / Manjaro / EndeavourOS / CachyOS (AUR)
+
+Penguin Citizen is available on the AUR as [`penguin-citizen-bin`](https://aur.archlinux.org/packages/penguin-citizen-bin) (extracts the official `.deb` from GitHub releases).
+
+```bash
+# With an AUR helper like yay or paru:
+yay -S penguin-citizen-bin
+
+# Or manually:
+git clone https://aur.archlinux.org/penguin-citizen-bin.git
+cd penguin-citizen-bin
+makepkg -si
+```
 
 ### Download from Releases
 

@@ -16,7 +16,7 @@ sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchel
 sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf gtk3-devel libsoup3-devel javascriptcoregtk4.1-devel
 
 # Arch Linux
-sudo pacman -S webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf
+sudo pacman -S --needed base-devel webkit2gtk-4.1 libappindicator-gtk3 librsvg patchelf gtk3 libsoup3
 ```
 
 - **Tauri CLI**: `cargo install tauri-cli`

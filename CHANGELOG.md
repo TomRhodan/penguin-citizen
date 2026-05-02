@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-05-02
+
+### Added
+- **AUR distribution** — Now available as [`penguin-citizen-bin`](https://aur.archlinux.org/packages/penguin-citizen-bin) on the Arch User Repository. Arch / Manjaro / EndeavourOS / CachyOS users can install with `yay -S penguin-citizen-bin`. The package extracts the official `.deb` from GitHub releases.
+- **AUR update helper** — `scripts/update-aur.sh` automates the per-release AUR bump (pkgver, sha256sums, .SRCINFO) for the maintainer. Push to AUR remains manual per AUR rules around automation.
+
+### Fixed
+- **Incomplete Arch dependency list in CONTRIBUTING.md** — Added missing `gtk3`, `libsoup3`, and `base-devel` to the Arch Linux pacman command. A fresh Arch dev machine following the previous instructions would have failed to build.
+
+### Notes
+- 0.5.5 was skipped — it was briefly used during a Flathub submission attempt that has since been abandoned.
+
 ## [0.5.4] - 2026-05-01
 
 ### Added
