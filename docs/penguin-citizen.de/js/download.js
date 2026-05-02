@@ -106,3 +106,47 @@ export async function fetchLatestRelease(fetcher) {
     return null;
   }
 }
+
+function hydrateCards(payload) {
+  for (const fmt of ['deb', 'appimage', 'portable']) {
+    const card = document.querySelector(`.download-card[data-format="${fmt}"]`);
+    if (!card) continue;
+    const asset = payload.assets[fmt];
+    if (!asset) {
+      card.setAttribute('aria-disabled', 'true');
+      card.removeAttribute('href');
+      const ctaText = card.querySelector('.download-cta-text');
+      if (ctaText) ctaText.textContent = 'unavailable';
+      continue;
+    }
+    if (isAllowedAssetUrl(asset.url)) {
+      card.setAttribute('href', asset.url);
+    }
+    const versionSpan = card.querySelector('[data-version]');
+    if (versionSpan) versionSpan.textContent = payload.version;
+    const sizeSpan = card.querySelector('[data-size]');
+    if (sizeSpan) sizeSpan.textContent = formatBytes(asset.size);
+  }
+}
+
+async function init() {
+  const browserFetch = (url) => fetch(url);
+  let payload = readCache(window.localStorage, Date.now());
+  if (!payload) {
+    payload = await fetchLatestRelease(browserFetch);
+    if (payload) {
+      writeCache(window.localStorage, payload, Date.now());
+    } else {
+      payload = FALLBACK;
+    }
+  }
+  hydrateCards(payload);
+}
+
+if (typeof window !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+}
