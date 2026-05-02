@@ -365,7 +365,7 @@
             class="download-card"
             data-format="deb"
           >
-            <div class="download-icon">&#128230;</div>
+            <div class="download-icon" aria-hidden="true">&#128230;</div>
             <h3>DEB Package</h3>
             <p>For Debian, Ubuntu, Linux Mint, and derivatives</p>
             <span class="download-cta">
@@ -380,7 +380,7 @@
             class="download-card"
             data-format="appimage"
           >
-            <div class="download-icon">&#9889;</div>
+            <div class="download-icon" aria-hidden="true">&#9889;</div>
             <h3>AppImage</h3>
             <p>Portable - works on any Linux distribution</p>
             <span class="download-cta">
@@ -395,7 +395,7 @@
             class="download-card"
             data-format="portable"
           >
-            <div class="download-icon">&#128187;</div>
+            <div class="download-icon" aria-hidden="true">&#128187;</div>
             <h3>Portable ZIP</h3>
             <p>Extract and run - works on any Linux distribution</p>
             <span class="download-cta">
@@ -404,15 +404,23 @@
             </span>
           </a>
 
-          <button type="button" class="download-card" data-format="aur" data-modal-open="aur">
-            <div class="download-icon">&#127968;</div>
+          <a
+            href="https://aur.archlinux.org/packages/penguin-citizen-bin"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="download-card"
+            data-format="aur"
+            data-modal-open="aur"
+            aria-haspopup="dialog"
+          >
+            <div class="download-icon" aria-hidden="true">&#127968;</div>
             <h3>AUR (Arch Linux)</h3>
             <p>For Arch, Manjaro, EndeavourOS, CachyOS, and derivatives</p>
             <span class="download-cta">
               <span class="download-cta-icon" aria-hidden="true">&#9000;</span>
               <span class="download-cta-text">Show install command</span>
             </span>
-          </button>
+          </a>
         </div>
         <a
           href="https://github.com/TomRhodan/penguin-citizen/releases"
