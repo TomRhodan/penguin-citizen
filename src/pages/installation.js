@@ -695,6 +695,19 @@ function renderStep2(body) {
       configState.performance.wayland = false;
     }
 
+    // Migrate stale primary_monitor values (e.g. legacy display model names
+    // like "LG HDR 4K") to the primary connector. Persists immediately so
+    // the broken value is gone even if the user aborts the wizard.
+    const saved = configState.performance.primary_monitor;
+    if (saved && monitors.length > 0 && !monitors.some(m => m.name === saved)) {
+      const primary = monitors.find(m => m.primary) || monitors[0];
+      console.warn(
+        `primary_monitor "${saved}" does not match any detected connector — migrating to "${primary.name}"`
+      );
+      configState.performance.primary_monitor = primary.name;
+      saveCurrentConfig();
+    }
+
     if (fractionalScaling !== wasFractional) {
       // Targeted DOM update instead of full re-render to avoid destroying
       // in-flight async work (runner fetch chain, path validation)

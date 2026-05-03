@@ -211,21 +211,22 @@ async function loadAndCheck(container) {
   // Only re-detect on first load or after app restart.
   if (detectedMonitors.length > 0) {
     monitorsReady = true;
+    maybeMigrateMonitorConfig();
   } else {
     // Detect monitors in parallel (does not block the main flow).
-    // If CLI-based detection returns no results (e.g. in AppImage sandboxes),
-    // fall back to Tauri's built-in monitor API via get_display_info.
     invoke('detect_monitors').then(async (monitors) => {
       detectedMonitors = monitors || [];
       if (detectedMonitors.length === 0) {
         detectedMonitors = await detectMonitorsFallback();
       }
       monitorsReady = true;
+      maybeMigrateMonitorConfig();
       renderPage(container);
     }).catch(async (err) => {
       console.warn('Monitor detection failed:', err);
       detectedMonitors = await detectMonitorsFallback();
       monitorsReady = true;
+      maybeMigrateMonitorConfig();
       renderPage(container);
     });
   }
@@ -262,6 +263,8 @@ async function loadAndCheck(container) {
     }
 
     launchConfig = config;
+    // Re-run migration in case detect_monitors finished before launchConfig was set
+    maybeMigrateMonitorConfig();
     const status = await invoke('check_installation', { config });
     installStatus = status;
 
@@ -1273,25 +1276,37 @@ async function refreshMonitors(btn) {
 // --- Monitor Detection Fallback ---
 
 /**
- * Fallback monitor detection using Tauri's built-in monitor API.
- * Used when CLI-based detection (kscreen-doctor, gnome-monitor-config, etc.)
- * returns no results, e.g. in AppImage sandboxes where external tools may hang.
- * @returns {Promise<Array>} Array of MonitorInfo-compatible objects
+ * Fallback for the monitor selection.
+ *
+ * Tauri's `available_monitors()` returns the display *model* (e.g. "LG HDR 4K")
+ * as the monitor name on Linux — that is NOT a valid Wayland connector and
+ * therefore unusable for WAYLANDDRV_PRIMARY_MONITOR / PROTON_WAYLAND_MONITOR.
+ * Returning an empty array makes `renderMonitorSelect()` show the free-text
+ * input where the user can manually enter the connector name (DP-1, etc.).
+ * @returns {Promise<Array>} Always empty
  */
 async function detectMonitorsFallback() {
-  try {
-    const info = await invoke('get_display_info');
-    if (!info?.monitors?.length) return [];
-    return info.monitors.map((m, i) => ({
-      name: m.name || `Monitor-${i + 1}`,
-      resolution: m.width && m.height ? `${m.width}x${m.height}` : '',
-      primary: i === 0,
-      scale: m.scale_factor ?? null,
-    }));
-  } catch (e) {
-    console.warn('Fallback monitor detection failed:', e);
-    return [];
-  }
+  return [];
+}
+
+/**
+ * If the persisted `primary_monitor` does not match any detected connector
+ * (e.g. it's a stale display model name like "LG HDR 4K" written by an older
+ * version of the Tauri-based fallback), replace it with the primary connector
+ * and persist the new value. Idempotent — safe to call multiple times.
+ */
+function maybeMigrateMonitorConfig() {
+  if (!launchConfig?.performance) return;
+  const saved = launchConfig.performance.primary_monitor;
+  if (!saved) return;
+  if (detectedMonitors.length === 0) return;
+  if (detectedMonitors.some(m => m.name === saved)) return;
+  const primary = detectedMonitors.find(m => m.primary) || detectedMonitors[0];
+  console.warn(
+    `primary_monitor "${saved}" does not match any detected connector — migrating to "${primary.name}"`
+  );
+  launchConfig.performance.primary_monitor = primary.name;
+  saveConfigNow();
 }
 
 // --- Fractional Scaling ---

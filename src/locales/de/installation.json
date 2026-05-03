@@ -73,7 +73,7 @@
   "label.installPathPlaceholder": "~/Games/star-citizen",
   "label.selectRunner": "-- Runner auswaehlen --",
   "label.waylandMonitor": "Wayland-Monitor",
-  "label.monitorPlaceholder": "z.B. DP-1",
+  "label.monitorPlaceholder": "z.B. DP-1, HDMI-A-1, eDP-1",
   "label.detecting": "Erkennung...",
 
   "label.installPathSummary": "Installationspfad",

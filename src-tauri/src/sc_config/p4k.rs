@@ -502,7 +502,7 @@ mod tests {
 
         move_data_p4k_inner(&src, &dst, false).unwrap();
 
-        assert!(!std::fs::symlink_metadata(&src).is_ok(), "source symlink gone");
+        assert!(std::fs::symlink_metadata(&src).is_err(), "source symlink gone");
         assert!(std::fs::symlink_metadata(&dst).unwrap().file_type().is_symlink(), "target is symlink");
         assert!(real.exists(), "underlying file untouched");
         assert_eq!(std::fs::read(&dst).unwrap(), b"underlying", "symlink resolves");

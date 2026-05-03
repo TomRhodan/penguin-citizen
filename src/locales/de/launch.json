@@ -69,7 +69,7 @@
 
   "placeholder.envKey": "SCHLUESSEL",
   "placeholder.envValue": "Wert",
-  "placeholder.monitorInput": "z.B. DP-1",
+  "placeholder.monitorInput": "z.B. DP-1, HDMI-A-1, eDP-1",
 
   "error.notInstalled": "Star Citizen ist nicht installiert",
   "error.noConfig": "Keine Konfiguration gefunden",

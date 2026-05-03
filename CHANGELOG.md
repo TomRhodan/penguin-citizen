@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-05-03
+
+### Fixed
+- **Wayland monitor selection sent the display model name instead of the DRM connector** — `WAYLANDDRV_PRIMARY_MONITOR` and `PROTON_WAYLAND_MONITOR` were being populated with values like `"LG HDR 4K"` (a leftover from the Tauri `available_monitors()` fallback). Wine ignores anything that is not a connector name (`DP-1`, `HDMI-A-1`, `eDP-1`, …), so the env vars had no effect. Fixes:
+  - `load_config` migrates persisted display-model values to the actual primary connector at every app start (logged as `[config] Migrating primary_monitor "LG HDR 4K" -> "DP-1"`).
+  - The backend validates the value before exporting the env vars and silently skips them on a non-connector pattern, falling back to Wine's auto-detection.
+  - The Tauri-API fallback in `launch.js` no longer feeds bogus names into the dropdown; if all CLI detectors fail, the user gets a free-text input with a connector hint (`z.B. DP-1, HDMI-A-1, eDP-1`).
+- **Monitor detection silently returned empty results** — `kscreen-doctor`, `gnome-monitor-config`, `wlr-randr` and `xrandr` were all spawned with the default `Stdio::inherit()`, so `wait_with_output()` captured nothing and the parser saw empty input even on success. All detection commands now use `Stdio::piped()` for stdout/stderr and `Stdio::null()` for stdin.
+- **`detect_monitors` had no diagnostics** — Added per-detector logging so failure modes are obvious in `debug.log`. Sample: `[detect_monitors] kscreen-doctor returned 3 monitors: ["DP-1", "DP-2", "HDMI-A-2"]` or `[detect_monitors] wlr-randr exited with Some(1), stderr: compositor doesn't support wlr-output-management-unstable-v1`.
+
+### Added
+- **Wine debug log file** — In debug log mode, Wine stdout/stderr is redirected to `~/.config/penguin-citizen/logs/wine.log` (truncated per launch) instead of `/dev/null`. The launch overlay shows the path. Lets you `grep waylanddrv ~/.config/penguin-citizen/logs/wine.log` to see what Wine actually does without breaking the Electron-launcher detach (which `Stdio::piped()` would block).
+- **Log rotation at app startup** — `debug.log` is truncated to the last 2 sessions on init (1 previous + the new one). Keeps the file readable during heavy debugging without manual cleanup. Tunable via `KEEP_PREVIOUS_STARTS` constant in `lib.rs`. Covered by 4 unit tests.
+- **Backend connector-name validator** — `is_valid_connector_name()` in `installer/mod.rs` accepts standard DRM prefixes (`DP-`, `HDMI-A-`, `HDMI-B-`, `eDP-`, `LVDS-`, `VGA-`, `DVI-`, `DSI-`, `Virtual-`); rejects whitespace and unknown patterns. 3 unit tests.
+
+### Changed
+- **Convenience npm scripts for Rust tasks** — `npm run lint` / `npm run test` from the project root run clippy and tests with the correct `--manifest-path src-tauri/Cargo.toml` baked in. Direct `cargo` invocations still work from `src-tauri/`. `CLAUDE.md` documents both.
+
+### Build
+- **Vite chunking** — Vendor code split into `vendor-tauri` (~15 kB) and `vendor-i18n` (~45 kB). The main `index.js` chunk dropped from 543 kB to 481 kB (under the 500 kB warn threshold). Improves browser cache reuse since vendor chunks change rarely.
+- **Static instead of dynamic import for `@tauri-apps/api/window`** in `pages/environments/index.js` — eliminates the "dynamic import will not move module into another chunk" Vite warning since `main.js` already statically imports the same module.
+- **Lint cleanup** — removed unused `std::io::Write` test import; simplified `assert!(!x.is_ok(), …)` to `assert!(x.is_err(), …)`. `cargo clippy --tests --all-targets -- -D warnings` is clean.
+
 ## [0.5.6] - 2026-05-02
 
 ### Added

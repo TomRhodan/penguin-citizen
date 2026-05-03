@@ -34,6 +34,19 @@ use std::path::Path;
 
 use crate::error::AppError;
 
+/// Returns true if `s` looks like a DRM connector name (e.g. "DP-1", "HDMI-A-1").
+/// Used by `load_config` to detect stale display-model values like "LG HDR 4K".
+fn looks_like_connector(s: &str) -> bool {
+    if s.is_empty() || s.contains(char::is_whitespace) {
+        return false;
+    }
+    const PREFIXES: &[&str] = &[
+        "DP-", "HDMI-A-", "HDMI-B-", "DVI-D-", "DVI-I-", "DVI-",
+        "eDP-", "LVDS-", "VGA-", "DSI-", "Virtual-",
+    ];
+    PREFIXES.iter().any(|p| s.starts_with(p))
+}
+
 /// Writes content to a file with owner-only permissions (0o600).
 ///
 /// Config and cache files may contain sensitive data (e.g. GitHub tokens),
@@ -806,15 +819,45 @@ pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
             // If no runner sources are configured, insert defaults
             // and write to file immediately so they are persistently available
             let defaults = AppConfig::default();
-            if config.runner_sources.is_empty() {
-                let new_config = AppConfig {
+            let mut config = if config.runner_sources.is_empty() {
+                AppConfig {
                     runner_sources: defaults.runner_sources.clone(),
                     ..config
-                };
-                if let Ok(json) = serde_json::to_string_pretty(&new_config) {
-                    let _ = write_private(&path, &json);
                 }
-                return Some(new_config);
+            } else {
+                config
+            };
+
+            // Migrate stale primary_monitor values: older app versions stored
+            // the display model name (e.g. "LG HDR 4K") instead of the DRM
+            // connector (e.g. "DP-1"). Wine/Proton ignore the bogus value, so
+            // replace it with the primary connector if a mismatch is detected.
+            let stale = config
+                .performance
+                .primary_monitor
+                .as_ref()
+                .map(|s| !s.is_empty() && (s.contains(char::is_whitespace) || !looks_like_connector(s)))
+                .unwrap_or(false);
+            if stale {
+                let monitors = crate::system_check::detect_monitors_sync();
+                if !monitors.is_empty() {
+                    let saved = config.performance.primary_monitor.clone().unwrap_or_default();
+                    let still_valid = monitors.iter().any(|m| m.name == saved);
+                    if !still_valid {
+                        let primary = monitors.iter().find(|m| m.primary).unwrap_or(&monitors[0]);
+                        log::warn!(
+                            "[config] Migrating primary_monitor {:?} -> {:?} (not a valid DRM connector)",
+                            saved,
+                            primary.name
+                        );
+                        config.performance.primary_monitor = Some(primary.name.clone());
+                    }
+                }
+            }
+
+            // Persist if anything changed (runner_sources or primary_monitor migration)
+            if let Ok(json) = serde_json::to_string_pretty(&config) {
+                let _ = write_private(&path, &json);
             }
 
             Some(config)

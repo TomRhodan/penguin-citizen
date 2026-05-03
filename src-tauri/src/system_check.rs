@@ -31,7 +31,7 @@
 use serde::{ Deserialize, Serialize };
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 /// Status result for individual system checks.
@@ -409,38 +409,58 @@ pub struct MonitorInfo {
 /// - X11/XWayland: xrandr (fallback for all systems)
 ///
 /// The methods are tried in order until one returns results.
+/// Synchronous version of the monitor detection cascade.
+/// Used by `load_config` to migrate stale `primary_monitor` values at app startup.
+pub fn detect_monitors_sync() -> Vec<MonitorInfo> {
+    let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+    let is_wayland = session_type == "wayland";
+    log::info!(
+        "[detect_monitors] XDG_SESSION_TYPE={:?}, is_wayland={}",
+        session_type,
+        is_wayland
+    );
+
+    if is_wayland {
+        match detect_monitors_kscreen() {
+            Some(m) if !m.is_empty() => {
+                log::info!(
+                    "[detect_monitors] kscreen-doctor returned {} monitors: {:?}",
+                    m.len(),
+                    m.iter().map(|x| &x.name).collect::<Vec<_>>()
+                );
+                return m;
+            }
+            Some(_) => log::info!("[detect_monitors] kscreen-doctor returned 0 monitors"),
+            None => log::info!("[detect_monitors] kscreen-doctor unavailable or failed"),
+        }
+        match detect_monitors_gnome() {
+            Some(m) if !m.is_empty() => {
+                log::info!("[detect_monitors] gnome-monitor-config returned {} monitors", m.len());
+                return m;
+            }
+            Some(_) => log::info!("[detect_monitors] gnome-monitor-config returned 0 monitors"),
+            None => log::info!("[detect_monitors] gnome-monitor-config unavailable or failed"),
+        }
+        match detect_monitors_wlr_randr() {
+            Some(m) if !m.is_empty() => {
+                log::info!("[detect_monitors] wlr-randr returned {} monitors", m.len());
+                return m;
+            }
+            Some(_) => log::info!("[detect_monitors] wlr-randr returned 0 monitors"),
+            None => log::info!("[detect_monitors] wlr-randr unavailable or failed"),
+        }
+    }
+
+    // Fallback: xrandr works on X11 and via XWayland
+    let xr = detect_monitors_xrandr();
+    log::info!("[detect_monitors] xrandr returned {} monitors", xr.len());
+    xr
+}
+
 #[tauri::command]
 pub async fn detect_monitors() -> Result<Vec<MonitorInfo>, String> {
-    tokio::task
-        ::spawn_blocking(move || {
-            // Check if a Wayland session is active
-            let is_wayland = std::env
-                ::var("XDG_SESSION_TYPE")
-                .map(|v| v == "wayland")
-                .unwrap_or(false);
-
-            if is_wayland {
-                // Try Wayland-native detection (KDE -> GNOME -> wlroots -> xrandr)
-                if let Some(monitors) = detect_monitors_kscreen() {
-                    if !monitors.is_empty() {
-                        return monitors;
-                    }
-                }
-                if let Some(monitors) = detect_monitors_gnome() {
-                    if !monitors.is_empty() {
-                        return monitors;
-                    }
-                }
-                if let Some(monitors) = detect_monitors_wlr_randr() {
-                    if !monitors.is_empty() {
-                        return monitors;
-                    }
-                }
-            }
-
-            // Fallback: xrandr works on X11 and via XWayland
-            detect_monitors_xrandr()
-        }).await
+    tokio::task::spawn_blocking(detect_monitors_sync)
+        .await
         .map_err(|e| format!("Task failed: {}", e))
 }
 
@@ -450,17 +470,38 @@ const MONITOR_DETECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Runs a command with a timeout. Returns `None` if the command is not found,
 /// fails to start, times out, or exits with a non-zero status.
 fn run_with_timeout(mut cmd: Command) -> Option<std::process::Output> {
-    let mut child = cmd.spawn().ok()?;
+    let program = format!("{:?}", cmd.get_program());
+    // Pipe stdout/stderr so wait_with_output() can capture them. Without this
+    // the default is Stdio::inherit() and wait_with_output returns empty buffers,
+    // so the parser sees nothing even when the command succeeded.
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[detect_monitors] spawn {} failed: {}", program, e);
+            return None;
+        }
+    };
     let start = std::time::Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(_status)) => {
-                // Process exited — collect output
-                return child.wait_with_output().ok().filter(|o| o.status.success());
+                let result = child.wait_with_output().ok();
+                if let Some(ref o) = result {
+                    if !o.status.success() {
+                        log::info!(
+                            "[detect_monitors] {} exited with {:?}, stderr: {}",
+                            program,
+                            o.status.code(),
+                            String::from_utf8_lossy(&o.stderr).trim()
+                        );
+                    }
+                }
+                return result.filter(|o| o.status.success());
             }
             Ok(None) => {
                 if start.elapsed() >= MONITOR_DETECT_TIMEOUT {
-                    log::warn!("Monitor detection command timed out, killing process");
+                    log::warn!("[detect_monitors] {} timed out, killing process", program);
                     let _ = child.kill();
                     let _ = child.wait();
                     return None;

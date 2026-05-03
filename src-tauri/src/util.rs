@@ -424,7 +424,6 @@ pub(crate) fn validate_env_var_key(key: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     // ── expand_tilde ──
 

@@ -148,6 +148,28 @@ pub(crate) fn stream_command_output(
     }
 }
 
+/// Returns true if the given string looks like a valid DRM connector name
+/// (e.g. "DP-1", "HDMI-A-1", "eDP-1"). Used to guard the WAYLANDDRV_PRIMARY_MONITOR
+/// env var against bogus values like display model names ("LG HDR 4K").
+fn is_valid_connector_name(s: &str) -> bool {
+    if s.is_empty() || s.contains(char::is_whitespace) {
+        return false;
+    }
+    // Common DRM connector prefixes — keep in sync with what Wayland compositors
+    // and xrandr expose. Values must end with a numeric suffix; we check the prefix
+    // only because numbering varies (DP-1 / DP-2 / HDMI-A-1 / eDP-1 / DSI-1 / ...).
+    const PREFIXES: &[&str] = &[
+        "DP-",
+        "HDMI-A-", "HDMI-B-",
+        "DVI-D-", "DVI-I-", "DVI-",
+        "eDP-", "LVDS-",
+        "VGA-",
+        "DSI-",
+        "Virtual-",
+    ];
+    PREFIXES.iter().any(|p| s.starts_with(p))
+}
+
 /// Configures all environment variables for Wine execution.
 ///
 /// Sets performance flags (ESync, FSync, DXVK Async), display settings
@@ -224,10 +246,21 @@ pub(crate) fn configure_wine_env(
     if perf.fsr {
         vars.push(("PROTON_FSR4_UPGRADE".into(), "1".into()));
     }
-    // Set primary monitor for the Wine Wayland driver (e.g. "DP-1")
+    // Set primary monitor for the Wine Wayland driver (e.g. "DP-1").
+    // Wine/Proton expect a DRM connector name (DP-1, HDMI-A-1, eDP-1, ...),
+    // not a display model name like "LG HDR 4K". If the saved value does
+    // not match the connector format, skip both env vars so Wine falls back
+    // to its own auto-detection (GE-Proton uses xrandr for that).
     if let Some(ref monitor) = perf.primary_monitor {
-        vars.push(("WAYLANDDRV_PRIMARY_MONITOR".into(), monitor.clone()));
-        vars.push(("PROTON_WAYLAND_MONITOR".into(), monitor.clone()));
+        if is_valid_connector_name(monitor) {
+            vars.push(("WAYLANDDRV_PRIMARY_MONITOR".into(), monitor.clone()));
+            vars.push(("PROTON_WAYLAND_MONITOR".into(), monitor.clone()));
+        } else {
+            log::warn!(
+                "Ignoring invalid primary_monitor value {:?} (not a connector name like DP-1/HDMI-A-1) — letting Wine auto-detect",
+                monitor
+            );
+        }
     }
 
     // Overlay options for performance monitoring during gameplay
@@ -361,4 +394,30 @@ pub(crate) fn configure_wine_env(
     }
 
     vars
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_connector_name;
+
+    #[test]
+    fn valid_connector_names() {
+        for name in ["DP-1", "DP-2", "HDMI-A-1", "HDMI-B-2", "eDP-1", "LVDS-1", "DVI-D-1", "DSI-1", "VGA-1", "Virtual-1"] {
+            assert!(is_valid_connector_name(name), "expected {name} to be a valid connector name");
+        }
+    }
+
+    #[test]
+    fn rejects_display_model_names() {
+        for name in ["LG HDR 4K", "Dell U2723QE", "Samsung Odyssey G7"] {
+            assert!(!is_valid_connector_name(name), "expected {name} to be rejected (contains whitespace)");
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_or_empty() {
+        for name in ["", "Foo Bar", "Monitor1", "1234", "DP1"] {
+            assert!(!is_valid_connector_name(name), "expected {name:?} to be rejected");
+        }
+    }
 }

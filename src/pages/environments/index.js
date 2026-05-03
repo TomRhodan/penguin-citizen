@@ -32,6 +32,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { confirm, showDiff, showNotification, prompt, resetApplyTargetSkip } from '../../utils/dialogs.js';
 import { logError } from '../../utils/error-handler.js';
 import { escapeHtml } from '../../utils.js';
@@ -1115,7 +1116,6 @@ function attachProfilesEventListeners() {
  */
 async function initCloseBlocker() {
   try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const appWindow = getCurrentWindow();
 
     appWindow.onCloseRequested(async (event) => {

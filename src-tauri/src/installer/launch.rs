@@ -297,8 +297,46 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
 
     // The RSI Launcher is an Electron app - piping keeps
     // the child handles open and prevents detection of process termination.
-    // Therefore redirect stdout/stderr to /dev/null.
-    cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    // Therefore redirect stdout/stderr either to /dev/null (default) or, in
+    // debug mode, to a dedicated wine.log file. A file-backed Stdio::from is
+    // owned by the child kernel-side, so it does not keep parent handles
+    // alive (unlike Stdio::piped()).
+    if is_debug {
+        let wine_log_path = dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("penguin-citizen")
+            .join("logs")
+            .join("wine.log");
+        match std::fs::File::options()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&wine_log_path)
+        {
+            Ok(file) => {
+                // Use the same file for both streams so output stays chronologically ordered.
+                let dup = file.try_clone();
+                cmd.stdout(Stdio::from(file));
+                match dup {
+                    Ok(d) => { cmd.stderr(Stdio::from(d)); }
+                    Err(_) => { cmd.stderr(Stdio::null()); }
+                }
+                let _ = app.emit(
+                    "launch-log",
+                    &format!("> Wine output -> {}", wine_log_path.display())
+                );
+            }
+            Err(e) => {
+                let _ = app.emit(
+                    "launch-log",
+                    &format!("> Failed to open wine.log ({}), falling back to /dev/null", e)
+                );
+                cmd.stdout(Stdio::null()).stderr(Stdio::null());
+            }
+        }
+    } else {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    }
 
     let _ = app.emit("launch-log", "");
     let _ = app.emit("launch-log", "> Starting RSI Launcher...");

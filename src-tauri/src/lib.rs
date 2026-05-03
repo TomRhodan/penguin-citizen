@@ -77,6 +77,47 @@ use std::fs::File;
 /// This function is called once at app startup, before other
 /// components are initialized. The frontend can also log to this file
 /// via the `app_log` command.
+/// Marker substring written by `init_logging` once per app start.
+/// Used by `rotate_log_file` to identify session boundaries.
+const LOG_START_MARKER: &str = "Logging initialized. Log file:";
+
+/// How many previous startups' log content to preserve. The current run is
+/// always appended on top, so the file ends up with `KEEP_PREVIOUS_STARTS + 1`
+/// sessions worth of logs after `init_logging` returns.
+const KEEP_PREVIOUS_STARTS: usize = 1;
+
+/// Truncates `path` to keep only the last `keep_previous_starts` sessions
+/// (delimited by `LOG_START_MARKER`). If the file has fewer markers than
+/// requested it is left untouched. If `keep_previous_starts` is 0, the file
+/// is fully cleared. Errors are swallowed — log rotation is best-effort.
+fn rotate_log_file(path: &std::path::Path, keep_previous_starts: usize) {
+    if !path.exists() {
+        return;
+    }
+    if keep_previous_starts == 0 {
+        let _ = std::fs::write(path, "");
+        return;
+    }
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let lines: Vec<&str> = content.lines().collect();
+    let marker_lines: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| if l.contains(LOG_START_MARKER) { Some(i) } else { None })
+        .collect();
+    if marker_lines.len() <= keep_previous_starts {
+        return;
+    }
+    let cutoff_marker = marker_lines.len() - keep_previous_starts;
+    let cutoff_line = marker_lines[cutoff_marker];
+    let kept = lines[cutoff_line..].join("\n");
+    // Re-add a trailing newline so subsequent appends start on a fresh line
+    let _ = std::fs::write(path, format!("{}\n", kept));
+}
+
 fn init_logging() {
     // Determine log directory (XDG_CONFIG_HOME or fallback to current directory)
     let log_dir = dirs
@@ -89,6 +130,10 @@ fn init_logging() {
     let _ = std::fs::create_dir_all(&log_dir);
 
     let log_file_path = log_dir.join("debug.log");
+
+    // Rotate before opening so the new session starts on top of at most
+    // KEEP_PREVIOUS_STARTS previous sessions.
+    rotate_log_file(&log_file_path, KEEP_PREVIOUS_STARTS);
 
     // Open log file in append mode (or create new), so logs persist across
     // multiple sessions
@@ -692,4 +737,82 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod log_rotation_tests {
+    use super::{rotate_log_file, LOG_START_MARKER};
+    use std::io::Write;
+
+    fn make_session(start_idx: usize) -> String {
+        format!(
+            "12:00:00 [INFO] {} \"/tmp/x\"\n12:00:01 [INFO] session-{}-line-1\n12:00:02 [INFO] session-{}-line-2\n",
+            LOG_START_MARKER, start_idx, start_idx
+        )
+    }
+
+    fn write_temp(content: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "penguin-citizen-rotate-test-{}-{}.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn truncates_to_last_n_sessions() {
+        let combined = (1..=4).map(make_session).collect::<String>();
+        let path = write_temp(&combined);
+
+        rotate_log_file(&path, 2);
+
+        let result = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(result.matches(LOG_START_MARKER).count(), 2);
+        assert!(!result.contains("session-1-line-1"));
+        assert!(!result.contains("session-2-line-1"));
+        assert!(result.contains("session-3-line-1"));
+        assert!(result.contains("session-4-line-2"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn leaves_file_alone_when_not_enough_markers() {
+        let combined = make_session(1);
+        let path = write_temp(&combined);
+
+        rotate_log_file(&path, 5);
+
+        let result = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(result, combined);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn zero_clears_file() {
+        let combined = make_session(1) + &make_session(2);
+        let path = write_temp(&combined);
+
+        rotate_log_file(&path, 0);
+
+        let result = std::fs::read_to_string(&path).unwrap();
+        assert!(result.is_empty());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn nonexistent_file_is_noop() {
+        let path = std::env::temp_dir().join(format!(
+            "penguin-citizen-nonexistent-{}.log",
+            std::process::id()
+        ));
+        rotate_log_file(&path, 2);
+        assert!(!path.exists());
+    }
 }

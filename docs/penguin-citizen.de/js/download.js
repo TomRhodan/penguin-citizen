@@ -62,18 +62,18 @@ const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 // Hardcoded fallback. Update at release time only if the URL pattern changes.
 export const FALLBACK = {
-  version: '0.5.6',
+  version: '0.5.7',
   assets: {
     deb: {
-      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.deb',
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.7-0/Penguin.Citizen_0.5.7_amd64.deb',
       size: 9_536_646,
     },
     appimage: {
-      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/Penguin.Citizen_0.5.6_amd64.AppImage',
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.7-0/Penguin.Citizen_0.5.7_amd64.AppImage',
       size: 81_762_808,
     },
     portable: {
-      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.6-0/penguin-citizen_0.5.6_amd64_portable.tar.gz',
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.7-0/penguin-citizen_0.5.7_amd64_portable.tar.gz',
       size: 97_204_144,
     },
   },
