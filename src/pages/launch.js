@@ -389,7 +389,7 @@ function renderProfileHeader() {
       <label class="launch-profile-bar-label" for="profile-selector">${escapeHtml(
         t('launch:profile.label', { defaultValue: 'Profile:' })
       )}</label>
-      <select id="profile-selector" class="launch-profile-bar-select">
+      <select id="profile-selector" class="input input-sm launch-profile-bar-select">
         ${options}
       </select>
       ${dirtyPill}

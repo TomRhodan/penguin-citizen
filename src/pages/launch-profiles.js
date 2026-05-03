@@ -152,7 +152,7 @@ function paint() {
         })
       )}</p>
       <div class="launch-profiles-fallback-row">
-        <select id="fallback-runner-select">
+        <select id="fallback-runner-select" class="input">
           <option value="">${escapeHtml(
             t('launchProfiles:fallback.none', { defaultValue: '— none —' })
           )}</option>

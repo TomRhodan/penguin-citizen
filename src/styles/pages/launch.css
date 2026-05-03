@@ -744,27 +744,13 @@
   letter-spacing: 0.5px;
 }
 
+/* The profile-bar select uses the global `.input.input-sm` styling
+   (see main.css). We only override sizing here so it doesn't stretch
+   the bar's flex layout. */
 .launch-profile-bar-select {
-  padding: 6px 10px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  font-family: var(--font-sans);
+  width: auto;
+  min-width: 220px;
   font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-  min-width: 200px;
-}
-
-.launch-profile-bar-select:hover {
-  border-color: var(--border-hover);
-}
-
-.launch-profile-bar-select:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 .launch-profile-bar .btn {
