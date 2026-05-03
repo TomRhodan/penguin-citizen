@@ -34,6 +34,10 @@ import { renderDashboard } from './pages/dashboard.js';
 import { renderInstallation, cleanupInstallation } from './pages/installation.js';
 import { renderRunners, cleanupRunners } from './pages/runners.js';
 import { renderLaunch, flushPendingSave, cleanupLaunch } from './pages/launch.js';
+import {
+  renderLaunchProfiles,
+  cleanupLaunchProfiles,
+} from './pages/launch-profiles.js';
 import { renderEnvironments, cleanupEnvironments } from './pages/environments/index.js';
 import { renderSettings } from './pages/settings.js';
 import { renderAbout } from './pages/about.js';
@@ -50,6 +54,10 @@ const routes = {
   installation: { render: renderInstallation, cleanup: cleanupInstallation },
   runners: { render: renderRunners, cleanup: cleanupRunners },
   launch: { render: renderLaunch, cleanup: cleanupLaunch },
+  'launch-profiles': {
+    render: renderLaunchProfiles,
+    cleanup: cleanupLaunchProfiles,
+  },
   environments: { render: renderEnvironments, cleanup: cleanupEnvironments },
   settings: { render: renderSettings },
   about: { render: renderAbout },
@@ -59,7 +67,7 @@ const routes = {
 const PRE_INSTALL_PAGES = ['dashboard', 'installation', 'settings'];
 
 // Pages visible when an instance IS installed
-const POST_INSTALL_PAGES = ['dashboard', 'launch', 'runners', 'environments', 'settings'];
+const POST_INSTALL_PAGES = ['dashboard', 'launch', 'launch-profiles', 'runners', 'environments', 'settings'];
 
 // State variables: Is the setup wizard active? Is SC installed? Which page is active?
 let setupActive = false;

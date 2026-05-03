@@ -1,6 +1,7 @@
 {
   "nav.dashboard": "Dashboard",
   "nav.launch": "Launch",
+  "nav.launchProfiles": "Launch Profiles",
   "nav.installation": "Installation",
   "nav.runners": "Wine Runners",
   "nav.environments": "Environments",
