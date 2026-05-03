@@ -27,6 +27,11 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import i18next from 'i18next';
+import {
+  confirm as dialogConfirm,
+  prompt as dialogPrompt,
+  showNotification,
+} from '../utils/dialogs.js';
 
 const t = (key, opts) => i18next.t(key, opts);
 
@@ -302,10 +307,11 @@ function bindEvents() {
       try {
         await invoke('set_fallback_runner', { runnerName: value });
       } catch (e) {
-        alert(
+        showNotification(
           t('launchProfiles:error.setFallback', {
             defaultValue: 'Failed to set fallback runner: ',
-          }) + String(e)
+          }) + String(e),
+          'error'
         );
       }
       await refresh();
@@ -337,18 +343,28 @@ async function handleCardAction(id, action) {
 }
 
 async function handleCreate() {
-  const name = window.prompt(
-    t('launchProfiles:prompt.create', {
-      defaultValue: "Name the new profile (saved from current launch settings):",
-    })
+  const name = await dialogPrompt(
+    t('launchProfiles:prompt.createMessage', {
+      defaultValue: 'Name for the new profile (saved from current launch settings).',
+    }),
+    {
+      title: t('launchProfiles:prompt.createTitle', {
+        defaultValue: 'Create profile',
+      }),
+      okLabel: t('launchProfiles:prompt.createOk', { defaultValue: 'Create' }),
+      placeholder: t('launchProfiles:prompt.createPlaceholder', {
+        defaultValue: 'e.g. Wayland Test',
+      }),
+    }
   );
-  if (!name || !name.trim()) return;
+  if (name === null || !name.trim()) return;
   try {
     await invoke('create_launch_profile', { name: name.trim() });
   } catch (e) {
-    alert(
+    showNotification(
       t('launchProfiles:error.create', { defaultValue: 'Failed to create profile: ' }) +
-        String(e)
+        String(e),
+      'error'
     );
     return;
   }
@@ -356,16 +372,22 @@ async function handleCreate() {
 }
 
 async function handleRename(profile) {
-  const next = window.prompt(
-    t('launchProfiles:prompt.rename', { defaultValue: 'New profile name:' }),
-    profile.name
+  const next = await dialogPrompt(
+    t('launchProfiles:prompt.renameMessage', { defaultValue: 'New profile name:' }),
+    {
+      title: t('launchProfiles:prompt.renameTitle', { defaultValue: 'Rename profile' }),
+      defaultValue: profile.name,
+      okLabel: t('launchProfiles:prompt.renameOk', { defaultValue: 'Rename' }),
+    }
   );
-  if (!next || !next.trim() || next.trim() === profile.name) return;
+  if (next === null || !next.trim() || next.trim() === profile.name) return;
   try {
     await invoke('rename_launch_profile', { id: profile.id, newName: next.trim() });
   } catch (e) {
-    alert(
-      t('launchProfiles:error.rename', { defaultValue: 'Failed to rename: ' }) + String(e)
+    showNotification(
+      t('launchProfiles:error.rename', { defaultValue: 'Failed to rename: ' }) +
+        String(e),
+      'error'
     );
     return;
   }
@@ -373,23 +395,30 @@ async function handleRename(profile) {
 }
 
 async function handleEditDescription(profile) {
-  const next = window.prompt(
-    t('launchProfiles:prompt.description', {
-      defaultValue: 'Description (leave empty to clear):',
+  const next = await dialogPrompt(
+    t('launchProfiles:prompt.descriptionMessage', {
+      defaultValue: 'Description (leave empty to clear).',
     }),
-    profile.description || ''
+    {
+      title: t('launchProfiles:prompt.descriptionTitle', {
+        defaultValue: 'Edit description',
+      }),
+      defaultValue: profile.description || '',
+      okLabel: t('launchProfiles:prompt.descriptionOk', { defaultValue: 'Save' }),
+    }
   );
-  if (next === null) return; // cancelled
+  if (next === null) return;
   try {
     await invoke('update_profile_description', {
       id: profile.id,
       description: next.trim() === '' ? null : next.trim(),
     });
   } catch (e) {
-    alert(
+    showNotification(
       t('launchProfiles:error.description', {
         defaultValue: 'Failed to update description: ',
-      }) + String(e)
+      }) + String(e),
+      'error'
     );
     return;
   }
@@ -398,20 +427,29 @@ async function handleEditDescription(profile) {
 
 async function handleDuplicate(profile) {
   const suggested = `${profile.name} (copy)`;
-  const newName = window.prompt(
-    t('launchProfiles:prompt.duplicate', { defaultValue: 'Name for the duplicate:' }),
-    suggested
+  const newName = await dialogPrompt(
+    t('launchProfiles:prompt.duplicateMessage', {
+      defaultValue: 'Name for the duplicate:',
+    }),
+    {
+      title: t('launchProfiles:prompt.duplicateTitle', {
+        defaultValue: 'Duplicate profile',
+      }),
+      defaultValue: suggested,
+      okLabel: t('launchProfiles:prompt.duplicateOk', { defaultValue: 'Duplicate' }),
+    }
   );
-  if (!newName || !newName.trim()) return;
+  if (newName === null || !newName.trim()) return;
   try {
     await invoke('duplicate_launch_profile', {
       id: profile.id,
       newName: newName.trim(),
     });
   } catch (e) {
-    alert(
+    showNotification(
       t('launchProfiles:error.duplicate', { defaultValue: 'Failed to duplicate: ' }) +
-        String(e)
+        String(e),
+      'error'
     );
     return;
   }
@@ -419,18 +457,25 @@ async function handleDuplicate(profile) {
 }
 
 async function handleDelete(profile) {
-  const confirmed = window.confirm(
-    t('launchProfiles:confirm.delete', {
+  const confirmed = await dialogConfirm(
+    t('launchProfiles:confirm.deleteMessage', {
       defaultValue: `Delete profile "${profile.name}"? This cannot be undone.`,
       name: profile.name,
-    })
+    }),
+    {
+      kind: 'danger',
+      title: t('launchProfiles:confirm.deleteTitle', { defaultValue: 'Delete profile' }),
+      okLabel: t('launchProfiles:confirm.deleteOk', { defaultValue: 'Delete' }),
+    }
   );
   if (!confirmed) return;
   try {
     await invoke('delete_launch_profile', { id: profile.id });
   } catch (e) {
-    alert(
-      t('launchProfiles:error.delete', { defaultValue: 'Failed to delete: ' }) + String(e)
+    showNotification(
+      t('launchProfiles:error.delete', { defaultValue: 'Failed to delete: ' }) +
+        String(e),
+      'error'
     );
     return;
   }
@@ -446,19 +491,29 @@ async function handleSetActive(profile) {
     } catch (e) {
       const msg = String(e);
       if (!force && msg.startsWith('DIRTY:')) {
-        const choice = window.confirm(
-          t('launchProfiles:confirm.discardDirty', {
+        const choice = await dialogConfirm(
+          t('launchProfiles:confirm.discardDirtyMessage', {
             defaultValue:
               'The active profile has unsaved changes. Discard them and switch?',
-          })
+          }),
+          {
+            kind: 'warning',
+            title: t('launchProfiles:confirm.discardDirtyTitle', {
+              defaultValue: 'Unsaved changes',
+            }),
+            okLabel: t('launchProfiles:confirm.discardDirtyOk', {
+              defaultValue: 'Discard & Switch',
+            }),
+          }
         );
         if (!choice) return;
         force = true;
         continue;
       }
-      alert(
+      showNotification(
         t('launchProfiles:error.switch', { defaultValue: 'Failed to switch: ' }) +
-          msg
+          msg,
+        'error'
       );
       return;
     }

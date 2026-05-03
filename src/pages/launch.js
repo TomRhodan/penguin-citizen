@@ -37,6 +37,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { escapeHtml } from '../utils.js';
 import { t } from '../i18n.js';
+import {
+  confirm as dialogConfirm,
+  showNotification,
+} from '../utils/dialogs.js';
 
 // ── Module-wide State ──────────────────────────────
 
@@ -422,11 +426,20 @@ function bindProfileHeaderEvents(container) {
         } catch (e) {
           const msg = String(e);
           if (!force && msg.startsWith('DIRTY:')) {
-            const ok = window.confirm(
-              t('launch:profile.confirmDiscard', {
+            const ok = await dialogConfirm(
+              t('launch:profile.confirmDiscardMessage', {
                 defaultValue:
                   'The active profile has unsaved changes. Discard them and switch?',
-              })
+              }),
+              {
+                kind: 'warning',
+                title: t('launch:profile.confirmDiscardTitle', {
+                  defaultValue: 'Unsaved changes',
+                }),
+                okLabel: t('launch:profile.confirmDiscardOk', {
+                  defaultValue: 'Discard & Switch',
+                }),
+              }
             );
             if (!ok) {
               // Reset dropdown to the actual active id
@@ -436,10 +449,11 @@ function bindProfileHeaderEvents(container) {
             force = true;
             continue;
           }
-          alert(
+          showNotification(
             t('launch:profile.errorSwitch', {
               defaultValue: 'Failed to switch profile: ',
-            }) + msg
+            }) + msg,
+            'error'
           );
           selector.value = launchConfig.active_launch_profile_id;
           return;
@@ -457,10 +471,11 @@ function bindProfileHeaderEvents(container) {
           id: launchConfig.active_launch_profile_id,
         });
       } catch (e) {
-        alert(
+        showNotification(
           t('launch:profile.errorUpdate', {
             defaultValue: 'Failed to update profile: ',
-          }) + String(e)
+          }) + String(e),
+          'error'
         );
         return;
       }
@@ -473,20 +488,30 @@ function bindProfileHeaderEvents(container) {
     revertBtn.addEventListener('click', async () => {
       const active = getActiveProfile();
       const name = active ? active.name : '';
-      const ok = window.confirm(
-        t('launch:profile.confirmRevert', {
+      const ok = await dialogConfirm(
+        t('launch:profile.confirmRevertMessage', {
           defaultValue: `Discard unsaved changes and revert to "${name}"?`,
           name,
-        })
+        }),
+        {
+          kind: 'warning',
+          title: t('launch:profile.confirmRevertTitle', {
+            defaultValue: 'Revert changes',
+          }),
+          okLabel: t('launch:profile.confirmRevertOk', {
+            defaultValue: 'Revert',
+          }),
+        }
       );
       if (!ok) return;
       try {
         await invoke('revert_launch_working_state');
       } catch (e) {
-        alert(
+        showNotification(
           t('launch:profile.errorRevert', {
             defaultValue: 'Failed to revert: ',
-          }) + String(e)
+          }) + String(e),
+          'error'
         );
         return;
       }
