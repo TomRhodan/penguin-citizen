@@ -609,6 +609,43 @@ function renderPageSkeleton(container) {
  *
  * @returns {string} HTML string for the section
  */
+/**
+ * Returns the inline-HTML badges that describe how a runner is referenced
+ * by the launch-profiles system: how many profiles use it, and whether
+ * it's the global fallback. Empty string if no references — in that case
+ * the runner can be deleted without consequence.
+ */
+function renderRunnerUsageBadges(runnerName) {
+  const profiles = (config?.launch_profiles || []).filter(
+    (p) => p?.body?.runner_name === runnerName
+  );
+  const isFallback = config?.fallback_runner === runnerName;
+  const badges = [];
+  if (profiles.length > 0) {
+    const tip = profiles.map((p) => p.name).join(', ');
+    const label =
+      profiles.length === 1
+        ? t('runners:badge.usedByProfileOne', {
+            defaultValue: 'Used by 1 profile',
+          })
+        : t('runners:badge.usedByProfileMany', {
+            count: profiles.length,
+            defaultValue: 'Used by {{count}} profiles',
+          });
+    badges.push(
+      `<span class="badge badge-accent installed-runner-badge" title="${escapeHtml(tip)}">${escapeHtml(label)}</span>`
+    );
+  }
+  if (isFallback) {
+    badges.push(
+      `<span class="badge badge-warn installed-runner-badge">${escapeHtml(
+        t('runners:badge.fallback', { defaultValue: 'Fallback' })
+      )}</span>`
+    );
+  }
+  return badges.join(' ');
+}
+
 function renderInstalledRunnersContent() {
   if (installedRunners.length === 0) {
     return `<div class="runner-empty-notice">${t('runners:notification.noRunnersInstalled')}</div>`;
@@ -627,6 +664,7 @@ function renderInstalledRunnersContent() {
         <div class="active-runner-name">
           <span class="installed-runner-indicator active"></span>
           ${escapeHtml(activeRunner.name)}
+          ${renderRunnerUsageBadges(activeRunner.name)}
         </div>
       </div>
     `;
@@ -660,6 +698,7 @@ function renderInstalledRunnersContent() {
             <div class="installed-runner-info">
               <span class="installed-runner-indicator"></span>
               <span class="installed-runner-name">${escapeHtml(r.name)}</span>
+              ${renderRunnerUsageBadges(r.name)}
             </div>
             <div class="installed-runner-actions">
               <button class="btn-sm btn-select-runner" data-name="${escapeHtml(r.name)}" ${isActivatingRunner ? 'disabled' : ''}>${t('runners:button.select')}</button>

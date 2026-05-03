@@ -403,3 +403,13 @@
   margin-top: 12px;
 }
 
+/* Per-runner badges next to the name: "Used by N profiles" / "Fallback".
+   Sized down from the global .badge so they sit comfortably inline. */
+.installed-runner-badge {
+  margin-left: 8px;
+  padding: 3px 9px;
+  font-size: 0.68rem;
+  letter-spacing: 0.4px;
+  vertical-align: middle;
+}
+
