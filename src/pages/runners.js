@@ -426,8 +426,8 @@ function fireDataFetches(container, forceRefresh = false) {
   }
 
   // Only load DPI setting and PowerShell status if a runner is selected
-  if (config.selected_runner) {
-    invoke('get_dpi', { basePath: config.install_path, runnerName: config.selected_runner }).then(result => {
+  if (config.launch_working_state.runner_name) {
+    invoke('get_dpi', { basePath: config.install_path, runnerName: config.launch_working_state.runner_name }).then(result => {
       if (activeContainer !== container) return;
       currentDpi = result || 96;
       loadingFlags.dpi = false;
@@ -507,7 +507,7 @@ function renderNoConfig(container) {
  * @param {HTMLElement} container - The container element
  */
 function renderPageSkeleton(container) {
-  const hasRunner = !!config.selected_runner;
+  const hasRunner = !!config.launch_working_state.runner_name;
   const hasPrefix = !!config.install_path;
   const spinner = `<div class="runners-loading-state"><div class="runners-loading-spinner"></div><span>${t('runners:status.loading')}</span></div>`;
 
@@ -615,8 +615,8 @@ function renderInstalledRunnersContent() {
   }
 
   // Filter out the active runner and display it separately
-  const activeRunner = installedRunners.find(r => config.selected_runner === r.name);
-  const otherRunners = installedRunners.filter(r => config.selected_runner !== r.name);
+  const activeRunner = installedRunners.find(r => config.launch_working_state.runner_name === r.name);
+  const otherRunners = installedRunners.filter(r => config.launch_working_state.runner_name !== r.name);
 
   // Display of the active runner (or notice that none is selected)
   let activeHtml;
@@ -783,11 +783,11 @@ function renderDxvkReleasesContent() {
  * @returns {string} HTML string for the section
  */
 function renderPrefixToolsContent() {
-  const hasRunner = !!config.selected_runner;
+  const hasRunner = !!config.launch_working_state.runner_name;
 
   // Guard clause: Tools cannot be used without a runner or prefix
-  if (!config.selected_runner || !config.install_path) {
-    const msg = !config.selected_runner
+  if (!config.launch_working_state.runner_name || !config.install_path) {
+    const msg = !config.launch_working_state.runner_name
       ? t('runners:notification.selectRunnerFirst')
       : t('runners:notification.runInstallationPrefix');
     return `<div class="runners-guard-notice-inline">${msg}</div>`;
@@ -1023,7 +1023,7 @@ async function selectRunner(name, container) {
   patchSection('installed-runners-slot', renderInstalledRunnersContent());
   bindInstalledRunnerEvents(container);
 
-  config.selected_runner = name;
+  config.launch_working_state.runner_name = name;
   try {
     await invoke('save_config', { config });
     // Load DPI value for the new runner
@@ -1172,7 +1172,7 @@ async function importLugHelperSources(container) {
  */
 async function deleteRunner(name, container) {
   // Cannot delete the active runner
-  if (config.selected_runner === name) return;
+  if (config.launch_working_state.runner_name === name) return;
 
   try {
     await invoke('delete_runner', { runnerName: name, basePath: config.install_path });
@@ -1351,11 +1351,11 @@ async function installDxvk(downloadUrl, version, container) {
  * Winecfg is the standard configuration tool for Wine.
  */
 async function launchWinecfg() {
-  if (!config || !config.selected_runner) return;
+  if (!config || !config.launch_working_state.runner_name) return;
   try {
     await invoke('run_winecfg', {
       basePath: config.install_path,
-      runnerName: config.selected_runner,
+      runnerName: config.launch_working_state.runner_name,
     });
   } catch (err) {
     console.error('Failed to launch winecfg:', err);
@@ -1369,7 +1369,7 @@ async function launchWinecfg() {
  * @param {HTMLElement} container - The container element
  */
 async function launchWineShell(container) {
-  if (!config || !config.selected_runner) return;
+  if (!config || !config.launch_working_state.runner_name) return;
   isRunningPrefixTool = true;
   patchSection('prefix-tools-slot', renderPrefixToolsContent());
   bindPrefixToolEvents(container);
@@ -1377,7 +1377,7 @@ async function launchWineShell(container) {
   try {
     await invoke('launch_wine_shell', {
       basePath: config.install_path,
-      runnerName: config.selected_runner,
+      runnerName: config.launch_working_state.runner_name,
     });
   } catch (err) {
     console.error('Failed to launch wine shell:', err);
@@ -1396,11 +1396,11 @@ async function launchWineShell(container) {
  * @param {HTMLElement} container - The container element
  */
 async function setDpi(dpi, container) {
-  if (!config || !config.selected_runner) return;
+  if (!config || !config.launch_working_state.runner_name) return;
   try {
     await invoke('set_dpi', {
       basePath: config.install_path,
-      runnerName: config.selected_runner,
+      runnerName: config.launch_working_state.runner_name,
       dpi,
     });
     currentDpi = dpi;
@@ -1419,7 +1419,7 @@ async function setDpi(dpi, container) {
  * @param {HTMLElement} container - The container element
  */
 async function installPowershell(container) {
-  if (isRunningPrefixTool || !config || !config.selected_runner) return;
+  if (isRunningPrefixTool || !config || !config.launch_working_state.runner_name) return;
   isRunningPrefixTool = true;
   prefixToolLog = [];
   patchSection('prefix-tools-slot', renderPrefixToolsContent());
@@ -1439,7 +1439,7 @@ async function installPowershell(container) {
   try {
     await invoke('install_powershell', {
       basePath: config.install_path,
-      runnerName: config.selected_runner,
+      runnerName: config.launch_working_state.runner_name,
     });
     prefixToolLog.push(t('runners:status.done'));
 

@@ -72,7 +72,13 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         }
     }
 
-    let runner_name = config.selected_runner.as_deref().ok_or("No runner selected")?;
+    // Installation runs Wine via the active profile's runner. We don't honor
+    // the global fallback here — installation is a deliberate setup step,
+    // not a launch, and a missing runner should surface as an explicit error.
+    if config.launch_working_state.runner_name.is_empty() {
+        return Err("No runner selected. Pick a Wine runner on the Launch page first.".to_string());
+    }
+    let runner_name = config.launch_working_state.runner_name.as_str();
 
     let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
     let wine = resolve_wine_bin(&runner_dir)
@@ -779,7 +785,7 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
     let mut cmd = Command::new(wine.to_string_lossy().as_ref());
     cmd.arg("C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe");
 
-    let _ = configure_wine_env(&mut cmd, &install_path, &config.performance, "info");
+    let _ = configure_wine_env(&mut cmd, &install_path, &config.launch_working_state.performance, "info");
 
     cmd.stdout(Stdio::null()).stderr(Stdio::null());
 

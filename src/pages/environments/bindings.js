@@ -1052,7 +1052,7 @@ export async function openBindingEditor(actionName, category, currentInput, defa
       targetInstance: targetInstance,
       targetType: bindingEditorDevice,
       installPath: cfg?.install_path ?? null,
-      selectedRunner: cfg?.selected_runner ?? null,
+      selectedRunner: cfg?.launch_working_state?.runner_name ?? null,
     }).catch(err => {
       console.error('[EDITOR] Backend capture start failed:', err);
       showNotification(t('environments:notification.captureError', { error: err }), 'error');

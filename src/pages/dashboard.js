@@ -337,7 +337,7 @@ function renderStatusCards() {
 
   const installed = dashInstallStatus?.installed === true;
   const hasRunner = dashInstallStatus?.has_runner === true;
-  const runnerName = dashConfig?.selected_runner || null;
+  const runnerName = dashConfig?.launch_working_state?.runner_name || null;
   const installPath = dashConfig?.install_path || null;
 
   grid.innerHTML =

@@ -62,6 +62,7 @@ mod prefix_tools;
 mod binding_capture;
 // binding_database was removed – bindings are now managed per profile in sc_config
 mod runners;
+mod launch_profiles;
 mod sc_config;
 mod shader_cache;
 mod system_check;
@@ -581,6 +582,18 @@ pub fn run() {
                 runners::install_runner,
                 runners::cancel_runner_install,
                 runners::delete_runner,
+
+                // Launch profiles (named, switchable launch configurations)
+                launch_profiles::create_launch_profile,
+                launch_profiles::update_launch_profile,
+                launch_profiles::revert_launch_working_state,
+                launch_profiles::switch_launch_profile,
+                launch_profiles::rename_launch_profile,
+                launch_profiles::update_profile_description,
+                launch_profiles::delete_launch_profile,
+                launch_profiles::duplicate_launch_profile,
+                launch_profiles::set_fallback_runner,
+                launch_profiles::get_runner_usage,
 
                 // DXVK management (DirectX-to-Vulkan translation layer)
                 dxvk::fetch_dxvk_releases,

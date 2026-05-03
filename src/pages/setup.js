@@ -242,7 +242,10 @@ function renderDirectoryStep(container, { onComplete }) {
       // Step 2: Check if an existing installation is present
       const existingConfig = {
         install_path: currentPath,
-        selected_runner: existingRunnerName,
+        launch_working_state: {
+          runner_name: existingRunnerName ?? '',
+          performance: {},
+        },
       };
 
       try {
@@ -271,17 +274,19 @@ function renderDirectoryStep(container, { onComplete }) {
       await invoke('save_config', {
         config: {
           install_path: currentPath,
-          selected_runner: null,
-          performance: {
-            esync: true,
-            fsync: true,
-            dxvk_async: true,
-            mangohud: false,
-            dxvk_hud: false,
-            wayland: true,
-            hdr: false,
-            fsr: false,
-            primary_monitor: null,
+          launch_working_state: {
+            runner_name: '',
+            performance: {
+              esync: true,
+              fsync: true,
+              dxvk_async: true,
+              mangohud: false,
+              dxvk_hud: false,
+              wayland: true,
+              hdr: false,
+              fsr: false,
+              primary_monitor: null,
+            },
           },
           github_token: null,
           log_level: 'info',
@@ -461,17 +466,19 @@ function showInstallModeModal(container, { onComplete, continueBtn }) {
       await invoke('save_config', {
         config: {
           install_path: currentPath,
-          selected_runner: detectedInstallation.runner_name,
-          performance: {
-            esync: true,
-            fsync: true,
-            dxvk_async: true,
-            mangohud: false,
-            dxvk_hud: false,
-            wayland: true,
-            hdr: false,
-            fsr: false,
-            primary_monitor: null,
+          launch_working_state: {
+            runner_name: detectedInstallation.runner_name ?? '',
+            performance: {
+              esync: true,
+              fsync: true,
+              dxvk_async: true,
+              mangohud: false,
+              dxvk_hud: false,
+              wayland: true,
+              hdr: false,
+              fsr: false,
+              primary_monitor: null,
+            },
           },
           github_token: null,
           log_level: 'info',

@@ -80,7 +80,7 @@ let envVarsExpanded = false;
 /**
  * Returns available launch options, grouped by category.
  * Each option has an internal key, a label, and a tooltip.
- * The keys correspond to the fields in launchConfig.performance.
+ * The keys correspond to the fields in launchConfig.launch_working_state.performance.
  * Must be a function so that t() calls resolve at render time, not at import time.
  */
 function getLaunchOptions() {
@@ -361,7 +361,7 @@ function renderLaunchBar() {
   const running = launchStatus === 'running';
   const disabled = launchStatus !== 'ready';
 
-  const runner = launchConfig?.selected_runner || t('launch:label.none');
+  const runner = launchConfig?.launch_working_state?.runner_name || t('launch:label.none');
   const prefix = launchConfig?.install_path || '?';
   const showInfo = launchConfig && installStatus?.installed;
 
@@ -508,7 +508,7 @@ function renderCard(card, disabled) {
  * @returns {string} HTML string of badges
  */
 function renderCardBadges(card) {
-  const perf = launchConfig?.performance || {};
+  const perf = launchConfig?.launch_working_state?.performance || {};
   const badges = [];
 
   if (card.source) {
@@ -563,7 +563,7 @@ function renderCardBadges(card) {
  * @returns {string} HTML for the card body
  */
 function renderCardBody(card, disabled) {
-  const perf = launchConfig?.performance || {};
+  const perf = launchConfig?.launch_working_state?.performance || {};
 
   if (card.source) {
     // Standard toggle group
@@ -769,7 +769,7 @@ function bindMonitorListeners() {
   if (select) {
     select.addEventListener('change', () => {
       if (launchConfig) {
-        launchConfig.performance.primary_monitor = select.value || null;
+        launchConfig.launch_working_state.performance.primary_monitor = select.value || null;
         saveConfigNow();
       }
     });
@@ -778,7 +778,7 @@ function bindMonitorListeners() {
   if (input) {
     input.addEventListener('input', () => {
       if (launchConfig) {
-        launchConfig.performance.primary_monitor = input.value.trim() || null;
+        launchConfig.launch_working_state.performance.primary_monitor = input.value.trim() || null;
         debouncedSaveConfig();
       }
     });
@@ -796,7 +796,7 @@ function bindMonitorListeners() {
  * @param {boolean} disabled - Whether inputs should be disabled
  */
 function renderCustomEnvVarsCard(disabled) {
-  const vars = launchConfig?.performance?.custom_env_vars || [];
+  const vars = launchConfig?.launch_working_state?.performance?.custom_env_vars || [];
   const activeCount = vars.filter(v => v.enabled && v.key).length;
   const arrow = envVarsExpanded ? '\u25BC' : '\u25B6';
 
@@ -914,7 +914,7 @@ function bindEvents(container) {
   container.querySelectorAll('.launch-card-body input[type="checkbox"][data-key]').forEach(cb => {
     cb.addEventListener('change', () => {
       if (launchConfig) {
-        launchConfig.performance[cb.dataset.key] = cb.checked;
+        launchConfig.launch_working_state.performance[cb.dataset.key] = cb.checked;
         saveConfigNow();
       }
     });
@@ -929,10 +929,10 @@ function bindEvents(container) {
         if (wrap) wrap.classList.remove('disabled');
         const select = document.getElementById('launch-monitor-select');
         const input = document.getElementById('launch-monitor-input');
-        if (select) { select.disabled = false; if (launchConfig) launchConfig.performance.primary_monitor = select.value || (detectedMonitors[0]?.name ?? null); }
-        if (input) { input.disabled = false; if (launchConfig) launchConfig.performance.primary_monitor = input.value.trim() || null; }
+        if (select) { select.disabled = false; if (launchConfig) launchConfig.launch_working_state.performance.primary_monitor = select.value || (detectedMonitors[0]?.name ?? null); }
+        if (input) { input.disabled = false; if (launchConfig) launchConfig.launch_working_state.performance.primary_monitor = input.value.trim() || null; }
       } else {
-        if (launchConfig) launchConfig.performance.primary_monitor = null;
+        if (launchConfig) launchConfig.launch_working_state.performance.primary_monitor = null;
         if (wrap) wrap.classList.add('disabled');
         const select = document.getElementById('launch-monitor-select');
         const input = document.getElementById('launch-monitor-input');
@@ -951,7 +951,7 @@ function bindEvents(container) {
   if (gpuFilter) {
     gpuFilter.addEventListener('change', () => {
       if (launchConfig) {
-        launchConfig.performance.gpu_device_filter = gpuFilter.value || null;
+        launchConfig.launch_working_state.performance.gpu_device_filter = gpuFilter.value || null;
         saveConfigNow();
       }
     });
@@ -962,7 +962,7 @@ function bindEvents(container) {
   if (cpuTopology) {
     cpuTopology.addEventListener('input', () => {
       if (launchConfig) {
-        launchConfig.performance.wine_cpu_topology = cpuTopology.value.trim() || null;
+        launchConfig.launch_working_state.performance.wine_cpu_topology = cpuTopology.value.trim() || null;
         debouncedSaveConfig();
       }
     });
@@ -973,10 +973,10 @@ function bindEvents(container) {
   if (gsEnabled) {
     gsEnabled.addEventListener('change', () => {
       if (launchConfig) {
-        if (!launchConfig.performance.gamescope) {
-          launchConfig.performance.gamescope = { enabled: false, hdr: false, force_grab_cursor: false, keyboard_grab: false };
+        if (!launchConfig.launch_working_state.performance.gamescope) {
+          launchConfig.launch_working_state.performance.gamescope = { enabled: false, hdr: false, force_grab_cursor: false, keyboard_grab: false };
         }
-        launchConfig.performance.gamescope.enabled = gsEnabled.checked;
+        launchConfig.launch_working_state.performance.gamescope.enabled = gsEnabled.checked;
         saveConfigNow();
         renderPage(container);
       }
@@ -987,9 +987,9 @@ function bindEvents(container) {
   const gsWidth = document.getElementById('gamescope-width');
   if (gsWidth) {
     gsWidth.addEventListener('input', () => {
-      if (launchConfig?.performance?.gamescope) {
+      if (launchConfig?.launch_working_state?.performance?.gamescope) {
         const val = parseInt(gsWidth.value, 10);
-        launchConfig.performance.gamescope.width = isNaN(val) ? null : val;
+        launchConfig.launch_working_state.performance.gamescope.width = isNaN(val) ? null : val;
         debouncedSaveConfig();
       }
     });
@@ -997,9 +997,9 @@ function bindEvents(container) {
   const gsHeight = document.getElementById('gamescope-height');
   if (gsHeight) {
     gsHeight.addEventListener('input', () => {
-      if (launchConfig?.performance?.gamescope) {
+      if (launchConfig?.launch_working_state?.performance?.gamescope) {
         const val = parseInt(gsHeight.value, 10);
-        launchConfig.performance.gamescope.height = isNaN(val) ? null : val;
+        launchConfig.launch_working_state.performance.gamescope.height = isNaN(val) ? null : val;
         debouncedSaveConfig();
       }
     });
@@ -1007,8 +1007,8 @@ function bindEvents(container) {
   const gsHdr = document.getElementById('gamescope-hdr');
   if (gsHdr) {
     gsHdr.addEventListener('change', () => {
-      if (launchConfig?.performance?.gamescope) {
-        launchConfig.performance.gamescope.hdr = gsHdr.checked;
+      if (launchConfig?.launch_working_state?.performance?.gamescope) {
+        launchConfig.launch_working_state.performance.gamescope.hdr = gsHdr.checked;
         saveConfigNow();
       }
     });
@@ -1016,8 +1016,8 @@ function bindEvents(container) {
   const gsGrabCursor = document.getElementById('gamescope-grab-cursor');
   if (gsGrabCursor) {
     gsGrabCursor.addEventListener('change', () => {
-      if (launchConfig?.performance?.gamescope) {
-        launchConfig.performance.gamescope.force_grab_cursor = gsGrabCursor.checked;
+      if (launchConfig?.launch_working_state?.performance?.gamescope) {
+        launchConfig.launch_working_state.performance.gamescope.force_grab_cursor = gsGrabCursor.checked;
         saveConfigNow();
       }
     });
@@ -1025,8 +1025,8 @@ function bindEvents(container) {
   const gsKeyboard = document.getElementById('gamescope-keyboard');
   if (gsKeyboard) {
     gsKeyboard.addEventListener('change', () => {
-      if (launchConfig?.performance?.gamescope) {
-        launchConfig.performance.gamescope.keyboard_grab = gsKeyboard.checked;
+      if (launchConfig?.launch_working_state?.performance?.gamescope) {
+        launchConfig.launch_working_state.performance.gamescope.keyboard_grab = gsKeyboard.checked;
         saveConfigNow();
       }
     });
@@ -1048,8 +1048,8 @@ function bindEnvVarEvents(container) {
   container.querySelectorAll('.env-var-toggle').forEach(cb => {
     cb.addEventListener('change', () => {
       const i = parseInt(cb.dataset.envIndex, 10);
-      if (launchConfig?.performance?.custom_env_vars?.[i] != null) {
-        launchConfig.performance.custom_env_vars[i].enabled = cb.checked;
+      if (launchConfig?.launch_working_state?.performance?.custom_env_vars?.[i] != null) {
+        launchConfig.launch_working_state.performance.custom_env_vars[i].enabled = cb.checked;
         saveConfigNow();
         renderPage(container);
       }
@@ -1066,8 +1066,8 @@ function bindEnvVarEvents(container) {
         input.value = cleaned;
         input.setSelectionRange(pos, pos);
       }
-      if (launchConfig?.performance?.custom_env_vars?.[i] != null) {
-        launchConfig.performance.custom_env_vars[i].key = cleaned;
+      if (launchConfig?.launch_working_state?.performance?.custom_env_vars?.[i] != null) {
+        launchConfig.launch_working_state.performance.custom_env_vars[i].key = cleaned;
         debouncedSaveConfig();
         // Update conflict badge inline without full re-rendering
         const row = input.closest('.env-var-row');
@@ -1093,8 +1093,8 @@ function bindEnvVarEvents(container) {
   container.querySelectorAll('.env-var-value').forEach(input => {
     input.addEventListener('input', () => {
       const i = parseInt(input.dataset.envIndex, 10);
-      if (launchConfig?.performance?.custom_env_vars?.[i] != null) {
-        launchConfig.performance.custom_env_vars[i].value = input.value;
+      if (launchConfig?.launch_working_state?.performance?.custom_env_vars?.[i] != null) {
+        launchConfig.launch_working_state.performance.custom_env_vars[i].value = input.value;
         debouncedSaveConfig();
       }
     });
@@ -1104,8 +1104,8 @@ function bindEnvVarEvents(container) {
   container.querySelectorAll('.btn-env-delete').forEach(btn => {
     btn.addEventListener('click', () => {
       const i = parseInt(btn.dataset.envIndex, 10);
-      if (launchConfig?.performance?.custom_env_vars) {
-        launchConfig.performance.custom_env_vars.splice(i, 1);
+      if (launchConfig?.launch_working_state?.performance?.custom_env_vars) {
+        launchConfig.launch_working_state.performance.custom_env_vars.splice(i, 1);
         saveConfigNow();
         renderPage(container);
       }
@@ -1117,10 +1117,10 @@ function bindEnvVarEvents(container) {
   if (addBtn) {
     addBtn.addEventListener('click', () => {
       if (!launchConfig) return;
-      if (!launchConfig.performance.custom_env_vars) {
-        launchConfig.performance.custom_env_vars = [];
+      if (!launchConfig.launch_working_state.performance.custom_env_vars) {
+        launchConfig.launch_working_state.performance.custom_env_vars = [];
       }
-      launchConfig.performance.custom_env_vars.push({ key: '', value: '', enabled: true });
+      launchConfig.launch_working_state.performance.custom_env_vars.push({ key: '', value: '', enabled: true });
       saveConfigNow();
       renderPage(container);
       // Focus the new key input
@@ -1296,8 +1296,8 @@ async function detectMonitorsFallback() {
  * and persist the new value. Idempotent — safe to call multiple times.
  */
 function maybeMigrateMonitorConfig() {
-  if (!launchConfig?.performance) return;
-  const saved = launchConfig.performance.primary_monitor;
+  if (!launchConfig?.launch_working_state?.performance) return;
+  const saved = launchConfig.launch_working_state.performance.primary_monitor;
   if (!saved) return;
   if (detectedMonitors.length === 0) return;
   if (detectedMonitors.some(m => m.name === saved)) return;
@@ -1305,7 +1305,7 @@ function maybeMigrateMonitorConfig() {
   console.warn(
     `primary_monitor "${saved}" does not match any detected connector — migrating to "${primary.name}"`
   );
-  launchConfig.performance.primary_monitor = primary.name;
+  launchConfig.launch_working_state.performance.primary_monitor = primary.name;
   saveConfigNow();
 }
 

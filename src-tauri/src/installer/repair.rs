@@ -41,7 +41,15 @@ pub async fn repair_installation(app: AppHandle) -> Result<String, String> {
 
     // Kill wineserver to clean up orphaned processes
     log::info!("Repair: killing wineserver...");
-    let runner_name = config.selected_runner.as_deref();
+    // Use the active profile's runner from launch_working_state. If it's
+    // empty (no runner picked yet), skip wineserver cleanup — there's
+    // nothing meaningful to kill via that path.
+    let working_runner = &config.launch_working_state.runner_name;
+    let runner_name = if working_runner.is_empty() {
+        None
+    } else {
+        Some(working_runner.as_str())
+    };
     if let Some(name) = runner_name {
         let runner_dir = Path::new(&install_path).join("runners").join(name);
         if let Some(wine) = resolve_wine_bin(&runner_dir) {

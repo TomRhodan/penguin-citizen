@@ -187,7 +187,7 @@ export async function renderInstallation(container) {
     const config = await invoke('load_config');
     if (config) {
       configState.installPath = config.install_path;
-      configState.selectedRunner = config.selected_runner;
+      configState.selectedRunner = config.launch_working_state.runner_name;
       configState.performance = config.performance;
       configState.installMode = config.install_mode || 'full';
 

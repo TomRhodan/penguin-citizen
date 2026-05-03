@@ -66,7 +66,7 @@ fn write_private(path: impl AsRef<Path>, content: &str) -> std::io::Result<()> {
 ///
 /// Allows the user to define custom KEY=VALUE pairs
 /// that are passed as environment variables to the Wine process.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct CustomEnvVar {
     /// Name of the environment variable (e.g. "WINEDEBUG")
     pub key: String,
@@ -80,7 +80,7 @@ pub struct CustomEnvVar {
 ///
 /// When enabled, the game is launched inside gamescope with the specified flags.
 /// Gamescope provides HDR support, resolution scaling, and cursor capture.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default)]
 pub struct GamescopeSettings {
     /// Whether to wrap the launch command with gamescope
@@ -101,7 +101,7 @@ pub struct GamescopeSettings {
 ///
 /// These settings control various Wine features, overlays, and
 /// graphics options. They are set as environment variables at game launch.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct PerformanceSettings {
     /// Eventfd-based synchronization - reduces overhead for multithreading
@@ -198,7 +198,7 @@ impl Default for PerformanceSettings {
 /// Runner sources are GitHub repositories that provide precompiled Wine builds
 /// as release assets. Each source has an API URL for
 /// fetching the available releases.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct RunnerSourceConfig {
     /// Display name of the source (e.g. "LUG", "Kron4ek")
@@ -224,19 +224,72 @@ impl Default for RunnerSourceConfig {
     }
 }
 
+/// Default schema version for newly-created configurations.
+///
+/// v1 = pre-Launch-Profiles (top-level `performance` and `selected_runner`).
+/// v2 = current — wraps launch settings into named, switchable profiles.
+pub(crate) fn default_schema_version() -> u32 {
+    2
+}
+
+/// Body of a Launch Profile — holds the actual launch-time settings.
+///
+/// Wrapped by [`LaunchProfile`] for stored profiles and held directly in
+/// [`AppConfig::launch_working_state`] as the live edit buffer that
+/// `launch_game` consumes.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct LaunchProfileBody {
+    /// Wine runner directory name. Empty = no runner chosen yet.
+    pub runner_name: String,
+    /// All performance / graphics / overlay / env settings.
+    pub performance: PerformanceSettings,
+}
+
+/// A named, savable Launch Profile.
+///
+/// Profiles let the user snapshot launch configurations (e.g. "Default",
+/// "Wayland Test") and switch between them. Backend enforces unique
+/// `name` across the profile list.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LaunchProfile {
+    /// UUID v4. Stable identity across renames.
+    pub id: String,
+    /// User-visible name. Unique per AppConfig.
+    pub name: String,
+    /// Optional free-text description shown in the management UI.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// ISO-8601 timestamp of profile creation.
+    pub created_at: String,
+    /// ISO-8601 timestamp of the last "Update Profile" action.
+    pub updated_at: String,
+    /// The actual launch settings.
+    pub body: LaunchProfileBody,
+}
+
 /// Main application configuration.
 ///
 /// Contains all settings needed to run Star Citizen.
 /// Persisted as JSON in `~/.config/penguin-citizen/config.json`.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct AppConfig {
+    /// Schema version. Migrations run on `load_config` for v < 2.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
     /// Installation path for Star Citizen and Wine runners (e.g. "~/Games/star-citizen")
     pub install_path: String,
-    /// Name of the currently selected Wine runner (directory name under `runners/`)
-    pub selected_runner: Option<String>,
-    /// Performance and graphics settings
-    pub performance: PerformanceSettings,
+    /// Saved launch profiles. Always non-empty after a successful load.
+    pub launch_profiles: Vec<LaunchProfile>,
+    /// UUID of the currently active profile. Always points into `launch_profiles`.
+    pub active_launch_profile_id: String,
+    /// Live working state — what `launch_game` reads. Diff against active profile = dirty.
+    pub launch_working_state: LaunchProfileBody,
+    /// Global fallback runner when a profile's runner is uninstalled at launch time.
+    pub fallback_runner: Option<String>,
+    /// Whether the user has dismissed the post-migration intro banner.
+    pub has_seen_profile_intro: bool,
     /// Optional GitHub token for higher API rate limits when fetching releases
     pub github_token: Option<String>,
     /// Log level for the application (e.g. "info", "debug", "warn")
@@ -259,9 +312,13 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            schema_version: default_schema_version(),
             install_path: String::new(),
-            selected_runner: None,
-            performance: PerformanceSettings::default(),
+            launch_profiles: vec![],
+            active_launch_profile_id: String::new(),
+            launch_working_state: LaunchProfileBody::default(),
+            fallback_runner: None,
+            has_seen_profile_intro: false,
             github_token: None,
             log_level: "info".to_string(),
             auto_backup_on_launch: None,
@@ -270,6 +327,156 @@ impl Default for AppConfig {
             ui_scale: 1.0,
             language: None,
         }
+    }
+}
+
+/// Returns the first installed runner (alphabetically) under `runners_dir`.
+///
+/// A runner directory must contain a wine binary in a known layout to be
+/// considered installed (see `runners::resolve_wine_bin`). Returns `None`
+/// if the directory doesn't exist or holds no valid runners.
+pub(crate) fn first_installed_runner(runners_dir: &Path) -> Option<String> {
+    if !runners_dir.is_dir() {
+        return None;
+    }
+    let mut names: Vec<String> = fs::read_dir(runners_dir)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            if !p.is_dir() {
+                return None;
+            }
+            crate::runners::resolve_wine_bin(&p)?;
+            p.file_name().map(|n| n.to_string_lossy().into_owned())
+        })
+        .collect();
+    names.sort();
+    names.into_iter().next()
+}
+
+/// Migrates a raw config JSON value from v1 to v2 in place.
+///
+/// **v1 layout:** top-level `performance: PerformanceSettings` +
+/// `selected_runner: Option<String>`.
+///
+/// **v2 layout:** `launch_profiles: [LaunchProfile]` (Default profile wraps
+/// the v1 data) + `launch_working_state` mirroring it + auxiliary fields
+/// (`fallback_runner`, `has_seen_profile_intro`).
+///
+/// `runners_dir` is used to auto-pick the first installed runner when the
+/// v1 config has no `selected_runner`.
+///
+/// Returns `true` iff a migration actually ran (i.e. the file was v1).
+pub(crate) fn migrate_v1_to_v2(raw: &mut serde_json::Value, runners_dir: &Path) -> bool {
+    let Some(obj) = raw.as_object_mut() else {
+        return false;
+    };
+    let current = obj
+        .get("schema_version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1);
+    if current >= 2 {
+        return false;
+    }
+
+    let performance = obj
+        .remove("performance")
+        .unwrap_or_else(|| serde_json::to_value(PerformanceSettings::default()).unwrap_or(serde_json::json!({})));
+    let selected_runner = obj
+        .remove("selected_runner")
+        .and_then(|v| v.as_str().map(String::from));
+
+    let runner_name = match selected_runner {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => first_installed_runner(runners_dir).unwrap_or_default(),
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let profile_id = uuid::Uuid::new_v4().to_string();
+
+    let body = serde_json::json!({
+        "runner_name": runner_name,
+        "performance": performance,
+    });
+    let profile = serde_json::json!({
+        "id": profile_id.clone(),
+        "name": "Default",
+        "description": serde_json::Value::Null,
+        "created_at": now.clone(),
+        "updated_at": now,
+        "body": body.clone(),
+    });
+
+    if !obj.contains_key("launch_profiles") {
+        obj.insert("launch_profiles".into(), serde_json::json!([profile]));
+    }
+    if !obj.contains_key("active_launch_profile_id") {
+        obj.insert(
+            "active_launch_profile_id".into(),
+            serde_json::Value::String(profile_id.clone()),
+        );
+    }
+    if !obj.contains_key("launch_working_state") {
+        obj.insert("launch_working_state".into(), body);
+    }
+    if !obj.contains_key("fallback_runner") {
+        obj.insert("fallback_runner".into(), serde_json::Value::Null);
+    }
+    if !obj.contains_key("has_seen_profile_intro") {
+        obj.insert(
+            "has_seen_profile_intro".into(),
+            serde_json::Value::Bool(false),
+        );
+    }
+    obj.insert(
+        "schema_version".into(),
+        serde_json::Value::Number(serde_json::Number::from(2u64)),
+    );
+
+    log::info!(
+        "[config] migrated v1 -> v2: created Default profile '{}' (runner='{}')",
+        profile_id,
+        runner_name
+    );
+    true
+}
+
+/// Restores invariants on an `AppConfig` after deserialization.
+///
+/// Guarantees:
+///   1. `launch_profiles.len() >= 1` — synthesizes a "Default" profile
+///      from `launch_working_state` if the list is empty.
+///   2. `active_launch_profile_id` points at an existing profile.
+///
+/// Called from `load_config` (after migration) and `save_config`.
+pub(crate) fn ensure_default_profile(config: &mut AppConfig) {
+    if config.launch_profiles.is_empty() {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let profile = LaunchProfile {
+            id: id.clone(),
+            name: "Default".to_string(),
+            description: None,
+            created_at: now.clone(),
+            updated_at: now,
+            body: config.launch_working_state.clone(),
+        };
+        config.launch_profiles.push(profile);
+        config.active_launch_profile_id = id;
+        log::info!("[config] synthesized Default profile (none existed)");
+    } else if !config
+        .launch_profiles
+        .iter()
+        .any(|p| p.id == config.active_launch_profile_id)
+    {
+        let first_id = config.launch_profiles[0].id.clone();
+        log::warn!(
+            "[config] active_launch_profile_id '{}' not found; resetting to '{}'",
+            config.active_launch_profile_id,
+            first_id
+        );
+        config.active_launch_profile_id = first_id;
     }
 }
 
@@ -688,9 +895,16 @@ pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, AppErr
 /// runner_sources) are not accidentally overwritten or deleted.
 #[tauri::command]
 pub async fn save_config(config: AppConfig) -> Result<(), AppError> {
-    // Validate custom environment variable keys before saving
-    for env_var in &config.performance.custom_env_vars {
+    // Validate custom environment variable keys before saving — both
+    // in the live working state and in every saved profile, so a
+    // malformed key in any persisted location is caught.
+    for env_var in &config.launch_working_state.performance.custom_env_vars {
         validate_env_var_key(&env_var.key)?;
+    }
+    for profile in &config.launch_profiles {
+        for env_var in &profile.body.performance.custom_env_vars {
+            validate_env_var_key(&env_var.key)?;
+        }
     }
 
     tokio::task
@@ -708,7 +922,7 @@ pub async fn save_config(config: AppConfig) -> Result<(), AppError> {
             // Merge with existing configuration to preserve fields
             // that the frontend does not send
             let defaults = AppConfig::default();
-            let merged = if
+            let mut merged = if
                 let Some(existing) = config_path
                     .exists()
                     .then(|| fs::read_to_string(config_path).ok())
@@ -747,32 +961,31 @@ pub async fn save_config(config: AppConfig) -> Result<(), AppError> {
                 }
             } else {
                 // No existing configuration - use provided values,
-                // fill in missing fields with defaults
+                // fill in only string defaults for empty incoming values.
                 AppConfig {
                     runner_sources: if config.runner_sources.is_empty() {
                         defaults.runner_sources
                     } else {
                         config.runner_sources
                     },
-                    github_token: config.github_token,
-                    install_path: config.install_path,
-                    selected_runner: config.selected_runner,
-                    performance: config.performance,
                     log_level: if config.log_level.is_empty() {
                         defaults.log_level
                     } else {
                         config.log_level
                     },
-                    auto_backup_on_launch: config.auto_backup_on_launch,
                     install_mode: if config.install_mode.is_empty() {
                         defaults.install_mode
                     } else {
                         config.install_mode
                     },
-                    ui_scale: config.ui_scale,
-                    language: config.language,
+                    ..config
                 }
             };
+
+            // Restore launch-profile invariants (≥1 profile, valid active id)
+            // before persisting, so a malformed/empty incoming config can't
+            // produce a corrupt v2 file on disk.
+            ensure_default_profile(&mut merged);
 
             let json = serde_json
                 ::to_string_pretty(&merged)
@@ -808,10 +1021,37 @@ pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
                     return None;
                 }
             };
-            let config: AppConfig = match serde_json::from_str(&contents) {
-                Ok(c) => c,
+
+            // Parse to a generic JSON value first so we can detect and migrate
+            // pre-v2 schemas (top-level `performance` + `selected_runner`)
+            // before the strict AppConfig deserialization runs.
+            let mut raw: serde_json::Value = match serde_json::from_str(&contents) {
+                Ok(v) => v,
                 Err(e) => {
                     eprintln!("[config] Failed to parse config JSON: {}", e);
+                    return None;
+                }
+            };
+
+            // Determine runners directory for migration's auto-pick of an
+            // installed runner when the legacy config has no `selected_runner`.
+            let install_path_str = raw
+                .get("install_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let runners_dir = if install_path_str.is_empty() {
+                std::path::PathBuf::new()
+            } else {
+                Path::new(&expand_tilde(&install_path_str)).join("runners")
+            };
+
+            migrate_v1_to_v2(&mut raw, &runners_dir);
+
+            let config: AppConfig = match serde_json::from_value(raw) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[config] Failed to deserialize migrated config: {}", e);
                     return None;
                 }
             };
@@ -828,11 +1068,15 @@ pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
                 config
             };
 
+            // Restore launch-profile invariants (≥1 profile, valid active id).
+            ensure_default_profile(&mut config);
+
             // Migrate stale primary_monitor values: older app versions stored
             // the display model name (e.g. "LG HDR 4K") instead of the DRM
             // connector (e.g. "DP-1"). Wine/Proton ignore the bogus value, so
             // replace it with the primary connector if a mismatch is detected.
             let stale = config
+                .launch_working_state
                 .performance
                 .primary_monitor
                 .as_ref()
@@ -841,7 +1085,7 @@ pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
             if stale {
                 let monitors = crate::system_check::detect_monitors_sync();
                 if !monitors.is_empty() {
-                    let saved = config.performance.primary_monitor.clone().unwrap_or_default();
+                    let saved = config.launch_working_state.performance.primary_monitor.clone().unwrap_or_default();
                     let still_valid = monitors.iter().any(|m| m.name == saved);
                     if !still_valid {
                         let primary = monitors.iter().find(|m| m.primary).unwrap_or(&monitors[0]);
@@ -850,7 +1094,7 @@ pub async fn load_config() -> Result<Option<AppConfig>, AppError> {
                             saved,
                             primary.name
                         );
-                        config.performance.primary_monitor = Some(primary.name.clone());
+                        config.launch_working_state.performance.primary_monitor = Some(primary.name.clone());
                     }
                 }
             }
@@ -1294,15 +1538,32 @@ pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, AppErr
 mod tests {
     use super::*;
 
+    fn make_profile(name: &str, runner: &str) -> LaunchProfile {
+        LaunchProfile {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            description: None,
+            created_at: "2026-05-03T10:00:00+00:00".to_string(),
+            updated_at: "2026-05-03T10:00:00+00:00".to_string(),
+            body: LaunchProfileBody {
+                runner_name: runner.to_string(),
+                performance: PerformanceSettings::default(),
+            },
+        }
+    }
+
     #[test]
     fn app_config_default_has_sensible_values() {
         let config = AppConfig::default();
         assert!(config.install_path.is_empty());
-        assert!(config.selected_runner.is_none());
         assert_eq!(config.log_level, "info");
         assert_eq!(config.install_mode, "full");
         assert_eq!(config.ui_scale, 1.0);
         assert!(config.language.is_none());
+        assert_eq!(config.schema_version, 2);
+        assert!(config.launch_profiles.is_empty()); // populated by ensure_default_profile
+        assert!(config.fallback_runner.is_none());
+        assert!(!config.has_seen_profile_intro);
     }
 
     #[test]
@@ -1318,18 +1579,17 @@ mod tests {
 
     #[test]
     fn app_config_serialization_roundtrip() {
+        let profile = make_profile("Default", "wine-ge-proton8-25");
+        let active_id = profile.id.clone();
+        let body = profile.body.clone();
         let config = AppConfig {
+            schema_version: 2,
             install_path: "~/Games/star-citizen".into(),
-            selected_runner: Some("wine-ge-proton8-25".into()),
-            performance: PerformanceSettings {
-                mangohud: true,
-                custom_env_vars: vec![CustomEnvVar {
-                    key: "WINEDEBUG".into(),
-                    value: "-all".into(),
-                    enabled: true,
-                }],
-                ..Default::default()
-            },
+            launch_profiles: vec![profile],
+            active_launch_profile_id: active_id.clone(),
+            launch_working_state: body,
+            fallback_runner: Some("wine-ge-proton9-1".into()),
+            has_seen_profile_intro: true,
             github_token: Some("ghp_test123".into()),
             log_level: "debug".into(),
             auto_backup_on_launch: Some(true),
@@ -1348,10 +1608,11 @@ mod tests {
         let restored: AppConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(restored.install_path, config.install_path);
-        assert_eq!(restored.selected_runner, config.selected_runner);
-        assert!(restored.performance.mangohud);
-        assert_eq!(restored.performance.custom_env_vars.len(), 1);
-        assert_eq!(restored.performance.custom_env_vars[0].key, "WINEDEBUG");
+        assert_eq!(restored.launch_profiles.len(), 1);
+        assert_eq!(restored.active_launch_profile_id, active_id);
+        assert_eq!(restored.launch_working_state.runner_name, "wine-ge-proton8-25");
+        assert_eq!(restored.fallback_runner.as_deref(), Some("wine-ge-proton9-1"));
+        assert!(restored.has_seen_profile_intro);
         assert_eq!(restored.github_token, config.github_token);
         assert_eq!(restored.log_level, "debug");
         assert_eq!(restored.runner_sources.len(), 1);
@@ -1363,13 +1624,16 @@ mod tests {
 
     #[test]
     fn app_config_deserializes_with_missing_fields() {
-        // Simulate an older config that's missing newer fields
+        // Pre-v2 fields-only config (no schema_version): serde fills in defaults
+        // for new fields. Migration is a separate code path (load_config).
         let json = r#"{"install_path": "/tmp/sc", "log_level": "info"}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.install_path, "/tmp/sc");
-        assert!(config.selected_runner.is_none());
         assert_eq!(config.ui_scale, 1.0);
-        assert!(config.performance.esync); // default should be true
+        // Defaults should fill the new fields
+        assert!(config.launch_working_state.runner_name.is_empty());
+        assert!(config.launch_working_state.performance.esync);
+        assert!(config.launch_profiles.is_empty());
     }
 
     #[test]
@@ -1397,5 +1661,273 @@ mod tests {
         let locale = get_system_locale();
         assert!(!locale.is_empty());
         assert!(locale.len() >= 2);
+    }
+
+    // ── Launch-Profile schema tests ───────────────────────────────────────
+
+    #[test]
+    fn launch_profile_body_partial_eq_for_dirty_detection() {
+        let a = LaunchProfileBody::default();
+        let mut b = LaunchProfileBody::default();
+        assert_eq!(a, b);
+        b.runner_name = "wine-ge-8-25".into();
+        assert_ne!(a, b);
+        b = LaunchProfileBody::default();
+        b.performance.mangohud = true;
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn launch_profile_serialization_roundtrip() {
+        let profile = LaunchProfile {
+            id: "11111111-2222-3333-4444-555555555555".into(),
+            name: "Wayland Test".into(),
+            description: Some("Experimental Wayland with HDR".into()),
+            created_at: "2026-05-03T10:00:00+00:00".into(),
+            updated_at: "2026-05-03T11:00:00+00:00".into(),
+            body: LaunchProfileBody {
+                runner_name: "wine-ge-9-1".into(),
+                performance: PerformanceSettings {
+                    mangohud: true,
+                    hdr: true,
+                    ..Default::default()
+                },
+            },
+        };
+        let json = serde_json::to_string(&profile).unwrap();
+        let back: LaunchProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, profile);
+    }
+
+    #[test]
+    fn description_optional_serialization() {
+        let mut p = make_profile("p", "r");
+        p.description = None;
+        let s_none = serde_json::to_string(&p).unwrap();
+        let r_none: LaunchProfile = serde_json::from_str(&s_none).unwrap();
+        assert!(r_none.description.is_none());
+
+        p.description = Some("hello".into());
+        let s_some = serde_json::to_string(&p).unwrap();
+        let r_some: LaunchProfile = serde_json::from_str(&s_some).unwrap();
+        assert_eq!(r_some.description.as_deref(), Some("hello"));
+    }
+
+    // ── ensure_default_profile tests ──────────────────────────────────────
+
+    #[test]
+    fn ensure_default_profile_synthesizes_when_empty() {
+        let mut config = AppConfig::default();
+        assert!(config.launch_profiles.is_empty());
+        ensure_default_profile(&mut config);
+        assert_eq!(config.launch_profiles.len(), 1);
+        assert_eq!(config.launch_profiles[0].name, "Default");
+        assert_eq!(
+            config.active_launch_profile_id,
+            config.launch_profiles[0].id
+        );
+    }
+
+    #[test]
+    fn ensure_default_profile_uses_working_state_as_body() {
+        let mut config = AppConfig::default();
+        config.launch_working_state.runner_name = "wine-ge-8-25".into();
+        config.launch_working_state.performance.mangohud = true;
+        ensure_default_profile(&mut config);
+        assert_eq!(
+            config.launch_profiles[0].body.runner_name,
+            "wine-ge-8-25"
+        );
+        assert!(config.launch_profiles[0].body.performance.mangohud);
+    }
+
+    #[test]
+    fn ensure_default_profile_resets_invalid_active_id() {
+        let mut config = AppConfig::default();
+        let p1 = make_profile("First", "r1");
+        let p2 = make_profile("Second", "r2");
+        let first_id = p1.id.clone();
+        config.launch_profiles = vec![p1, p2];
+        config.active_launch_profile_id = "non-existent-id".into();
+        ensure_default_profile(&mut config);
+        assert_eq!(config.active_launch_profile_id, first_id);
+    }
+
+    #[test]
+    fn ensure_default_profile_keeps_valid_active() {
+        let mut config = AppConfig::default();
+        let p1 = make_profile("First", "r1");
+        let p2 = make_profile("Second", "r2");
+        let second_id = p2.id.clone();
+        config.launch_profiles = vec![p1, p2];
+        config.active_launch_profile_id = second_id.clone();
+        ensure_default_profile(&mut config);
+        assert_eq!(config.active_launch_profile_id, second_id);
+        assert_eq!(config.launch_profiles.len(), 2);
+    }
+
+    // ── migrate_v1_to_v2 tests ────────────────────────────────────────────
+
+    #[test]
+    fn migration_idempotent_on_v2_input() {
+        let mut v2 = serde_json::json!({
+            "schema_version": 2,
+            "launch_profiles": [],
+        });
+        let snapshot = v2.clone();
+        let migrated = migrate_v1_to_v2(&mut v2, std::path::Path::new("/nonexistent"));
+        assert!(!migrated, "should not run on v2 input");
+        assert_eq!(v2, snapshot, "should be untouched");
+    }
+
+    #[test]
+    fn migration_from_v1_with_runner_creates_default_profile() {
+        let mut v1 = serde_json::json!({
+            "install_path": "/tmp/sc",
+            "selected_runner": "wine-ge-8-25",
+            "performance": {
+                "mangohud": true,
+                "hdr": true,
+            },
+            "log_level": "info",
+        });
+        let migrated = migrate_v1_to_v2(&mut v1, std::path::Path::new("/nonexistent"));
+        assert!(migrated);
+        assert_eq!(v1["schema_version"], 2);
+        assert!(v1.get("performance").is_none());
+        assert!(v1.get("selected_runner").is_none());
+        assert_eq!(v1["launch_profiles"][0]["name"], "Default");
+        assert_eq!(
+            v1["launch_profiles"][0]["body"]["runner_name"],
+            "wine-ge-8-25"
+        );
+        assert_eq!(
+            v1["launch_profiles"][0]["body"]["performance"]["mangohud"],
+            true
+        );
+        assert_eq!(v1["launch_working_state"]["runner_name"], "wine-ge-8-25");
+        assert!(v1["fallback_runner"].is_null());
+        assert_eq!(v1["has_seen_profile_intro"], false);
+        // Active id matches the only profile's id
+        let pid = v1["launch_profiles"][0]["id"].as_str().unwrap().to_string();
+        assert_eq!(v1["active_launch_profile_id"], pid);
+    }
+
+    #[test]
+    fn migration_v1_no_runner_with_empty_dir_yields_empty_runner() {
+        let tmp = tempfile::tempdir().unwrap();
+        let runners = tmp.path().join("runners");
+        std::fs::create_dir_all(&runners).unwrap();
+
+        let mut v1 = serde_json::json!({
+            "install_path": tmp.path().to_string_lossy(),
+            "performance": {},
+            // selected_runner intentionally absent
+        });
+        let migrated = migrate_v1_to_v2(&mut v1, &runners);
+        assert!(migrated);
+        assert_eq!(v1["launch_working_state"]["runner_name"], "");
+    }
+
+    #[test]
+    fn migration_v1_no_runner_auto_picks_first_installed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let runners = tmp.path().join("runners");
+        // Create two runner directories; second has wine binary
+        let r1 = runners.join("alpha-runner");
+        let r2 = runners.join("beta-runner");
+        std::fs::create_dir_all(r1.join("bin")).unwrap();
+        std::fs::write(r1.join("bin").join("wine"), "fake").unwrap();
+        std::fs::create_dir_all(r2.join("bin")).unwrap();
+        std::fs::write(r2.join("bin").join("wine"), "fake").unwrap();
+
+        let mut v1 = serde_json::json!({
+            "performance": {},
+        });
+        let migrated = migrate_v1_to_v2(&mut v1, &runners);
+        assert!(migrated);
+        // Alphabetically first
+        assert_eq!(v1["launch_working_state"]["runner_name"], "alpha-runner");
+    }
+
+    #[test]
+    fn migration_v1_with_explicit_runner_overrides_auto_pick() {
+        let tmp = tempfile::tempdir().unwrap();
+        let runners = tmp.path().join("runners");
+        let r = runners.join("alpha-runner");
+        std::fs::create_dir_all(r.join("bin")).unwrap();
+        std::fs::write(r.join("bin").join("wine"), "fake").unwrap();
+
+        let mut v1 = serde_json::json!({
+            "selected_runner": "explicit-runner",
+            "performance": {},
+        });
+        let migrated = migrate_v1_to_v2(&mut v1, &runners);
+        assert!(migrated);
+        assert_eq!(
+            v1["launch_working_state"]["runner_name"],
+            "explicit-runner",
+            "explicit selected_runner must win over auto-pick"
+        );
+    }
+
+    #[test]
+    fn migration_v1_empty_string_runner_falls_back_to_auto_pick() {
+        let tmp = tempfile::tempdir().unwrap();
+        let runners = tmp.path().join("runners");
+        let r = runners.join("only-runner");
+        std::fs::create_dir_all(r.join("bin")).unwrap();
+        std::fs::write(r.join("bin").join("wine"), "fake").unwrap();
+
+        let mut v1 = serde_json::json!({
+            "selected_runner": "   ",
+            "performance": {},
+        });
+        let migrated = migrate_v1_to_v2(&mut v1, &runners);
+        assert!(migrated);
+        assert_eq!(v1["launch_working_state"]["runner_name"], "only-runner");
+    }
+
+    #[test]
+    fn migration_v1_preserves_other_fields() {
+        let mut v1 = serde_json::json!({
+            "install_path": "/tmp/sc",
+            "log_level": "debug",
+            "github_token": "ghp_xyz",
+            "ui_scale": 1.5,
+            "performance": { "esync": true },
+        });
+        migrate_v1_to_v2(&mut v1, std::path::Path::new("/nonexistent"));
+        assert_eq!(v1["install_path"], "/tmp/sc");
+        assert_eq!(v1["log_level"], "debug");
+        assert_eq!(v1["github_token"], "ghp_xyz");
+        assert_eq!(v1["ui_scale"], 1.5);
+    }
+
+    #[test]
+    fn first_installed_runner_is_alphabetically_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in &["zulu-runner", "alpha-runner", "mike-runner"] {
+            let p = tmp.path().join(name).join("bin");
+            std::fs::create_dir_all(&p).unwrap();
+            std::fs::write(p.join("wine"), "fake").unwrap();
+        }
+        // A directory without a wine binary must be skipped
+        std::fs::create_dir_all(tmp.path().join("not-a-runner")).unwrap();
+        assert_eq!(
+            first_installed_runner(tmp.path()).as_deref(),
+            Some("alpha-runner")
+        );
+    }
+
+    #[test]
+    fn first_installed_runner_returns_none_for_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(first_installed_runner(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn first_installed_runner_returns_none_for_nonexistent_dir() {
+        assert!(first_installed_runner(std::path::Path::new("/this/does/not/exist")).is_none());
     }
 }

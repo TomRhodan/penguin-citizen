@@ -7,6 +7,49 @@ use tauri::{ AppHandle, Emitter };
 
 use super::{ configure_wine_env, InstallationStatus, GAME_PID };
 
+/// Checks whether a runner directory contains a usable wine binary.
+fn runner_is_installed(install_path: &str, runner_name: &str) -> bool {
+    if runner_name.is_empty() {
+        return false;
+    }
+    let dir = Path::new(install_path).join("runners").join(runner_name);
+    resolve_wine_bin(&dir).is_some()
+}
+
+/// Resolves which runner to actually launch with.
+///
+/// 1. If the active profile's runner (`working_runner`) is installed, use it.
+/// 2. Else if a `fallback` is configured AND installed, use the fallback
+///    (caller is expected to emit a `runner-fallback-used` event so the
+///    user knows their profile's chosen runner has been substituted).
+/// 3. Else return a user-facing error string.
+///
+/// Returns `(resolved_runner_name, used_fallback)`.
+pub(super) fn resolve_runner_for_launch(
+    install_path: &str,
+    working_runner: &str,
+    fallback: Option<&str>,
+) -> Result<(String, bool), String> {
+    if runner_is_installed(install_path, working_runner) {
+        return Ok((working_runner.to_string(), false));
+    }
+    if let Some(fb) = fallback.filter(|s| !s.is_empty()) {
+        if runner_is_installed(install_path, fb) {
+            return Ok((fb.to_string(), true));
+        }
+    }
+    if working_runner.is_empty() {
+        Err(
+            "No runner selected for the active profile. Choose one on the Launch page or set a fallback in Settings.".to_string()
+        )
+    } else {
+        Err(format!(
+            "No usable runner. Profile runner '{}' is not installed and no usable fallback is set.",
+            working_runner
+        ))
+    }
+}
+
 /// Checks the current installation status of Star Citizen.
 ///
 /// Verifies whether a Wine runner is present and whether the RSI Launcher .exe
@@ -16,12 +59,16 @@ use super::{ configure_wine_env, InstallationStatus, GAME_PID };
 pub fn check_installation(config: AppConfig) -> InstallationStatus {
     let install_path = expand_tilde(&config.install_path);
 
-    // Check whether the selected runner actually exists as a wine binary
-    let runner_name = config.selected_runner.clone();
-    let has_runner = runner_name.as_ref().is_some_and(|name| {
-        let runner_dir = Path::new(&install_path).join("runners").join(name);
-        resolve_wine_bin(&runner_dir).is_some()
-    });
+    // Use the live working state's runner. None == empty string here.
+    let working_runner = &config.launch_working_state.runner_name;
+    let runner_name = if working_runner.is_empty() {
+        None
+    } else {
+        Some(working_runner.clone())
+    };
+    let has_runner = runner_name
+        .as_ref()
+        .is_some_and(|name| runner_is_installed(&install_path, name));
 
     // Check whether the RSI Launcher .exe exists at the expected path within the Wine prefix
     let launcher_exe = Path::new(&install_path)
@@ -78,12 +125,17 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     }
 
     let install_path = expand_tilde(&config.install_path);
-    let runner_name = config.selected_runner.as_deref().ok_or("No runner selected")?;
+    let working = &config.launch_working_state;
+    let (runner_name, used_fallback) = resolve_runner_for_launch(
+        &install_path,
+        &working.runner_name,
+        config.fallback_runner.as_deref(),
+    )?;
     let log_level = config.log_level.as_str();
     let is_debug = log_level == "debug";
 
     // Resolve Wine binary from the runner directory (supports standard Wine + Proton layouts)
-    let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
+    let runner_dir = Path::new(&install_path).join("runners").join(&runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
     let runner_bin = wine.parent()
@@ -109,6 +161,22 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
 
     // --- Log: Output runner and paths for diagnostics ---
     let _ = app.emit("launch-log", &format!("Runner:     {}", runner_name));
+    if used_fallback {
+        let _ = app.emit(
+            "launch-log",
+            &format!(
+                "            (fallback used: profile runner '{}' is not installed)",
+                working.runner_name
+            ),
+        );
+        let _ = app.emit(
+            "runner-fallback-used",
+            serde_json::json!({
+                "profile_runner": working.runner_name.clone(),
+                "fallback_runner": runner_name.clone(),
+            }),
+        );
+    }
     let _ = app.emit("launch-log", &format!("Wine:       {}", wine.to_string_lossy()));
     let _ = app.emit("launch-log", &format!("Prefix:     {}", install_path));
 
@@ -135,7 +203,7 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
         .output();
 
     // --- Build launch command (gamescope -> gamemoderun -> wine -> launcher) ---
-    let perf_settings = &config.performance;
+    let perf_settings = &config.launch_working_state.performance;
     let launcher_path = "C:\\Program Files\\Roberts Space Industries\\RSI Launcher\\RSI Launcher.exe";
 
     let mut cmd = if perf_settings.gamescope.enabled {
@@ -182,7 +250,7 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
         c
     };
 
-    let env_log = configure_wine_env(&mut cmd, &install_path, &config.performance, log_level);
+    let env_log = configure_wine_env(&mut cmd, &install_path, &config.launch_working_state.performance, log_level);
 
     // --- Log: List set environment variables ---
     let _ = app.emit("launch-log", "");
@@ -199,7 +267,7 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     }
 
     // --- Log: Summary of performance settings ---
-    let perf = &config.performance;
+    let perf = &config.launch_working_state.performance;
     let _ = app.emit("launch-log", "");
     let _ = app.emit("launch-log", "> Performance settings:");
     let _ = app.emit(
