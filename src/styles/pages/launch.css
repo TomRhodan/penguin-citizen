@@ -718,3 +718,105 @@
   margin: 0;
   line-height: 1.5;
 }
+
+/* ── Launch Profile Bar ───────────────────────────────────────────── */
+/* Slim control surface above the launch button: profile selector,
+   dirty pill, Update / Revert buttons, Manage Profiles link. */
+
+.launch-profile-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow);
+}
+
+.launch-profile-bar-label {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.launch-profile-bar-select {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+  min-width: 200px;
+}
+
+.launch-profile-bar-select:hover {
+  border-color: var(--border-hover);
+}
+
+.launch-profile-bar-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.launch-profile-bar .btn {
+  padding: 6px 12px;
+  font-size: 0.78rem;
+}
+
+/* Push Manage link to the right edge */
+.launch-profile-bar-manage {
+  margin-left: auto;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: color 0.15s ease;
+}
+
+.launch-profile-bar-manage:hover {
+  color: var(--accent-hover);
+}
+
+/* ── Profile pills (Saved / Unsaved Changes) ──────────────────────── */
+
+.profile-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.profile-pill::before {
+  content: "●";
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+.profile-pill-saved {
+  color: var(--success, #4ade80);
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.profile-pill-dirty {
+  color: var(--warning, #facc15);
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(234, 179, 8, 0.3);
+}
