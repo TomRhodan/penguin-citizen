@@ -317,6 +317,208 @@ function listenForExit(container) {
   }).then(fn => { unlistenLaunchLog = fn; }).catch(() => { });
 }
 
+// ── Launch Profiles header ─────────────────────────────────────────
+
+/**
+ * Returns the active LaunchProfile object, or null if none is set / found.
+ */
+function getActiveProfile() {
+  if (!launchConfig?.launch_profiles) return null;
+  return (
+    launchConfig.launch_profiles.find(
+      (p) => p.id === launchConfig.active_launch_profile_id
+    ) || null
+  );
+}
+
+/**
+ * Returns true if the live working_state diverges from the active profile's
+ * saved body. Falls back to false when no active profile exists.
+ */
+function isWorkingStateDirty() {
+  const active = getActiveProfile();
+  if (!active) return false;
+  // Cheap structural compare via JSON; the schema is small enough.
+  return (
+    JSON.stringify(active.body) !== JSON.stringify(launchConfig.launch_working_state)
+  );
+}
+
+/**
+ * Renders the slim profile bar above the launch bar:
+ * profile selector, dirty pill, Update Profile / Revert (when dirty),
+ * and a Manage Profiles link to the dedicated page.
+ */
+function renderProfileHeader() {
+  const profiles = launchConfig?.launch_profiles || [];
+  if (profiles.length === 0) return '';
+  const activeId = launchConfig.active_launch_profile_id || '';
+  const dirty = isWorkingStateDirty();
+
+  const options = profiles
+    .map(
+      (p) =>
+        `<option value="${escapeHtml(p.id)}"${
+          p.id === activeId ? ' selected' : ''
+        }>${p.id === activeId ? '★ ' : ''}${escapeHtml(p.name)}</option>`
+    )
+    .join('');
+
+  const dirtyPill = dirty
+    ? `<span class="profile-pill profile-pill-dirty">${escapeHtml(
+        t('launch:profile.dirty', { defaultValue: 'Unsaved Changes' })
+      )}</span>`
+    : `<span class="profile-pill profile-pill-saved">${escapeHtml(
+        t('launch:profile.saved', { defaultValue: 'Saved' })
+      )}</span>`;
+
+  const dirtyButtons = dirty
+    ? `
+      <button class="btn" id="btn-profile-revert">
+        ↻ ${escapeHtml(t('launch:profile.revert', { defaultValue: 'Revert' }))}
+      </button>
+      <button class="btn btn-primary" id="btn-profile-update">
+        💾 ${escapeHtml(
+          t('launch:profile.update', { defaultValue: 'Update Profile' })
+        )}
+      </button>`
+    : '';
+
+  return `
+    <div class="launch-profile-bar">
+      <label class="launch-profile-bar-label" for="profile-selector">${escapeHtml(
+        t('launch:profile.label', { defaultValue: 'Profile:' })
+      )}</label>
+      <select id="profile-selector" class="launch-profile-bar-select">
+        ${options}
+      </select>
+      ${dirtyPill}
+      ${dirtyButtons}
+      <a href="#" class="launch-profile-bar-manage" id="btn-profile-manage">
+        ${escapeHtml(
+          t('launch:profile.manage', { defaultValue: 'Manage Profiles →' })
+        )}
+      </a>
+    </div>
+  `;
+}
+
+/**
+ * Wires up profile-bar interactions: switch, update, revert, and the
+ * "Manage Profiles" link. After mutating commands the launchConfig cache
+ * is reloaded so the dirty pill stays accurate.
+ */
+function bindProfileHeaderEvents(container) {
+  const selector = container.querySelector('#profile-selector');
+  if (selector) {
+    selector.addEventListener('change', async () => {
+      const targetId = selector.value;
+      if (!targetId || targetId === launchConfig.active_launch_profile_id) return;
+      let force = false;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await invoke('switch_launch_profile', { id: targetId, force });
+          break;
+        } catch (e) {
+          const msg = String(e);
+          if (!force && msg.startsWith('DIRTY:')) {
+            const ok = window.confirm(
+              t('launch:profile.confirmDiscard', {
+                defaultValue:
+                  'The active profile has unsaved changes. Discard them and switch?',
+              })
+            );
+            if (!ok) {
+              // Reset dropdown to the actual active id
+              selector.value = launchConfig.active_launch_profile_id;
+              return;
+            }
+            force = true;
+            continue;
+          }
+          alert(
+            t('launch:profile.errorSwitch', {
+              defaultValue: 'Failed to switch profile: ',
+            }) + msg
+          );
+          selector.value = launchConfig.active_launch_profile_id;
+          return;
+        }
+      }
+      await reloadConfigAndRender(container);
+    });
+  }
+
+  const updateBtn = container.querySelector('#btn-profile-update');
+  if (updateBtn) {
+    updateBtn.addEventListener('click', async () => {
+      try {
+        await invoke('update_launch_profile', {
+          id: launchConfig.active_launch_profile_id,
+        });
+      } catch (e) {
+        alert(
+          t('launch:profile.errorUpdate', {
+            defaultValue: 'Failed to update profile: ',
+          }) + String(e)
+        );
+        return;
+      }
+      await reloadConfigAndRender(container);
+    });
+  }
+
+  const revertBtn = container.querySelector('#btn-profile-revert');
+  if (revertBtn) {
+    revertBtn.addEventListener('click', async () => {
+      const active = getActiveProfile();
+      const name = active ? active.name : '';
+      const ok = window.confirm(
+        t('launch:profile.confirmRevert', {
+          defaultValue: `Discard unsaved changes and revert to "${name}"?`,
+          name,
+        })
+      );
+      if (!ok) return;
+      try {
+        await invoke('revert_launch_working_state');
+      } catch (e) {
+        alert(
+          t('launch:profile.errorRevert', {
+            defaultValue: 'Failed to revert: ',
+          }) + String(e)
+        );
+        return;
+      }
+      await reloadConfigAndRender(container);
+    });
+  }
+
+  const manageLink = container.querySelector('#btn-profile-manage');
+  if (manageLink) {
+    manageLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Lazy-import to avoid a circular dep with router.js (which imports launch.js)
+      import('../router.js').then(({ router }) => router.navigate('launch-profiles'));
+    });
+  }
+}
+
+/**
+ * Reloads launchConfig from disk and re-renders the page so the dirty
+ * pill, runner display, and toggle states stay in sync after profile
+ * mutations driven by the header.
+ */
+async function reloadConfigAndRender(container) {
+  try {
+    const fresh = await invoke('load_config');
+    if (fresh) launchConfig = fresh;
+  } catch (_e) {
+    // Keep stale config rather than crash
+  }
+  renderPage(container);
+}
+
 /**
  * Re-renders the entire launch page:
  * Compact launch bar, collapsible card grid, custom env vars, and log output.
@@ -329,6 +531,7 @@ function renderPage(container) {
     <div class="page-header">
       <h1>${t('launch:title')}</h1>
     </div>
+    ${renderProfileHeader()}
     ${renderLaunchBar()}
     ${renderLaunchStatusMessages()}
     <div class="launch-card-grid">
@@ -856,6 +1059,8 @@ function renderCustomEnvVarsCard(disabled) {
  * - Custom environment variables
  */
 function bindEvents(container) {
+  bindProfileHeaderEvents(container);
+
   const launchBtn = document.getElementById('btn-launch');
   if (launchBtn) {
     launchBtn.addEventListener('click', () => onLaunch(container));
