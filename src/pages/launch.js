@@ -70,6 +70,8 @@ let detectedGpuVendor = 'unknown';
 let detectedGpuName = '';
 /** @type {string[]} Vulkan device names for the GPU filter dropdown */
 let vulkanDevices = [];
+/** @type {string[]} Installed Wine runners under <install_path>/runners — populated by loadAndCheck. */
+let installedRunners = [];
 /** @type {boolean} Whether gamescope is installed on the system */
 let gamescopeInstalled = false;
 /** @type {boolean} Whether gamemoderun is installed on the system */
@@ -269,6 +271,19 @@ async function loadAndCheck(container) {
     launchConfig = config;
     // Re-run migration in case detect_monitors finished before launchConfig was set
     maybeMigrateMonitorConfig();
+
+    // Discover installed runners so the profile-header dropdown can list
+    // them (and show a warning if the active profile points at one that
+    // is no longer installed). Best-effort — failures leave the list empty.
+    try {
+      const result = await invoke('scan_runners', {
+        basePath: config.install_path || '',
+      });
+      installedRunners = (result?.runners || []).map((r) => r.name);
+    } catch (_e) {
+      installedRunners = [];
+    }
+
     const status = await invoke('check_installation', { config });
     installStatus = status;
 
@@ -378,15 +393,58 @@ function renderProfileHeader() {
 
   const dirtyButtons = dirty
     ? `
-      <button class="btn" id="btn-profile-revert">
+      <button class="btn btn-secondary" id="btn-profile-revert">
         ↻ ${escapeHtml(t('launch:profile.revert', { defaultValue: 'Revert' }))}
       </button>
       <button class="btn btn-primary" id="btn-profile-update">
-        💾 ${escapeHtml(
+        ${escapeHtml(
           t('launch:profile.update', { defaultValue: 'Update Profile' })
         )}
       </button>`
     : '';
+
+  // Runner dropdown: list installed runners. If the working_state runner is
+  // missing from the list (e.g. the user deleted it), surface it as a
+  // disabled-style option at the top so the user can see what's currently
+  // configured rather than silently snapping to something else.
+  const currentRunner = launchConfig.launch_working_state.runner_name || '';
+  const runnerInstalled = currentRunner && installedRunners.includes(currentRunner);
+  const runnerOptions = [];
+  if (!currentRunner) {
+    runnerOptions.push(
+      `<option value="" selected>${escapeHtml(
+        t('launch:profile.runnerNone', { defaultValue: '— select a runner —' })
+      )}</option>`
+    );
+  } else if (!runnerInstalled) {
+    runnerOptions.push(
+      `<option value="${escapeHtml(currentRunner)}" selected>⚠ ${escapeHtml(
+        currentRunner
+      )} (${escapeHtml(
+        t('launch:profile.runnerMissing', { defaultValue: 'not installed' })
+      )})</option>`
+    );
+  }
+  for (const name of installedRunners) {
+    if (name === currentRunner) {
+      runnerOptions.push(
+        `<option value="${escapeHtml(name)}" selected>${escapeHtml(name)}</option>`
+      );
+    } else {
+      runnerOptions.push(
+        `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+      );
+    }
+  }
+
+  const runnerWarning =
+    currentRunner && !runnerInstalled
+      ? `<span class="warning-pill">${escapeHtml(
+          t('launch:profile.runnerNotInstalled', {
+            defaultValue: 'Runner not installed',
+          })
+        )}</span>`
+      : '';
 
   return `
     <div class="launch-profile-bar">
@@ -397,6 +455,15 @@ function renderProfileHeader() {
         ${options}
       </select>
       ${dirtyPill}
+
+      <label class="launch-profile-bar-label" for="profile-runner-select">${escapeHtml(
+        t('launch:profile.runnerLabel', { defaultValue: 'Runner:' })
+      )}</label>
+      <select id="profile-runner-select" class="input input-sm launch-profile-bar-runner">
+        ${runnerOptions.join('')}
+      </select>
+      ${runnerWarning}
+
       ${dirtyButtons}
       <a href="#" class="launch-profile-bar-manage" id="btn-profile-manage">
         ${escapeHtml(
@@ -514,6 +581,27 @@ function bindProfileHeaderEvents(container) {
           'error'
         );
         return;
+      }
+      await reloadConfigAndRender(container);
+    });
+  }
+
+  const runnerSelect = container.querySelector('#profile-runner-select');
+  if (runnerSelect) {
+    runnerSelect.addEventListener('change', async () => {
+      // Mutate working_state and persist via the existing save_config path,
+      // then re-render so the dirty pill, runner display in the launch bar,
+      // and warning state stay in sync.
+      launchConfig.launch_working_state.runner_name = runnerSelect.value || '';
+      try {
+        await invoke('save_config', { config: launchConfig });
+      } catch (e) {
+        showNotification(
+          t('launch:profile.errorSaveRunner', {
+            defaultValue: 'Failed to save runner: ',
+          }) + String(e),
+          'error'
+        );
       }
       await reloadConfigAndRender(container);
     });

@@ -753,6 +753,14 @@
   font-weight: 600;
 }
 
+/* Runner dropdown sits in the same bar; gets a touch more room since
+   runner names are typically longer (e.g. "lug-wine-tkg-..."). */
+.launch-profile-bar-runner {
+  width: auto;
+  min-width: 280px;
+  font-family: var(--font-mono);
+}
+
 .launch-profile-bar .btn {
   padding: 6px 12px;
   font-size: 0.78rem;
