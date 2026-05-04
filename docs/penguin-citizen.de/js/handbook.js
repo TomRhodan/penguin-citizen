@@ -5,6 +5,7 @@
     { href: 'getting-started.html', title: 'Getting Started', titleDe: 'Erste Schritte' },
     { href: 'dashboard.html', title: 'Dashboard', titleDe: 'Dashboard' },
     { href: 'launching.html', title: 'Launching the Game', titleDe: 'Spiel starten' },
+    { href: 'launch-profiles.html', title: 'Launch Profiles', titleDe: 'Launch-Profile' },
     { href: 'installation.html', title: 'Installation', titleDe: 'Installation' },
     { href: 'wine-runners.html', title: 'Wine Runners', titleDe: 'Wine Runners' },
     { href: 'profiles.html', title: 'Profiles', titleDe: 'Profile' },

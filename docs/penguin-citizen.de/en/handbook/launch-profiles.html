@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Launch Profiles - Penguin Citizen Handbook</title>
+    <meta name="description" content="Save and switch between named launch configurations. Each profile bundles a Wine runner and the full set of launch options. Includes the Profile Wizard and the Wine Runner Fallback." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Homepage</a></li>
+          <li><a href="index.html">Handbook</a></li>
+          <li>
+            <a href="../../de/handbook/launch-profiles.html" class="lang-switch" title="Deutsch">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              DE
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbook</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Table of Contents
+          </button>
+
+          <header>
+            <h1>Launch Profiles</h1>
+            <p>Save and switch between named launch configurations. Each profile bundles a Wine runner and every option from the Launch page so swapping between "Stable" and "Wayland Test" is one click instead of a manual reset.</p>
+          </header>
+
+          <h2>What is a Launch Profile?</h2>
+          <p>A <em>Launch Profile</em> is a saved snapshot of:</p>
+          <ul>
+            <li>The chosen <strong>Wine runner</strong></li>
+            <li>All <strong>performance &amp; graphics options</strong> from the Launch page (ESync, FSync, DXVK Async, GPU-specific flags, Gamescope, MangoHUD, custom env vars, …)</li>
+          </ul>
+          <p>One profile is always <strong>active</strong>. The active profile drives the actual launch when you press Play, both from the <a href="launching.html">Launch page</a> and from the <a href="dashboard.html">Dashboard</a>.</p>
+
+          <h2>The Profile Wizard</h2>
+          <p>The fastest path from a fresh install to a working game. Open it from the Dashboard:</p>
+          <ul>
+            <li>The <strong>⚙ Set up &amp; Launch</strong> button (when no usable profile exists yet)</li>
+            <li>The small <strong>⚙ Profile Wizard</strong> button below the play button (in the Ready state)</li>
+          </ul>
+          <p>The wizard is a single-step modal:</p>
+          <ol>
+            <li>Pick a <strong>Wine runner</strong> from your installed set. The wizard automatically pre-selects a recommended runner: a LUG-Helper build first (most reliable for SC), then any GE-Proton build, then the alphabetically first installed runner.</li>
+            <li>Pick a <strong>profile name</strong> (defaults to <code>My Setup</code>; conflicts with existing names show a red border with inline validation).</li>
+            <li>Choose how to finish:
+              <ul>
+                <li><strong>Save &amp; Done</strong> — closes the wizard and returns to the Dashboard. The new profile is active and ready to launch.</li>
+                <li><strong>Customize</strong> — saves the profile and jumps to the Launch page so you can fine-tune individual toggles before playing.</li>
+              </ul>
+            </li>
+          </ol>
+          <div class="handbook-tip">
+            Wizard profiles default to <code>wayland=false</code> on purpose — Wayland for SC is still rough at the edges and the wizard sells itself as the safe path. Power users can toggle Wayland on later via the Launch page.
+          </div>
+
+          <h2>Profile Management Page</h2>
+          <p>Open <strong>Launch Profiles</strong> from the sidebar to access the management UI: a card grid of all your profiles, plus the Wine Runner Fallback section.</p>
+
+          <h3>Profile Cards</h3>
+          <p>Each card shows the profile name (with a star ★ on the active one), an optional description, the runner, and creation/update timestamps. The available actions per card:</p>
+          <ul>
+            <li><strong>Set Active</strong> — only on non-active profiles. Switching while the current profile has unsaved changes triggers a confirm dialog so you don't lose your tweaks.</li>
+            <li><strong>Rename</strong> — opens a styled prompt. Names must be unique across all profiles; collisions are rejected by the backend.</li>
+            <li><strong>Edit description</strong> — optional free-text note that shows up in the card header. Leave empty to clear.</li>
+            <li><strong>Duplicate</strong> — deep copy of the profile body under a new name. Useful for "Stable + DXVK HUD on top" without touching the original.</li>
+            <li><strong>Delete</strong> — disabled for the active profile (switch first) and for the very last remaining profile (the system always keeps at least one).</li>
+          </ul>
+
+          <h3>Create New Profile</h3>
+          <p>The <strong>+ Create new profile from current settings</strong> button at the top snapshots the current Launch page state into a new profile. Different from the wizard, which always uses safe defaults.</p>
+
+          <h2>Wine Runner Fallback</h2>
+          <p>The fallback is a global runner that takes over at launch time if the active profile's runner has been uninstalled. Configure it via the dropdown at the bottom of the Launch Profiles page.</p>
+          <ul>
+            <li>The dropdown lists all currently installed runners. The selected one is validated when saved — if it disappears later, the launch flow surfaces an error toast.</li>
+            <li>If the active profile's runner is missing AND a fallback is configured, launching emits a <code>runner-fallback-used</code> event and a toast indicates the fallback was used.</li>
+            <li>Set the dropdown to <em>— none —</em> to disable the fallback. Without it, a missing profile runner aborts the launch with a clear error pointing at this page.</li>
+          </ul>
+
+          <h2>Dirty Workflow on the Launch Page</h2>
+          <p>When you toggle any option on the Launch page, the working state diverges from the saved profile. The profile bar reflects this:</p>
+          <ul>
+            <li>Pill changes from green <code>Saved</code> to amber <code>Unsaved Changes</code></li>
+            <li><strong>Update Profile</strong> button — commits the working state into the active profile</li>
+            <li><strong>Revert</strong> button — restores the saved profile values, discarding the tweaks</li>
+          </ul>
+          <p>Launching with unsaved changes works fine — the launch uses the live working state. The profile just stays dirty until you commit or revert.</p>
+
+          <h2>Wine Runner Page Cross-Reference</h2>
+          <p>The <a href="wine-runners.html">Wine Runners</a> page shows per-runner usage badges so you can see at a glance which profiles depend on a given runner before deleting it: <code>Used by N profile(s)</code> and <code>Fallback</code> badges. Hover the "Used by" badge to see the profile names.</p>
+
+          <nav class="handbook-nav-bottom">
+            <a href="launching.html" class="nav-prev">
+              <span class="nav-label">Previous</span>
+              <span class="nav-title">Launching the Game</span>
+            </a>
+            <a href="installation.html" class="nav-next">
+              <span class="nav-label">Next</span>
+              <span class="nav-title">Installation</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Imprint</a>
+          <a href="../privacy.html">Privacy</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

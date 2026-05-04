@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Launch-Profile - Penguin Citizen Handbuch</title>
+    <meta name="description" content="Speichere und wechsle zwischen benannten Start-Konfigurationen. Jedes Profil buendelt einen Wine-Runner und alle Optionen der Startseite. Inklusive Profil-Assistent und Wine-Runner-Fallback." />
+    <link rel="icon" type="image/png" href="../../assets/logo.png" />
+    <link rel="stylesheet" href="../../css/fonts.css" />
+    <link rel="stylesheet" href="../../css/styles.css" />
+    <link rel="stylesheet" href="../../css/handbook.css" />
+  </head>
+  <body>
+    <div class="starfield" id="starfield"></div>
+    <div class="nebula"></div>
+
+    <div class="content">
+      <nav>
+        <a href="../index.html" class="logo">
+          <img src="../../assets/logo.png" alt="Penguin Citizen" class="logo-img" />
+          <span>Penguin Citizen</span>
+        </a>
+        <ul class="nav-links">
+          <li><a href="../index.html">Startseite</a></li>
+          <li><a href="index.html">Handbuch</a></li>
+          <li>
+            <a href="../../en/handbook/launch-profiles.html" class="lang-switch" title="English">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+              EN
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <main class="handbook-page">
+        <aside class="handbook-sidebar" id="handbook-sidebar">
+          <div class="handbook-sidebar-title">Handbuch</div>
+          <ul class="handbook-sidebar-nav" id="handbook-sidebar-nav"></ul>
+        </aside>
+
+        <div class="handbook-content">
+          <button class="handbook-mobile-toggle" id="handbook-mobile-toggle">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            Inhaltsverzeichnis
+          </button>
+
+          <header>
+            <h1>Launch-Profile</h1>
+            <p>Speichere und wechsle zwischen benannten Start-Konfigurationen. Jedes Profil buendelt einen Wine-Runner und alle Optionen der Startseite — Umschalten zwischen "Stable" und "Wayland Test" ist ein Klick statt manueller Reset.</p>
+          </header>
+
+          <h2>Was ist ein Launch-Profil?</h2>
+          <p>Ein <em>Launch-Profil</em> ist ein gespeicherter Snapshot aus:</p>
+          <ul>
+            <li>dem gewaehlten <strong>Wine-Runner</strong></li>
+            <li>allen <strong>Performance- &amp; Grafikoptionen</strong> der Startseite (ESync, FSync, DXVK Async, GPU-spezifische Flags, Gamescope, MangoHUD, eigene Umgebungsvariablen, …)</li>
+          </ul>
+          <p>Genau ein Profil ist immer <strong>aktiv</strong>. Das aktive Profil bestimmt den tatsaechlichen Start, sowohl von der <a href="launching.html">Startseite</a> als auch vom <a href="dashboard.html">Dashboard</a>.</p>
+
+          <h2>Der Profil-Assistent</h2>
+          <p>Der schnellste Weg von der frischen Installation zum laufenden Spiel. Vom Dashboard aus zu oeffnen:</p>
+          <ul>
+            <li>Den <strong>⚙ Einrichten &amp; Starten</strong>-Button (wenn noch kein nutzbares Profil existiert)</li>
+            <li>Den kleinen <strong>⚙ Profil-Assistent</strong>-Button unter dem Play-Button (im Bereit-Zustand)</li>
+          </ul>
+          <p>Der Assistent ist ein Single-Step-Modal:</p>
+          <ol>
+            <li>Waehle einen <strong>Wine-Runner</strong> aus deinem installierten Set. Der Assistent waehlt automatisch einen empfohlenen vor: zuerst einen LUG-Helper-Build (am verlaesslichsten fuer SC), dann einen GE-Proton-Build, sonst den alphabetisch ersten installierten Runner.</li>
+            <li>Vergib einen <strong>Profilnamen</strong> (Standardwert <code>My Setup</code>; Konflikte mit existierenden Namen markieren das Feld rot mit Inline-Validation).</li>
+            <li>Waehle den Abschluss:
+              <ul>
+                <li><strong>Save &amp; Done</strong> — schliesst den Assistenten und kehrt zum Dashboard zurueck. Das neue Profil ist aktiv und startbereit.</li>
+                <li><strong>Customize</strong> — speichert das Profil und springt zur Startseite, damit du einzelne Toggles vor dem Spielen feintunen kannst.</li>
+              </ul>
+            </li>
+          </ol>
+          <div class="handbook-tip">
+            Assistent-Profile haben absichtlich <code>wayland=false</code> als Standard — Wayland fuer SC ist noch unausgereift, und der Assistent verkauft sich als sicherer Pfad. Power-User koennen Wayland spaeter ueber die Startseite einschalten.
+          </div>
+
+          <h2>Profil-Verwaltungsseite</h2>
+          <p>Oeffne <strong>Launch-Profile</strong> aus der Sidebar fuer das Verwaltungs-UI: ein Card-Grid aller Profile plus den Wine-Runner-Fallback.</p>
+
+          <h3>Profil-Karten</h3>
+          <p>Jede Karte zeigt den Profilnamen (mit Stern ★ beim aktiven), eine optionale Beschreibung, den Runner sowie Erstellungs- und Aktualisierungs-Zeitstempel. Verfuegbare Aktionen pro Karte:</p>
+          <ul>
+            <li><strong>Set Active</strong> — nur bei nicht-aktiven Profilen. Beim Wechsel mit ungespeicherten Aenderungen erscheint ein Bestaetigungsdialog, damit nichts verloren geht.</li>
+            <li><strong>Rename</strong> — oeffnet einen styled Prompt. Namen muessen ueber alle Profile eindeutig sein; Kollisionen werden vom Backend abgelehnt.</li>
+            <li><strong>Edit description</strong> — optionale Freitext-Notiz, die im Card-Header angezeigt wird. Leer lassen zum Loeschen.</li>
+            <li><strong>Duplicate</strong> — Tiefenkopie des Profil-Bodys unter neuem Namen. Nuetzlich fuer "Stable plus DXVK HUD obendrauf", ohne das Original anzufassen.</li>
+            <li><strong>Delete</strong> — deaktiviert beim aktiven Profil (vorher umschalten) und beim allerletzten Profil (das System haelt immer mindestens eines).</li>
+          </ul>
+
+          <h3>Neues Profil anlegen</h3>
+          <p>Der <strong>+ Create new profile from current settings</strong>-Button oben snapshottet den aktuellen Stand der Startseite in ein neues Profil. Anders als der Assistent, der immer mit sicheren Voreinstellungen arbeitet.</p>
+
+          <h2>Wine-Runner-Fallback</h2>
+          <p>Der Fallback ist ein globaler Runner, der zur Startzeit einspringt, wenn der Runner des aktiven Profils deinstalliert wurde. Konfiguriere ihn ueber das Dropdown am unteren Rand der Launch-Profile-Seite.</p>
+          <ul>
+            <li>Das Dropdown listet alle aktuell installierten Runner. Der ausgewaehlte wird beim Speichern validiert — verschwindet er spaeter, surfaced der Start-Flow eine Fehler-Toast.</li>
+            <li>Wenn der Runner des aktiven Profils fehlt UND ein Fallback konfiguriert ist, sendet der Start ein <code>runner-fallback-used</code>-Event und ein Toast meldet die Verwendung des Fallbacks.</li>
+            <li>Setze das Dropdown auf <em>— none —</em>, um den Fallback zu deaktivieren. Ohne Fallback bricht ein fehlender Profil-Runner den Start mit einem klaren Fehler ab, der auf diese Seite verweist.</li>
+          </ul>
+
+          <h2>Dirty-Workflow auf der Startseite</h2>
+          <p>Sobald du eine Option auf der Startseite umlegst, weicht der Arbeitszustand vom gespeicherten Profil ab. Die Profil-Leiste reflektiert das:</p>
+          <ul>
+            <li>Pille wechselt von gruen <code>Saved</code> zu orange <code>Unsaved Changes</code></li>
+            <li><strong>Update Profile</strong>-Button — schreibt den Arbeitszustand zurueck ins aktive Profil</li>
+            <li><strong>Revert</strong>-Button — stellt die gespeicherten Profilwerte wieder her und verwirft die Aenderungen</li>
+          </ul>
+          <p>Mit ungespeicherten Aenderungen zu starten funktioniert problemlos — der Start nutzt den Live-Arbeitszustand. Das Profil bleibt nur Dirty, bis du committest oder revertest.</p>
+
+          <h2>Cross-Reference Wine-Runner-Seite</h2>
+          <p>Die <a href="wine-runners.html">Wine-Runner</a>-Seite zeigt pro Runner Nutzungs-Badges, damit du auf einen Blick siehst, welche Profile von einem Runner abhaengen, bevor du ihn loeschst: <code>Used by N profile(s)</code>- und <code>Fallback</code>-Badges. Hover ueber das "Used by"-Badge zeigt die Profilnamen.</p>
+
+          <nav class="handbook-nav-bottom">
+            <a href="launching.html" class="nav-prev">
+              <span class="nav-label">Vorherige</span>
+              <span class="nav-title">Spiel starten</span>
+            </a>
+            <a href="installation.html" class="nav-next">
+              <span class="nav-label">Naechste</span>
+              <span class="nav-title">Installation</span>
+            </a>
+          </nav>
+        </div>
+      </main>
+
+      <footer class="footer-legal">
+        <div class="footer-legal-links">
+          <a href="../imprint.html">Impressum</a>
+          <a href="../privacy.html">Datenschutz</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../../js/main.js"></script>
+    <script src="../../js/handbook.js"></script>
+  </body>
+</html>

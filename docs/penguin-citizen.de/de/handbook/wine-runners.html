@@ -65,9 +65,15 @@
           <ul>
             <li>Runner-Name und Version</li>
             <li>Installationspfad</li>
-            <li>Ob er der aktuell ausgewaehlte (aktive) Runner ist</li>
+            <li>Ob er vom aktuell aktiven <a href="launch-profiles.html">Launch-Profil</a> genutzt wird (hervorgehoben)</li>
+            <li><strong>Nutzungs-Badges</strong> — <code>Used by N profile(s)</code> (Hover zeigt die Profilnamen) und <code>Fallback</code> wenn dieser Runner als globaler Wine-Runner-Fallback gesetzt ist</li>
           </ul>
-          <p>Verwende den <strong>Aktivieren</strong>-Button, um einen Runner als Standard zum Starten von Star Citizen festzulegen. Der <strong>Loeschen</strong>-Button entfernt einen Runner von deinem System.</p>
+          <p>Der <strong>Aktivieren</strong>-Button setzt einen Runner fuer das aktive Profil. Der Runner ist jetzt eine <em>profil-spezifische</em> Einstellung — ein Wechsel hier markiert das aktive Profil als Dirty, bis du den neuen Stand via Update Profile auf der Startseite uebernimmst (oder einfach so weiter spielst).</p>
+          <p>Der <strong>Loeschen</strong>-Button entfernt einen Runner von deinem System. Wenn der Runner von einem oder mehreren Profilen genutzt wird, listet der Bestaetigungsdialog diese Profile plus den Fallback-Hinweis auf, damit du nicht versehentlich ein funktionierendes Setup zerlegst.</p>
+
+          <div class="handbook-tip">
+            Fuer den taeglichen Runner-Wechsel nimm das Runner-Dropdown direkt in der Profil-Leiste der <a href="launching.html">Startseite</a> — kein Umweg ueber diese Seite noetig. Die Wine-Runner-Seite ist fuer Installation, Loeschen und Bulk-Verwaltung von Runnern.
+          </div>
 
           <h2>Verfuegbare Runner</h2>
           <p>Durchsuche und lade Runner aus mehreren Community-Quellen herunter:</p>

@@ -57,11 +57,25 @@
 
           <figure class="handbook-screenshot">
             <img src="../../assets/screenshots/launch.png" alt="Penguin Citizen Startseite" />
-            <figcaption>Die Startseite mit kompakter Startleiste, aufklappbaren Optionskarten und der Echtzeit-Logausgabe.</figcaption>
+            <figcaption>Die Startseite: Profil-Leiste oben mit dem aktiven <em>Launch-Profil</em>, Status-Pille und Wine-Runner-Auswahl je Profil, darunter die kompakte Startleiste, die aufklappbaren Optionskarten und die Echtzeit-Logausgabe.</figcaption>
           </figure>
 
+          <h2>Profil-Leiste</h2>
+          <p>Oberhalb der Startleiste zeigt die <strong>Profil-Leiste</strong> das aktive <em>Launch-Profil</em> — ein gespeichertes Bundle aus Wine-Runner und allen Optionen dieser Seite. Von links nach rechts:</p>
+          <ul>
+            <li><strong>Profil-Dropdown</strong> mit allen gespeicherten Profilen. Das aktive ist mit ★ markiert. Umschalten greift sofort.</li>
+            <li><strong>Status-Pille</strong> — gruener <code>Saved</code>-Punkt wenn der Arbeitszustand mit dem Profil uebereinstimmt, oranger <code>Unsaved Changes</code>-Punkt sobald irgendeine Option auf dieser Seite abweicht.</li>
+            <li><strong>Wine-Runner-Auswahl</strong> — listet die installierten Runner und tauscht den Runner des aktiven Profils direkt hier aus. Profile mit nicht mehr installiertem Runner bekommen eine Warn-Pille.</li>
+            <li><strong>Update Profile</strong> / <strong>Revert</strong> — nur sichtbar im Dirty-Zustand. Update schreibt den aktuellen Stand zurueck ins Profil; Revert stellt die gespeicherten Werte wieder her.</li>
+            <li><strong>Manage Profiles</strong>-Link — oeffnet die <a href="launch-profiles.html">Launch-Profile</a>-Seite fuer Anlegen / Umbenennen / Duplizieren / Loeschen sowie den globalen Wine-Runner-Fallback.</li>
+          </ul>
+
+          <div class="handbook-tip">
+            Beim Profil-Wechsel mit ungespeicherten Aenderungen erscheint ein Bestaetigungsdialog, damit nichts verloren geht. <em>Discard &amp; Switch</em> verwirft die Aenderungen, <em>Cancel</em> bleibt beim aktuellen Profil.
+          </div>
+
           <h2>Startleiste</h2>
-          <p>Die kompakte Startleiste oben auf der Seite zeigt den Play/Stop-Button, den aktuell aktiven Wine Runner, den Prefix-Pfad und einen farbcodierten Status (bereit, laeuft, Fehler). Waehrend das Spiel laeuft, wechselt der Button zu einem Stopp-Button.</p>
+          <p>Unterhalb der Profil-Leiste zeigt die kompakte Startleiste den Play/Stop-Button, den aktuell genutzten Runner (aus dem aktiven Profil), den Prefix-Pfad und einen farbcodierten Status (bereit, laeuft, Fehler). Waehrend das Spiel laeuft, wechselt der Button zu einem Stopp-Button.</p>
 
           <h2>GPU-Erkennung</h2>
           <p>Penguin Citizen erkennt beim Laden der Startseite automatisch die verbaute Grafikkarte (NVIDIA, AMD oder Intel). GPU-spezifische Optionskarten werden nur fuer die erkannte GPU aktiviert - nicht zutreffende Karten sind ausgegraut und mit einem Hinweis versehen.</p>
@@ -162,9 +176,9 @@
               <span class="nav-label">Vorherige</span>
               <span class="nav-title">Dashboard</span>
             </a>
-            <a href="installation.html" class="nav-next">
+            <a href="launch-profiles.html" class="nav-next">
               <span class="nav-label">Naechste</span>
-              <span class="nav-title">Installation</span>
+              <span class="nav-title">Launch-Profile</span>
             </a>
           </nav>
         </div>

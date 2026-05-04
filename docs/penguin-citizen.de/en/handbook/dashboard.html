@@ -64,9 +64,23 @@
           <p>The top row displays three status cards that give you a quick overview:</p>
           <ul>
             <li><strong>Star Citizen Installation</strong> - Shows your install path and detected language. A yellow indicator means a translation update is available; green means everything is current. Use the "Open Folder" button to quickly access the installation directory. The <strong>"Repair Installation"</strong> button starts the repair function (see below).</li>
-            <li><strong>Wine Runner</strong> - Displays the currently selected Wine/Proton runner and its status (ready, not configured, or missing).</li>
-            <li><strong>Launch</strong> - A prominent button to start Star Citizen directly from the Dashboard. Disabled when the game is not fully installed.</li>
+            <li><strong>Wine Runner</strong> - Displays the runner used by the active <a href="launch-profiles.html">Launch Profile</a> and its status (ready, not configured, or missing).</li>
+            <li><strong>Launch</strong> - The play button starts and stops Star Citizen directly from the Dashboard — no page jump. The card walks through three states (see below) so a casual player never has to leave the Dashboard.</li>
           </ul>
+
+          <h2>Launch Card States</h2>
+          <p>The launch card is the centerpiece of the Dashboard for casual players. It morphs depending on context:</p>
+          <ul>
+            <li><strong>Not installed</strong> — disabled "Launch Star Citizen" button with a "complete install first" hint. Run through the Installation page before continuing.</li>
+            <li><strong>No usable profile</strong> — primary <strong>⚙ Set up &amp; Launch</strong> button opens the <em>Profile Wizard</em>. Reached when no Launch Profile exists yet, the active profile has no runner, or the active profile's runner has been uninstalled.</li>
+            <li><strong>Starting</strong> — the button shows a spinner and "Starting…" while <code>launch_game</code> spins up. The Launch page log is still reachable from the sidebar if you want to see the live launch output.</li>
+            <li><strong>Running</strong> — the card switches to a green accent stripe with "⦁ Star Citizen is running" and a red <strong>⏹ Stop</strong> button. Click Stop to send SIGTERM (with SIGKILL fallback after 2 seconds). The active profile's name stays visible below.</li>
+            <li><strong>Ready</strong> — primary "▶ Launch Star Citizen" button + "Profile: &lt;name&gt;" meta line + a small <strong>⚙ Profile Wizard</strong> button below for creating additional profiles without leaving the Dashboard.</li>
+          </ul>
+
+          <div class="handbook-tip">
+            The Profile Wizard is a single-step modal: pick a Wine runner (the first <code>lug-…</code> build in your installed set is recommended automatically), name the profile, then choose <em>Save &amp; Done</em> (back to Dashboard) or <em>Customize</em> (jump to the <a href="launching.html">Launch page</a> for fine-tuning). Wizard profiles default to <code>wayland=false</code> for stability — flip Wayland on later via Customize if you want it.
+          </div>
 
           <h2>Installation Repair</h2>
           <p>If the RSI Launcher no longer starts correctly or is corrupted, Penguin Citizen offers a one-click repair function. The "Repair Installation" button on the installation status card performs the following steps:</p>

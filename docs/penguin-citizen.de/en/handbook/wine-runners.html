@@ -65,9 +65,15 @@
           <ul>
             <li>Runner name and version</li>
             <li>Installation path</li>
-            <li>Whether it is the currently selected (active) runner</li>
+            <li>Whether it is the runner used by the currently active <a href="launch-profiles.html">Launch Profile</a> (highlighted)</li>
+            <li><strong>Usage badges</strong> — <code>Used by N profile(s)</code> (hover for the list of profile names) and <code>Fallback</code> if this runner is set as the global Wine Runner Fallback</li>
           </ul>
-          <p>Use the <strong>Activate</strong> button to set a runner as the default for launching Star Citizen. The <strong>Delete</strong> button removes a runner from your system.</p>
+          <p>The <strong>Activate</strong> button sets a runner for the active profile. Note that the runner is now a <em>per-profile</em> setting — switching here puts the active profile into the dirty state until you commit the change via Update Profile on the Launch page or just keep launching with it.</p>
+          <p>The <strong>Delete</strong> button removes a runner from your system. If the runner is referenced by one or more profiles, the confirmation dialog lists those profiles plus the fallback hint so you don't accidentally break a working setup.</p>
+
+          <div class="handbook-tip">
+            For day-to-day runner switching, use the runner dropdown directly on the <a href="launching.html">Launch page</a>'s profile bar — no roundtrip through this page needed. The Wine Runners page is for installing, deleting, and bulk-managing runners.
+          </div>
 
           <h2>Available Runners</h2>
           <p>Browse and download runners from multiple community sources:</p>

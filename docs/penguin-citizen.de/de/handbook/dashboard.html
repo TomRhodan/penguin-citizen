@@ -64,9 +64,23 @@
           <p>Die obere Reihe zeigt drei Statuskarten fuer einen schnellen Ueberblick:</p>
           <ul>
             <li><strong>Star Citizen Installation</strong> - Zeigt deinen Installationspfad und die erkannte Sprache. Ein gelber Indikator bedeutet, dass ein Uebersetzungsupdate verfuegbar ist; gruen bedeutet, alles ist aktuell. Mit "Ordner oeffnen" gelangst du schnell zum Installationsverzeichnis. Der Button <strong>"Installation reparieren"</strong> startet die Reparaturfunktion (siehe unten).</li>
-            <li><strong>Wine Runner</strong> - Zeigt den aktuell ausgewaehlten Wine/Proton Runner und seinen Status (bereit, nicht konfiguriert oder fehlend).</li>
-            <li><strong>Start</strong> - Ein prominenter Button zum direkten Starten von Star Citizen vom Dashboard aus. Deaktiviert, wenn das Spiel nicht vollstaendig installiert ist.</li>
+            <li><strong>Wine Runner</strong> - Zeigt den Runner, den das aktive <a href="launch-profiles.html">Launch-Profil</a> nutzt, und seinen Status (bereit, nicht konfiguriert oder fehlend).</li>
+            <li><strong>Start</strong> - Der Play-Button startet und stoppt Star Citizen direkt vom Dashboard aus — kein Seitenwechsel mehr. Die Karte durchlaeuft drei Zustaende (siehe unten), damit ein Gelegenheitsspieler das Dashboard nie verlassen muss.</li>
           </ul>
+
+          <h2>Zustaende der Start-Karte</h2>
+          <p>Die Start-Karte ist das Herzstueck des Dashboards fuer Gelegenheitsspieler. Sie wechselt das Aussehen je nach Kontext:</p>
+          <ul>
+            <li><strong>Nicht installiert</strong> — deaktivierter "Star Citizen starten"-Button mit dem Hinweis, zuerst die Installation abzuschliessen.</li>
+            <li><strong>Kein nutzbares Profil</strong> — der primaere Button <strong>⚙ Einrichten &amp; Starten</strong> oeffnet den <em>Profil-Assistenten</em>. Erscheint, wenn noch kein Launch-Profil existiert, das aktive Profil keinen Runner hat oder dessen Runner deinstalliert wurde.</li>
+            <li><strong>Wird gestartet</strong> — der Button zeigt einen Spinner und "Wird gestartet…" waehrend <code>launch_game</code> hochfaehrt. Das Live-Log der Startseite ist weiterhin ueber die Sidebar erreichbar, falls du den Start-Output sehen willst.</li>
+            <li><strong>Laeuft</strong> — die Karte wechselt auf einen gruenen Akzentstreifen mit "⦁ Star Citizen laeuft" und einen roten <strong>⏹ Stoppen</strong>-Button. Klick auf Stoppen sendet SIGTERM (Fallback SIGKILL nach 2 Sekunden). Der Profilname bleibt darunter sichtbar.</li>
+            <li><strong>Bereit</strong> — primaerer Button "▶ Star Citizen starten" + "Profil: &lt;Name&gt;"-Zeile + ein kleiner <strong>⚙ Profil-Assistent</strong>-Button darunter, um zusaetzliche Profile anzulegen, ohne das Dashboard zu verlassen.</li>
+          </ul>
+
+          <div class="handbook-tip">
+            Der Profil-Assistent ist ein Single-Step-Modal: Wine-Runner waehlen (der erste <code>lug-…</code>-Build aus deiner installierten Liste wird automatisch empfohlen), Profilnamen vergeben, dann <em>Save &amp; Done</em> (zurueck zum Dashboard) oder <em>Customize</em> (direkt zur <a href="launching.html">Startseite</a> fuer Feintuning). Assistent-Profile haben standardmaessig <code>wayland=false</code> als sichere Voreinstellung — Wayland kannst du spaeter ueber Customize aktivieren.
+          </div>
 
           <h2>Installations-Reparatur</h2>
           <p>Wenn der RSI Launcher nicht mehr korrekt startet oder beschaedigt ist, bietet Penguin Citizen eine Ein-Klick-Reparaturfunktion. Der Button "Installation reparieren" auf der Installations-Statuskarte fuehrt folgende Schritte aus:</p>

@@ -57,11 +57,25 @@
 
           <figure class="handbook-screenshot">
             <img src="../../assets/screenshots/launch.png" alt="Penguin Citizen Launch Page" />
-            <figcaption>The Launch page with compact launch bar, collapsible option cards, and the real-time log output.</figcaption>
+            <figcaption>The Launch page: profile bar at the top with the active <em>Launch Profile</em>, dirty/saved pill and per-profile Wine runner selector, followed by the launch bar, the collapsible option cards, and the real-time log output.</figcaption>
           </figure>
 
+          <h2>Launch Profile Bar</h2>
+          <p>Above the launch bar, the <strong>profile bar</strong> exposes the active <em>Launch Profile</em> — a saved bundle of Wine runner + every option on this page. From left to right it shows:</p>
+          <ul>
+            <li><strong>Profile dropdown</strong> with all saved profiles. The active one is starred (★). Switching takes effect immediately.</li>
+            <li><strong>Dirty / Saved pill</strong> — green <code>Saved</code> when the working state matches the active profile, amber <code>Unsaved Changes</code> when any toggle on this page differs.</li>
+            <li><strong>Wine runner selector</strong> — lists installed runners; lets you change the runner for the active profile without leaving the page. Profiles whose runner is no longer installed get a warning pill.</li>
+            <li><strong>Update Profile</strong> / <strong>Revert</strong> — only visible when dirty. Update writes the current state back into the active profile; Revert restores the saved values and discards your tweaks.</li>
+            <li><strong>Manage Profiles</strong> link — opens the dedicated <a href="launch-profiles.html">Launch Profiles</a> page for create / rename / duplicate / delete actions and the global Wine Runner Fallback.</li>
+          </ul>
+
+          <div class="handbook-tip">
+            Switching profiles while dirty surfaces a confirm dialog so you don't lose tweaks accidentally. Pick <em>Discard &amp; Switch</em> to drop them, or <em>Cancel</em> to stay on the current profile.
+          </div>
+
           <h2>Launch Bar</h2>
-          <p>The compact launch bar at the top of the page shows the Play/Stop button, the currently active Wine runner, prefix path, and a color-coded status indicator (ready, running, error). While the game is running, the button switches to a Stop button.</p>
+          <p>Below the profile bar, the compact launch bar shows the Play/Stop button, the runner currently in use (taken from the active profile), the Wine prefix path, and a color-coded status indicator (ready, running, error). While the game is running, the button switches to a Stop button.</p>
 
           <h2>GPU Detection</h2>
           <p>Penguin Citizen automatically detects your graphics card (NVIDIA, AMD, or Intel) when loading the launch page. GPU-specific option cards are only enabled for the detected GPU - non-matching cards are greyed out with a notice.</p>
@@ -162,9 +176,9 @@
               <span class="nav-label">Previous</span>
               <span class="nav-title">Dashboard</span>
             </a>
-            <a href="installation.html" class="nav-next">
+            <a href="launch-profiles.html" class="nav-next">
               <span class="nav-label">Next</span>
-              <span class="nav-title">Installation</span>
+              <span class="nav-title">Launch Profiles</span>
             </a>
           </nav>
         </div>
