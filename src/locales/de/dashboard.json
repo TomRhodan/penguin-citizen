@@ -82,5 +82,12 @@
   "launch.openWizard": "Profil-Assistent",
   "launch.profileLabel": "Profil",
   "launch.noProfileHint": "Noch kein nutzbares Profil — lass es uns einrichten.",
-  "launch.runnerMissingHint": "Der Profil-Runner \"{{runner}}\" ist nicht installiert."
+  "launch.runnerMissingHint": "Der Profil-Runner \"{{runner}}\" ist nicht installiert.",
+
+  "launch.running": "Star Citizen laeuft",
+  "launch.starting": "Star Citizen wird gestartet…",
+  "launch.startingButton": "Wird gestartet…",
+  "launch.stopButton": "Stoppen",
+  "launch.launchFailed": "Start fehlgeschlagen: ",
+  "launch.stopFailed": "Stoppen fehlgeschlagen: "
 }

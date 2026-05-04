@@ -82,5 +82,12 @@
   "launch.openWizard": "Profile Wizard",
   "launch.profileLabel": "Profile",
   "launch.noProfileHint": "No usable profile yet — let's set one up.",
-  "launch.runnerMissingHint": "Profile runner \"{{runner}}\" is not installed."
+  "launch.runnerMissingHint": "Profile runner \"{{runner}}\" is not installed.",
+
+  "launch.running": "Star Citizen is running",
+  "launch.starting": "Starting Star Citizen…",
+  "launch.startingButton": "Starting…",
+  "launch.stopButton": "Stop",
+  "launch.launchFailed": "Failed to launch: ",
+  "launch.stopFailed": "Failed to stop: "
 }

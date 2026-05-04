@@ -800,3 +800,35 @@
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
 }
 
+/* ── Launch card running / launching states ────────────────────────── */
+
+/* Running state: switch the card's accent stripe to a calm "live" green
+   so the dashboard at-a-glance signals "game is up" without being loud. */
+.dash-card--launch-running {
+  border-left-color: var(--success, #4ade80);
+}
+
+.dash-launch-running-label {
+  color: var(--success, #4ade80);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* Inline spinner shown next to the "Starting…" label. Borrows currentColor
+   so it matches whichever button it sits inside. */
+.dash-launch-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  animation: dash-launch-spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes dash-launch-spin {
+  to { transform: rotate(360deg); }
+}
+

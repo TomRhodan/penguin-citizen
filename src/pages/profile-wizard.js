@@ -240,7 +240,13 @@ export function showProfileWizard({
           name,
           body: {
             runner_name: runnerName,
-            performance: {},
+            // Override wayland=false to keep the wizard "solid": Wayland
+            // for SC is still rough around the edges (NVIDIA in particular)
+            // and the wizard sells itself as the safe path. Power users
+            // can flip it on via the Customize button or the Launch page.
+            // All other PerformanceSettings fields fill from
+            // PerformanceSettings::default() via #[serde(default)].
+            performance: { wayland: false },
           },
         });
         cleanup();

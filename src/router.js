@@ -30,7 +30,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 // Import all page render functions and cleanup handlers
-import { renderDashboard } from './pages/dashboard.js';
+import { renderDashboard, cleanupDashboard } from './pages/dashboard.js';
 import { renderInstallation, cleanupInstallation } from './pages/installation.js';
 import { renderRunners, cleanupRunners } from './pages/runners.js';
 import { renderLaunch, flushPendingSave, cleanupLaunch } from './pages/launch.js';
@@ -50,7 +50,7 @@ import { renderSetup } from './pages/setup.js';
  * @constant {Object<string, {render: function, cleanup?: function}>}
  */
 const routes = {
-  dashboard: { render: renderDashboard },
+  dashboard: { render: renderDashboard, cleanup: cleanupDashboard },
   installation: { render: renderInstallation, cleanup: cleanupInstallation },
   runners: { render: renderRunners, cleanup: cleanupRunners },
   launch: { render: renderLaunch, cleanup: cleanupLaunch },

@@ -30,8 +30,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { router } from '../router.js';
-import { requestAutoLaunch } from './launch.js';
 import { showProfileWizard } from './profile-wizard.js';
 import { setRepairMode } from './installation.js';
 import { escapeHtml, escapeAttr } from '../utils.js';
@@ -45,6 +45,21 @@ import { getNetworkStatus, onNetworkChange } from '../utils/network-status.js';
 let dashConfig = null;
 /** @type {string[]} Names of installed Wine runners under <install_path>/runners. */
 let installedRunnersOnDash = [];
+
+// ── Launch state (in-page launch + stop on the dashboard) ───────────────
+// The dashboard now drives the launch flow itself instead of forwarding
+// to the Launch page. Power users still get the Launch page from the
+// sidebar; gamers stay on the dashboard for play / stop.
+/** Currently invoking launch_game; button shows a spinner state. */
+let isLaunching = false;
+/** Backend reported a running game process (via launch-started or is_game_running). */
+let isGameRunning = false;
+/** Idempotency flag so we don't double-attach event listeners across reloads. */
+let dashLaunchListenersAttached = false;
+/** @type {Function|null} Tauri unlisten handle for 'launch-started' */
+let unlistenLaunchStarted = null;
+/** @type {Function|null} Tauri unlisten handle for 'launch-exited' */
+let unlistenLaunchExited = null;
 /** @type {Object|null} Installation check result: { installed, has_runner, ... } */
 let dashInstallStatus = null;
 /** @type {Object|null} Localization status (installed language, commit SHA, etc.) */
@@ -289,6 +304,19 @@ async function loadLocalStatus() {
       installedRunnersOnDash = [];
     }
 
+    // Recover game-running state if the user navigated back to the dashboard
+    // mid-session. The launch event listeners (attached via
+    // ensureLaunchListeners on first dashboard render) keep this in sync
+    // afterwards, but the truth on initial load comes from the backend.
+    try {
+      isGameRunning = await invoke('is_game_running');
+    } catch {
+      isGameRunning = false;
+    }
+    if (isGameRunning) {
+      isLaunching = false;
+    }
+
     if (dashConfig.install_path) {
       try {
         const versions = await invoke('detect_sc_versions', { gamePath: dashConfig.install_path });
@@ -326,6 +354,11 @@ async function loadLocalStatus() {
     }
   }
 
+  // Ensure launch event listeners exist (idempotent) so the launch card
+  // reacts to launch-started / launch-exited even if the user lands on
+  // the dashboard while a game is already running.
+  ensureLaunchListeners();
+
   renderStatusCards();
   renderRepairBanner();
 
@@ -362,7 +395,14 @@ function renderStatusCards() {
   grid.innerHTML =
     renderScCard({ installed, installPath }) +
     renderRunnerCard({ hasRunner, runnerName }) +
-    renderLaunchCard({ installed, activeProfile, runnerName, runnerInstalled });
+    renderLaunchCard({
+      installed,
+      activeProfile,
+      runnerName,
+      runnerInstalled,
+      isLaunching,
+      isGameRunning,
+    });
 
   bindStatusCardEvents({ installed, installPath, runnerName });
 }
@@ -537,7 +577,14 @@ function renderRunnerCard({ hasRunner, runnerName }) {
  * @param {boolean} data.installed - Whether SC is ready to launch
  * @returns {string} HTML string of the card
  */
-function renderLaunchCard({ installed, activeProfile, runnerName, runnerInstalled }) {
+function renderLaunchCard({
+  installed,
+  activeProfile,
+  runnerName,
+  runnerInstalled,
+  isLaunching,
+  isGameRunning,
+}) {
   // State 1: SC not installed yet — original disabled-button look.
   if (!installed) {
     return `
@@ -549,7 +596,39 @@ function renderLaunchCard({ installed, activeProfile, runnerName, runnerInstalle
       </div>`;
   }
 
-  // State 2: installed but no usable profile (runner empty or uninstalled)
+  // State 2a: Game already running — show Stop button + active profile meta.
+  // Power user can still inspect the live launch log on the Launch page.
+  if (isGameRunning) {
+    return `
+      <div class="dash-card dash-card--launch dash-card--launch-running">
+        <div class="dash-card-launch-inner">
+          <span class="dash-card-launch-label dash-launch-running-label">⦁ ${escapeHtml(t('dashboard:launch.running', { defaultValue: 'Star Citizen is running' }))}</span>
+          <button class="btn btn-danger btn-lg" id="dash-stop-btn">⏹ ${escapeHtml(t('dashboard:launch.stopButton', { defaultValue: 'Stop' }))}</button>
+          ${activeProfile ? `
+            <div class="dash-launch-meta">
+              <span class="dash-launch-meta-label">${escapeHtml(t('dashboard:launch.profileLabel', { defaultValue: 'Profile' }))}:</span>
+              <strong>${escapeHtml(activeProfile.name)}</strong>
+            </div>
+          ` : ''}
+        </div>
+      </div>`;
+  }
+
+  // State 2b: Launch in flight — disabled button with a spinner.
+  if (isLaunching) {
+    return `
+      <div class="dash-card dash-card--launch">
+        <div class="dash-card-launch-inner">
+          <span class="dash-card-launch-label">${escapeHtml(t('dashboard:launch.starting', { defaultValue: 'Starting Star Citizen…' }))}</span>
+          <button class="btn btn-primary btn-lg" disabled>
+            <span class="dash-launch-spinner"></span>
+            ${escapeHtml(t('dashboard:launch.startingButton', { defaultValue: 'Starting…' }))}
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // State 3: installed but no usable profile (runner empty or uninstalled)
   // → primary action becomes "Set up & Launch", which opens the wizard.
   const noUsableProfile = !activeProfile || !runnerName || !runnerInstalled;
   if (noUsableProfile) {
@@ -597,6 +676,49 @@ function renderLaunchCard({ installed, activeProfile, runnerName, runnerInstalle
  * @param {string|null} data.installPath - Path to the SC directory
  */
 /**
+ * Attaches Tauri event listeners that drive the launch state machine on
+ * the dashboard. Idempotent: safe to call repeatedly. The listeners are
+ * detached from `cleanupDashboard()` when the user navigates away.
+ */
+async function ensureLaunchListeners() {
+  if (dashLaunchListenersAttached) return;
+  dashLaunchListenersAttached = true;
+  try {
+    unlistenLaunchStarted = await listen('launch-started', () => {
+      isLaunching = false;
+      isGameRunning = true;
+      renderStatusCards();
+    });
+    unlistenLaunchExited = await listen('launch-exited', () => {
+      isLaunching = false;
+      isGameRunning = false;
+      renderStatusCards();
+    });
+  } catch (_e) {
+    // Best-effort — the buttons still work, just no auto-update.
+    dashLaunchListenersAttached = false;
+  }
+}
+
+/**
+ * Cleans up dashboard event listeners. Called by the router when the user
+ * navigates away. The launch process keeps running on the backend; we just
+ * stop reacting to its events from this page until the dashboard is
+ * re-rendered (which re-attaches listeners via ensureLaunchListeners()).
+ */
+export function cleanupDashboard() {
+  if (typeof unlistenLaunchStarted === 'function') {
+    unlistenLaunchStarted();
+    unlistenLaunchStarted = null;
+  }
+  if (typeof unlistenLaunchExited === 'function') {
+    unlistenLaunchExited();
+    unlistenLaunchExited = null;
+  }
+  dashLaunchListenersAttached = false;
+}
+
+/**
  * Opens the Profile Wizard modal and handles the two completion paths:
  * - 'done': refresh the dashboard so the new profile shows up in the launch card
  * - 'customize': jump to the launch page so the user can tweak settings
@@ -618,12 +740,50 @@ function openWizard() {
 }
 
 function bindStatusCardEvents({ installed, installPath }) {
-  // Launch button: Sets the auto-launch flag and switches to the launch page
+  // Launch button: launches in-place from the dashboard. The card morphs
+  // through Launching… → Running (with Stop button) → back to Launch via
+  // events from the backend.
   const launchBtn = document.getElementById('dash-launch-btn');
-  if (launchBtn && installed) {
-    launchBtn.addEventListener('click', () => {
-      requestAutoLaunch();
-      router.navigate('launch');
+  if (launchBtn && installed && !isLaunching && !isGameRunning) {
+    launchBtn.addEventListener('click', async () => {
+      isLaunching = true;
+      renderStatusCards();
+      await ensureLaunchListeners();
+      try {
+        await invoke('launch_game', { config: dashConfig });
+        // The 'launch-started' event will flip isLaunching→false and
+        // isGameRunning→true. Until then we stay in the Starting… state.
+      } catch (e) {
+        isLaunching = false;
+        showNotification(
+          t('dashboard:launch.launchFailed', {
+            defaultValue: 'Failed to launch: ',
+          }) + String(e),
+          'error'
+        );
+        renderStatusCards();
+      }
+    });
+  }
+
+  // Stop button: only present when the backend reports a running game.
+  const stopBtn = document.getElementById('dash-stop-btn');
+  if (stopBtn) {
+    stopBtn.addEventListener('click', async () => {
+      stopBtn.disabled = true;
+      try {
+        await invoke('stop_game');
+        // 'launch-exited' event fires from the backend when the
+        // process actually goes away. State flips back there.
+      } catch (e) {
+        stopBtn.disabled = false;
+        showNotification(
+          t('dashboard:launch.stopFailed', {
+            defaultValue: 'Failed to stop: ',
+          }) + String(e),
+          'error'
+        );
+      }
     });
   }
 
