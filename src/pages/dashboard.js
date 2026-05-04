@@ -609,9 +609,9 @@ function openWizard() {
         router.navigate('launch');
         return;
       }
-      // 'done' → just reload the local status so the launch card reflects the
-      // newly active profile + runner.
-      DashboardCache.invalidate('local');
+      // 'done' → reload local status so the launch card reflects the
+      // newly active profile + runner. loadLocalStatus() overwrites the
+      // 'local' cache entry at its end, no separate invalidate needed.
       loadLocalStatus();
     },
   });
