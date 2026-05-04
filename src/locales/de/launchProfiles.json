@@ -1,0 +1,14 @@
+{
+  "wizard.title": "Profil-Schnellstart",
+  "wizard.subtitle": "Star Citizen in etwa 30 Sekunden startbereit machen.",
+  "wizard.loading": "Wird geladen…",
+  "wizard.runnerLabel": "Wine-Runner",
+  "wizard.runnerRecommendedHint": "am verlaesslichsten fuer Star Citizen",
+  "wizard.profileNameLabel": "Profilname",
+  "wizard.cancel": "Abbrechen",
+  "wizard.saveAndDone": "Speichern & Fertig",
+  "wizard.customize": "Anpassen",
+  "wizard.noRunners": "Du hast noch keinen Wine-Runner installiert. Installiere einen und komme zurueck, um dein Profil einzurichten.",
+  "wizard.installRecommended": "Wine-Runner installieren",
+  "wizard.errors.create": "Profil konnte nicht erstellt werden: "
+}

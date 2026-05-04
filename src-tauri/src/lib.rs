@@ -594,6 +594,7 @@ pub fn run() {
                 launch_profiles::duplicate_launch_profile,
                 launch_profiles::set_fallback_runner,
                 launch_profiles::get_runner_usage,
+                launch_profiles::create_and_activate_launch_profile,
 
                 // DXVK management (DirectX-to-Vulkan translation layer)
                 dxvk::fetch_dxvk_releases,

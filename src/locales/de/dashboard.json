@@ -76,5 +76,11 @@
   "shader.confirmDeleteAll": "Alle Shader-Caches fuer alle Versionen loeschen?",
   "shader.deleted": "Shader-Cache geloescht ({{freed}} freigegeben)",
   "shader.partialDelete": "Teilweise geloescht ({{freed}} freigegeben), einige Dateien konnten nicht entfernt werden",
-  "shader.deleteFailed": "Shader-Cache konnte nicht geloescht werden: {{error}}"
+  "shader.deleteFailed": "Shader-Cache konnte nicht geloescht werden: {{error}}",
+
+  "launch.setupAndLaunch": "Einrichten & Starten",
+  "launch.openWizard": "Profil-Assistent",
+  "launch.profileLabel": "Profil",
+  "launch.noProfileHint": "Noch kein nutzbares Profil — lass es uns einrichten.",
+  "launch.runnerMissingHint": "Der Profil-Runner \"{{runner}}\" ist nicht installiert."
 }

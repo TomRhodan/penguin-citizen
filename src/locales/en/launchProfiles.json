@@ -1,0 +1,14 @@
+{
+  "wizard.title": "Quick Profile Setup",
+  "wizard.subtitle": "Get a working Star Citizen launch in about 30 seconds.",
+  "wizard.loading": "Loading…",
+  "wizard.runnerLabel": "Wine Runner",
+  "wizard.runnerRecommendedHint": "most reliable for Star Citizen",
+  "wizard.profileNameLabel": "Profile name",
+  "wizard.cancel": "Cancel",
+  "wizard.saveAndDone": "Save & Done",
+  "wizard.customize": "Customize",
+  "wizard.noRunners": "You don't have any Wine runners installed yet. Install one and come back to set up your profile.",
+  "wizard.installRecommended": "Install a Wine Runner",
+  "wizard.errors.create": "Failed to create profile: "
+}

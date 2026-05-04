@@ -32,6 +32,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { router } from '../router.js';
 import { requestAutoLaunch } from './launch.js';
+import { showProfileWizard } from './profile-wizard.js';
 import { setRepairMode } from './installation.js';
 import { escapeHtml, escapeAttr } from '../utils.js';
 import { confirm, showNotification } from '../utils/dialogs.js';
@@ -42,6 +43,8 @@ import { getNetworkStatus, onNetworkChange } from '../utils/network-status.js';
 
 /** @type {Object|null} Loaded app configuration (install path, runner, etc.) */
 let dashConfig = null;
+/** @type {string[]} Names of installed Wine runners under <install_path>/runners. */
+let installedRunnersOnDash = [];
 /** @type {Object|null} Installation check result: { installed, has_runner, ... } */
 let dashInstallStatus = null;
 /** @type {Object|null} Localization status (installed language, commit SHA, etc.) */
@@ -275,6 +278,17 @@ async function loadLocalStatus() {
       dashInstallStatus = null;
     }
 
+    // Discover installed runners so the launch card can detect a "no usable
+    // runner" state and the wizard knows what to offer. Best-effort.
+    try {
+      const result = await invoke('scan_runners', {
+        basePath: dashConfig.install_path || '',
+      });
+      installedRunnersOnDash = (result?.runners || []).map((r) => r.name);
+    } catch {
+      installedRunnersOnDash = [];
+    }
+
     if (dashConfig.install_path) {
       try {
         const versions = await invoke('detect_sc_versions', { gamePath: dashConfig.install_path });
@@ -339,11 +353,16 @@ function renderStatusCards() {
   const hasRunner = dashInstallStatus?.has_runner === true;
   const runnerName = dashConfig?.launch_working_state?.runner_name || null;
   const installPath = dashConfig?.install_path || null;
+  const activeProfile = (dashConfig?.launch_profiles || []).find(
+    (p) => p.id === dashConfig?.active_launch_profile_id
+  ) || null;
+  const runnerInstalled =
+    !!runnerName && installedRunnersOnDash.includes(runnerName);
 
   grid.innerHTML =
     renderScCard({ installed, installPath }) +
     renderRunnerCard({ hasRunner, runnerName }) +
-    renderLaunchCard({ installed });
+    renderLaunchCard({ installed, activeProfile, runnerName, runnerInstalled });
 
   bindStatusCardEvents({ installed, installPath, runnerName });
 }
@@ -518,15 +537,51 @@ function renderRunnerCard({ hasRunner, runnerName }) {
  * @param {boolean} data.installed - Whether SC is ready to launch
  * @returns {string} HTML string of the card
  */
-function renderLaunchCard({ installed }) {
-  const launchText = installed ? t('dashboard:status.readyToLaunch') : t('dashboard:status.completeInstallFirst');
-  const launchDisabled = !installed;
+function renderLaunchCard({ installed, activeProfile, runnerName, runnerInstalled }) {
+  // State 1: SC not installed yet — original disabled-button look.
+  if (!installed) {
+    return `
+      <div class="dash-card dash-card--launch">
+        <div class="dash-card-launch-inner">
+          <span class="dash-card-launch-label">${escapeHtml(t('dashboard:status.completeInstallFirst'))}</span>
+          <button class="btn btn-primary btn-lg" id="dash-launch-btn" disabled>${t('dashboard:button.launchStarCitizen')}</button>
+        </div>
+      </div>`;
+  }
 
+  // State 2: installed but no usable profile (runner empty or uninstalled)
+  // → primary action becomes "Set up & Launch", which opens the wizard.
+  const noUsableProfile = !activeProfile || !runnerName || !runnerInstalled;
+  if (noUsableProfile) {
+    const hint = activeProfile && runnerName && !runnerInstalled
+      ? t('dashboard:launch.runnerMissingHint', {
+          runner: runnerName,
+          defaultValue: 'Profile runner "{{runner}}" is not installed.',
+        })
+      : t('dashboard:launch.noProfileHint', {
+          defaultValue: 'No usable profile yet — let\'s set one up.',
+        });
+    return `
+      <div class="dash-card dash-card--launch">
+        <div class="dash-card-launch-inner">
+          <span class="dash-card-launch-label">${escapeHtml(t('dashboard:status.readyToLaunch'))}</span>
+          <button class="btn btn-primary btn-lg" id="dash-setup-and-launch">⚙ ${escapeHtml(t('dashboard:launch.setupAndLaunch', { defaultValue: 'Set up & Launch' }))}</button>
+          <p class="dash-launch-hint">${escapeHtml(hint)}</p>
+        </div>
+      </div>`;
+  }
+
+  // State 3: ready — primary launch button + meta line + secondary wizard link.
   return `
     <div class="dash-card dash-card--launch">
       <div class="dash-card-launch-inner">
-        <span class="dash-card-launch-label">${escapeHtml(launchText)}</span>
-        <button class="btn btn-primary btn-lg" id="dash-launch-btn" ${launchDisabled ? 'disabled' : ''}>${t('dashboard:button.launchStarCitizen')}</button>
+        <span class="dash-card-launch-label">${escapeHtml(t('dashboard:status.readyToLaunch'))}</span>
+        <button class="btn btn-primary btn-lg" id="dash-launch-btn">${t('dashboard:button.launchStarCitizen')}</button>
+        <div class="dash-launch-meta">
+          <span class="dash-launch-meta-label">${escapeHtml(t('dashboard:launch.profileLabel', { defaultValue: 'Profile' }))}:</span>
+          <strong>${escapeHtml(activeProfile.name)}</strong>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="dash-open-wizard">⚙ ${escapeHtml(t('dashboard:launch.openWizard', { defaultValue: 'Profile Wizard' }))}</button>
       </div>
     </div>`;
 }
@@ -541,6 +596,27 @@ function renderLaunchCard({ installed }) {
  * @param {boolean} data.installed - Whether SC is ready to launch
  * @param {string|null} data.installPath - Path to the SC directory
  */
+/**
+ * Opens the Profile Wizard modal and handles the two completion paths:
+ * - 'done': refresh the dashboard so the new profile shows up in the launch card
+ * - 'customize': jump to the launch page so the user can tweak settings
+ */
+function openWizard() {
+  showProfileWizard({
+    onComplete: (_profile, action) => {
+      if (action === 'customize') {
+        // Auto-launch is NOT requested — user chose to tweak first.
+        router.navigate('launch');
+        return;
+      }
+      // 'done' → just reload the local status so the launch card reflects the
+      // newly active profile + runner.
+      DashboardCache.invalidate('local');
+      loadLocalStatus();
+    },
+  });
+}
+
 function bindStatusCardEvents({ installed, installPath }) {
   // Launch button: Sets the auto-launch flag and switches to the launch page
   const launchBtn = document.getElementById('dash-launch-btn');
@@ -549,6 +625,21 @@ function bindStatusCardEvents({ installed, installPath }) {
       requestAutoLaunch();
       router.navigate('launch');
     });
+  }
+
+  // "Set up & Launch" — only present in the no-usable-profile state.
+  // Opens the wizard; on Done refreshes the dashboard, on Customize jumps
+  // to the launch page so the user can immediately tweak.
+  const setupBtn = document.getElementById('dash-setup-and-launch');
+  if (setupBtn) {
+    setupBtn.addEventListener('click', () => openWizard());
+  }
+
+  // Secondary wizard link in the ready state — same behavior, just a way
+  // to spawn a new profile without nuking the current launch.
+  const wizardBtn = document.getElementById('dash-open-wizard');
+  if (wizardBtn) {
+    wizardBtn.addEventListener('click', () => openWizard());
   }
 
   // Open folder in file manager

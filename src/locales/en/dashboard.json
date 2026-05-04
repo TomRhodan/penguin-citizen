@@ -76,5 +76,11 @@
   "shader.confirmDeleteAll": "Delete all shader caches for all versions?",
   "shader.deleted": "Shader cache cleared ({{freed}} freed)",
   "shader.partialDelete": "Partially cleared ({{freed}} freed), some files could not be deleted",
-  "shader.deleteFailed": "Failed to delete shader cache: {{error}}"
+  "shader.deleteFailed": "Failed to delete shader cache: {{error}}",
+
+  "launch.setupAndLaunch": "Set up & Launch",
+  "launch.openWizard": "Profile Wizard",
+  "launch.profileLabel": "Profile",
+  "launch.noProfileHint": "No usable profile yet — let's set one up.",
+  "launch.runnerMissingHint": "Profile runner \"{{runner}}\" is not installed."
 }

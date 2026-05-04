@@ -285,6 +285,43 @@ pub(crate) fn set_fallback_runner_in(
     Ok(())
 }
 
+/// Creates a profile with an explicitly-provided body and makes it active.
+///
+/// Unlike [`create_profile_in`] (which snapshots `launch_working_state`),
+/// this writes a deterministic `body` straight in. Used by the Profile
+/// Wizard from the dashboard, where the user picks a runner and we want
+/// the resulting profile to be **clean against the chosen settings** —
+/// not dirty against whatever was lying around in `launch_working_state`.
+///
+/// Side effects, in order:
+/// 1. Validates `name` (non-empty, unique).
+/// 2. Pushes a fresh `LaunchProfile` (UUID, ISO timestamps) onto
+///    `launch_profiles`.
+/// 3. Sets `active_launch_profile_id` to the new profile.
+/// 4. Sets `launch_working_state` = `body.clone()` so the new active
+///    profile starts dirty-free (working state matches saved body).
+pub(crate) fn create_and_activate_in(
+    config: &mut AppConfig,
+    name: &str,
+    body: crate::config::LaunchProfileBody,
+) -> Result<LaunchProfile, String> {
+    let name = validate_profile_name(config, name, None)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let profile = LaunchProfile {
+        id: uuid::Uuid::new_v4().to_string(),
+        name,
+        description: None,
+        created_at: now.clone(),
+        updated_at: now,
+        body: body.clone(),
+    };
+    let new_id = profile.id.clone();
+    config.launch_profiles.push(profile.clone());
+    config.active_launch_profile_id = new_id;
+    config.launch_working_state = body;
+    Ok(profile)
+}
+
 /// Computes [`RunnerUsageInfo`] for the given runner name.
 pub(crate) fn runner_usage_in(config: &AppConfig, runner_name: &str) -> RunnerUsageInfo {
     let profiles: Vec<String> = config
@@ -398,6 +435,17 @@ pub async fn set_fallback_runner(runner_name: Option<String>) -> Result<(), Stri
 pub async fn get_runner_usage(runner_name: String) -> Result<RunnerUsageInfo, String> {
     let config = load_or_default().await?;
     Ok(runner_usage_in(&config, &runner_name))
+}
+
+#[tauri::command]
+pub async fn create_and_activate_launch_profile(
+    name: String,
+    body: crate::config::LaunchProfileBody,
+) -> Result<LaunchProfile, String> {
+    let mut config = load_or_default().await?;
+    let profile = create_and_activate_in(&mut config, &name, body)?;
+    persist(config).await?;
+    Ok(profile)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -758,5 +806,83 @@ mod tests {
         config.fallback_runner = Some("foo".into());
         set_fallback_runner_in(&mut config, Some("   ".into())).unwrap();
         assert!(config.fallback_runner.is_none());
+    }
+
+    // ── create_and_activate_in (Wizard-Pfad) ─────────────────────────────
+
+    fn make_wizard_body(runner: &str) -> crate::config::LaunchProfileBody {
+        crate::config::LaunchProfileBody {
+            runner_name: runner.to_string(),
+            performance: crate::config::PerformanceSettings::default(),
+        }
+    }
+
+    #[test]
+    fn create_and_activate_in_makes_it_active() {
+        let mut config = make_config_with_profile();
+        let body = make_wizard_body("wizard-runner");
+        let p = create_and_activate_in(&mut config, "Wizard Setup", body).unwrap();
+        assert_eq!(config.active_launch_profile_id, p.id);
+        assert!(config.launch_profiles.iter().any(|x| x.id == p.id));
+    }
+
+    #[test]
+    fn create_and_activate_in_overrides_working_state() {
+        let mut config = make_config_with_profile();
+        // Pre-existing dirty edits in working state — must be wiped by activate
+        config.launch_working_state.performance.mangohud = true;
+        config.launch_working_state.runner_name = "old-runner".into();
+
+        let body = make_wizard_body("wizard-runner");
+        create_and_activate_in(&mut config, "Wizard Setup", body.clone()).unwrap();
+
+        assert_eq!(config.launch_working_state, body);
+        assert!(!config.launch_working_state.performance.mangohud);
+        assert_eq!(config.launch_working_state.runner_name, "wizard-runner");
+    }
+
+    #[test]
+    fn create_and_activate_in_validates_uniqueness() {
+        let mut config = make_config_with_profile();
+        // First profile is named "Default" by ensure_default_profile in
+        // make_config_with_profile().
+        let body = make_wizard_body("r");
+        let err = create_and_activate_in(&mut config, "Default", body).unwrap_err();
+        assert!(err.contains("already exists"));
+    }
+
+    #[test]
+    fn create_and_activate_in_validates_empty_name() {
+        let mut config = make_config_with_profile();
+        let body = make_wizard_body("r");
+        assert!(create_and_activate_in(&mut config, "   ", body).is_err());
+    }
+
+    #[test]
+    fn create_and_activate_in_doesnt_disturb_other_profiles() {
+        let mut config = make_config_with_profile();
+        let original = create_profile_in(&mut config, "Original").unwrap();
+        let original_body_before = original.body.clone();
+
+        let body = make_wizard_body("wizard-runner");
+        create_and_activate_in(&mut config, "Wizard Setup", body).unwrap();
+
+        // Original profile still in list, body unchanged.
+        let original_after = config
+            .launch_profiles
+            .iter()
+            .find(|p| p.id == original.id)
+            .expect("original profile still present");
+        assert_eq!(original_after.body, original_body_before);
+        assert_eq!(original_after.name, "Original");
+    }
+
+    #[test]
+    fn create_and_activate_in_results_in_clean_state() {
+        let mut config = make_config_with_profile();
+        let body = make_wizard_body("wizard-runner");
+        create_and_activate_in(&mut config, "Wizard Setup", body).unwrap();
+        // Profile is active and not dirty → is_dirty() should be false
+        assert!(!is_dirty(&config));
     }
 }
