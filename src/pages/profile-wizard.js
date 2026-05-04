@@ -252,10 +252,23 @@ export function showProfileWizard({
           .forEach((b) => {
             b.disabled = false;
           });
+        const errText = String(e);
+        // Forward to backend log so it lands in debug.log even if the user
+        // misses the toast — we've had cases where the toast disappears
+        // before it can be screenshot.
+        try {
+          await invoke('app_log', {
+            level: 'error',
+            category: 'profile-wizard',
+            message: `create_and_activate failed: ${errText}`,
+          });
+        } catch (_logErr) {
+          /* swallow */
+        }
         showNotification(
           t('launchProfiles:wizard.errors.create', {
             defaultValue: 'Failed to create profile: ',
-          }) + String(e),
+          }) + errText,
           'error'
         );
       }
