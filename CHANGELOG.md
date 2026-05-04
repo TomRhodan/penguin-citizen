@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] - 2026-05-04
+
+### Added
+- **Launch Profiles** — named, switchable launch configurations. Each profile bundles a Wine runner and the full set of performance toggles, so swapping between "Stable" and "Wayland Test" is a one-click action instead of a manual reset. The active profile lives in `AppConfig.launch_profiles` (always at least one), and the live working state is mirrored into `launch_working_state`; divergence between the two surfaces as a `Unsaved Changes` pill on the Launch page with explicit `Update Profile` / `Revert` buttons.
+- **Per-profile Wine Runner dropdown on the Launch page** — the runner is now a profile-scoped setting, no more roundtrip through the Wine Runner page when you want to test a different build. A warning pill flags profiles whose runner has been uninstalled.
+- **Launch Profiles management page** (Sidebar → Launch Profiles) — card grid for create / rename / edit description / duplicate / delete / set-active, with backend-enforced unique names, last-profile and active-profile delete protection, and a global `Wine Runner Fallback` selector for "what if the profile's runner gets uninstalled at launch time".
+- **Profile Wizard** — opened from the Dashboard. Single-step modal with a recommended Wine runner pre-selected (LUG-Helper builds preferred, then GE-Proton, then alphabetical), a profile-name field with conflict validation, and two save paths: `Save & Done` returns to the Dashboard, `Customize` jumps to the Launch page for tweaks. Wizard profiles ship with `wayland=false` for a "solid" default; everything else is `PerformanceSettings::default()`. The Dashboard's launch button morphs into the wizard when no usable profile exists.
+- **Dashboard launches and stops the game in place** — clicking the launch button no longer navigates to the Launch page. The card walks through `Launch → Starting… → ⦁ Star Citizen is running + Stop`, driven by `launch-started` / `launch-exited` events. Power users still have the full Launch page in the sidebar.
+- **`Used by N profile(s)` / `Fallback` badges on the Wine Runner page** — each installed runner now shows which profiles depend on it (with profile names as tooltip) and whether it's the global fallback. Aimed at preventing accidental deletion of a runner that several profiles still reference.
+- **Wine Runner Fallback** — a global runner that takes over at launch time if the active profile's runner is no longer installed. Configured on the Launch Profiles page. The launch flow emits a `runner-fallback-used` event so the user sees a toast when it kicks in.
+- **10 new Tauri commands** for the profile system: `create_launch_profile`, `update_launch_profile`, `revert_launch_working_state`, `switch_launch_profile`, `rename_launch_profile`, `update_profile_description`, `delete_launch_profile`, `duplicate_launch_profile`, `set_fallback_runner`, `get_runner_usage`, plus `create_and_activate_launch_profile` for the wizard's deterministic-body path.
+
+### Changed
+- **Config schema migrated from v1 to v2** on first load. The previous top-level `performance: PerformanceSettings` and `selected_runner: Option<String>` fields are wrapped into a `Default` Launch Profile; existing settings are preserved verbatim. If `selected_runner` was unset, the migration auto-picks the first installed runner alphabetically. A one-time intro banner flag (`has_seen_profile_intro`) is reserved for an upcoming UX hint. Migration is idempotent (subsequent loads on a v2 file are no-ops).
+- **`launch_game`, `check_installation`, install and repair flows** all read from `launch_working_state` instead of the legacy `config.performance` / `config.selected_runner`. The runner resolution at launch time now consults the global fallback as a second-chance before erroring out.
+- **Native `window.confirm()` / `prompt()` / `alert()` replaced** in the new Launch-Profiles UI with the existing styled modals from `utils/dialogs.js` (animated overlay, dark theme, escape/click-out support, toast notifications instead of blocking alerts).
+
+### Fixed
+- **`DashboardCache.invalidate is not a function`** — the wizard's "Save & Done" path called a method that never existed on the cache helper. The profile was created on disk but the toast error stuck the dashboard in a stale state. Replaced with a direct `loadLocalStatus()` call (which overwrites the cache via `set()` at its end).
+
+### Build
+- **120 backend tests passing** (was 79), including 35 new tests covering schema migration, ensure-default-profile invariants, all profile CRUD edge cases (uniqueness, last-profile / active-profile delete protection, dirty-switch behavior), runner usage info, and the wizard's `create_and_activate` path. `cargo clippy --tests --all-targets -- -D warnings` clean.
+
 ## [0.5.7] - 2026-05-03
 
 ### Fixed
