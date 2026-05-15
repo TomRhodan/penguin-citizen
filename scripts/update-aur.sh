@@ -54,10 +54,21 @@ if [ "$CUR_PKGVER" = "$NEW_PKGVER" ] && [ "$CUR_RELEASETAG" = "$NEW_RELEASETAG" 
     exit 0
 fi
 
-echo "==> Updating PKGBUILD (pkgrel resets to 1 on pkgver bump)..."
+# pkgrel logic: reset to 1 on real pkgver bump, increment on -N-only bump.
+# Reason: pacman compares pkgver-pkgrel, NOT _releasetag. On a -N-only bump
+# pkgver stays identical, so without a pkgrel increment AUR users would see
+# "already up to date" and never receive the patched package.
+CUR_PKGREL=$(grep -oP '^pkgrel=\K\S+' PKGBUILD)
+if [ "$CUR_PKGVER" = "$NEW_PKGVER" ]; then
+    NEW_PKGREL=$((CUR_PKGREL + 1))
+    echo "==> Updating PKGBUILD (pkgver unchanged — pkgrel: $CUR_PKGREL → $NEW_PKGREL)..."
+else
+    NEW_PKGREL=1
+    echo "==> Updating PKGBUILD (pkgver bump — pkgrel resets to 1)..."
+fi
 sed -i \
     -e "s/^pkgver=.*/pkgver=$NEW_PKGVER/" \
-    -e "s/^pkgrel=.*/pkgrel=1/" \
+    -e "s/^pkgrel=.*/pkgrel=$NEW_PKGREL/" \
     -e "s/^_releasetag=.*/_releasetag=$NEW_RELEASETAG/" \
     PKGBUILD
 
