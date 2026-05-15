@@ -73,12 +73,9 @@ sed -i \
     PKGBUILD
 
 echo "==> Downloading new .deb and refreshing sha256sums..."
-# updpkgsums skips the download if a file with the matching name already
-# exists in the repo. On `-N`-only bumps the filename stays identical
-# (penguin-citizen-$pkgver.deb), so a stale .deb from the previous bump
-# would be reused and we'd end up writing the OLD sha256 against the new
-# URL. Force a fresh download.
-rm -f -- "penguin-citizen-$NEW_PKGVER.deb"
+# Source filename in PKGBUILD includes _releasetag (penguin-citizen-$pkgver-$_releasetag.deb)
+# so every release maps to a unique on-disk name — both in the AUR repo and
+# in user-side yay/paru caches. No collision, no stale-reuse, no rm dance.
 updpkgsums
 
 echo "==> Regenerating .SRCINFO..."
