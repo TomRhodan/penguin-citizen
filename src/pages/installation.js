@@ -98,6 +98,8 @@ let configState = {
   installMode: 'full',
 };
 
+let loadedConfig = null;
+
 /** @type {Array} List of detected monitors for Wayland monitor selection */
 let detectedMonitors = [];
 /** @type {boolean} Whether fractional scaling was detected (blocks Wayland option) */
@@ -186,10 +188,29 @@ export async function renderInstallation(container) {
   try {
     const config = await invoke('load_config');
     if (config) {
+      loadedConfig = config;
       configState.installPath = config.install_path;
-      configState.selectedRunner = config.launch_working_state.runner_name;
-      configState.performance = config.performance;
       configState.installMode = config.install_mode || 'full';
+
+      const lws = config.launch_working_state;
+      if (lws && lws.performance) {
+        configState.selectedRunner = lws.runner_name || null;
+        const p = lws.performance;
+        configState.performance = {
+          esync:           p.esync           ?? true,
+          fsync:           p.fsync           ?? true,
+          dxvk_async:      p.dxvk_async      ?? true,
+          mangohud:        p.mangohud        ?? false,
+          dxvk_hud:        p.dxvk_hud        ?? false,
+          wayland:         p.wayland         ?? true,
+          hdr:             p.hdr             ?? false,
+          fsr:             p.fsr             ?? false,
+          primary_monitor: p.primary_monitor ?? null,
+        };
+      } else {
+        console.warn('[installation] launch_working_state missing on loaded config; using defaults');
+        configState.selectedRunner = null;
+      }
 
       // Populate available sources from the configuration
       if (config.runner_sources && config.runner_sources.length > 0) {
@@ -1256,14 +1277,29 @@ function formatSize(bytes) {
  * Called on path changes and before switching to Step 3.
  */
 async function saveCurrentConfig() {
-  const config = {
-    install_path: configState.installPath,
-    selected_runner: configState.selectedRunner,
-    performance: configState.performance,
-  };
+  if (!loadedConfig) {
+    console.warn('[installation] saveCurrentConfig: no loadedConfig, skipping');
+    return;
+  }
+
+  loadedConfig.install_path = configState.installPath;
+  loadedConfig.install_mode = configState.installMode;
+  loadedConfig.launch_working_state.runner_name = configState.selectedRunner || '';
+
+  const target = loadedConfig.launch_working_state.performance;
+  const src    = configState.performance;
+  target.esync           = src.esync;
+  target.fsync           = src.fsync;
+  target.dxvk_async      = src.dxvk_async;
+  target.mangohud        = src.mangohud;
+  target.dxvk_hud        = src.dxvk_hud;
+  target.wayland         = src.wayland;
+  target.hdr             = src.hdr;
+  target.fsr             = src.fsr;
+  target.primary_monitor = src.primary_monitor;
 
   try {
-    await invoke('save_config', { config });
+    await invoke('save_config', { config: loadedConfig });
   } catch (err) {
     console.error('Failed to save config:', err);
   }
@@ -1490,12 +1526,7 @@ async function startInstallation() {
   try {
     // Start installation via the Rust backend
     await invoke('run_installation', {
-      config: {
-        install_path: configState.installPath,
-        selected_runner: configState.selectedRunner,
-        performance: configState.performance,
-        install_mode: configState.installMode,
-      },
+      config: loadedConfig,
     });
     onInstallComplete();
   } catch (err) {
