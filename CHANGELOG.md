@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8-2] - 2026-05-15
+
+### Fixed
+- **Installation page blank after entering Step 2 (Konfiguration)** — `installation.js` was still reading the pre-Launch-Profiles config layout (`config.performance`), which no longer exists after the v1→v2 schema migration in 0.5.8. The result was `TypeError: undefined is not an object (evaluating 'configState.performance.esync')` and a blank wizard body, blocking fresh installs and repairs. The page now loads from `config.launch_working_state.performance` like the rest of the app.
+- **Installation save path silently wiped advanced PerformanceSettings** — the matching save in Step 2 sent the legacy `{install_path, selected_runner, performance}` shape, which serde discarded into defaults. Every save would have reset gamescope, NVIDIA tweaks, custom env vars, gamemode, etc. that the Launch page manages but the Installation page does not surface. The page now mutates the loaded `AppConfig` in place and writes the full object back, mirroring the `launchConfig` pattern already in use on the Launch page. Triggered by the same v1→v2 migration; would have surfaced as a regression the moment the page-blank bug was fixed.
+- **`run_installation` would have failed after the Step 2 fix** — the invoke payload also used the v1 shape and produced an empty `launch_working_state.runner_name`, which `start_installation` rejects with "No runner selected". Now sends the same `loadedConfig` reference that the save path produces.
+
 ## [0.5.8] - 2026-05-04
 
 ### Added
