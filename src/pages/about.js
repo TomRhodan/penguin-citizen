@@ -31,6 +31,15 @@ import madeByCommunityUrl from '../assets/logos/MadeByTheCommunity_White.png';
  */
 export async function renderAbout(container) {
   const appVersion = await getVersion();
+  // Diagnostics for support: shown in the System Diagnostics card so users
+  // can copy-paste it into bug reports. Fail-soft on older builds that
+  // don't have the command yet.
+  let webkit = null;
+  try {
+    webkit = await invoke('get_webkit_workaround_status');
+  } catch (err) {
+    logError(err, 'about:get_webkit_workaround_status');
+  }
   container.innerHTML = `
     <div class="about-hero">
       <div class="about-hero-glow"></div>
@@ -129,6 +138,12 @@ export async function renderAbout(container) {
           </span>
         </div>
       </div>
+
+      <!-- Card: System Diagnostics (GPU vendor, Wayland, WebKit workaround) -->
+      <div class="about-card">
+        <h3>${t('about:section.diagnostics')}</h3>
+        ${renderDiagnostics(webkit)}
+      </div>
     </div>
   `;
 
@@ -140,4 +155,46 @@ export async function renderAbout(container) {
       invoke('open_browser', { url: link.dataset.url }).catch(err => logError(err, 'about:open_browser'));
     });
   });
+}
+
+/**
+ * Renders the rows of the System Diagnostics card from the
+ * get_webkit_workaround_status payload. Returns a single "unavailable" row
+ * if the backend did not respond (older release, command missing).
+ *
+ * @param {{applied: boolean, reason: string, gpu_vendor: string, wayland: boolean}|null} webkit
+ * @returns {string} HTML
+ */
+function renderDiagnostics(webkit) {
+  if (!webkit) {
+    return `
+      <div class="about-info-row">
+        <span class="about-info-label">${t('about:webkit.label')}</span>
+        <span class="about-info-value"><span class="badge badge-neutral">${t('about:webkit.unavailable')}</span></span>
+      </div>
+    `;
+  }
+  const appliedBadge = webkit.applied
+    ? `<span class="badge badge-ok">${t('about:webkit.applied')}</span>`
+    : `<span class="badge badge-neutral">${t('about:webkit.notApplied')}</span>`;
+  const reasonText = t(`about:webkit.reason.${webkit.reason}`, { defaultValue: webkit.reason });
+  const waylandText = webkit.wayland ? t('about:webkit.yes') : t('about:webkit.no');
+  return `
+    <div class="about-info-row">
+      <span class="about-info-label">${t('about:webkit.gpuVendor')}</span>
+      <span class="about-info-value">${webkit.gpu_vendor}</span>
+    </div>
+    <div class="about-info-row">
+      <span class="about-info-label">${t('about:webkit.wayland')}</span>
+      <span class="about-info-value">${waylandText}</span>
+    </div>
+    <div class="about-info-row">
+      <span class="about-info-label">${t('about:webkit.label')}</span>
+      <span class="about-info-value">${appliedBadge}</span>
+    </div>
+    <div class="about-info-row">
+      <span class="about-info-label">${t('about:webkit.reasonLabel')}</span>
+      <span class="about-info-value">${reasonText}</span>
+    </div>
+  `;
 }

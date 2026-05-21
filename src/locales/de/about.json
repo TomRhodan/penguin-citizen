@@ -6,6 +6,7 @@
   "section.impressum": "Impressum",
   "section.credits": "Credits & Inspirationen",
   "section.license": "Lizenz",
+  "section.diagnostics": "System-Diagnose",
 
   "label.name": "Name",
   "label.version": "Version",
@@ -22,5 +23,19 @@
   "desc.luftwerft": "SC Launcher Konfigurator",
   "desc.lugWiki": "Community-Wissensbasis fuer Linux-Gaming",
   "desc.disclaimer": "Star Citizen ist eine eingetragene Marke der Cloud Imperium Games Corporation. Penguin Citizen ist nicht mit Cloud Imperium Games verbunden oder von ihnen unterstuetzt.",
-  "desc.gpl": "GNU General Public License v3.0"
+  "desc.gpl": "GNU General Public License v3.0",
+
+  "webkit.label": "WebKit DMABUF Workaround",
+  "webkit.reasonLabel": "Grund",
+  "webkit.gpuVendor": "Grafikkarten-Hersteller",
+  "webkit.wayland": "Wayland-Sitzung",
+  "webkit.applied": "Aktiv",
+  "webkit.notApplied": "Inaktiv",
+  "webkit.unavailable": "Nicht verfuegbar",
+  "webkit.yes": "Ja",
+  "webkit.no": "Nein",
+  "webkit.reason.nvidiaWayland": "NVIDIA + Wayland erkannt - tauri#10702 Workaround angewendet",
+  "webkit.reason.notNeeded": "Auf dieser GPU/Display-Kombination nicht noetig",
+  "webkit.reason.forceOff": "Per PENGUIN_FORCE_DMABUF=1 deaktiviert",
+  "webkit.reason.forceOn": "Per PENGUIN_DISABLE_DMABUF=1 erzwungen"
 }

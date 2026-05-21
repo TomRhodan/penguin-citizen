@@ -63,10 +63,11 @@ mod binding_capture;
 // binding_database was removed – bindings are now managed per profile in sc_config
 mod runners;
 mod launch_profiles;
-mod sc_config;
+pub mod sc_config;
 mod shader_cache;
 mod system_check;
 mod action_definitions;
+mod webkit_workaround;
 
 // simplelog is used for file-based logging (writes to ~/.config/penguin-citizen/logs/debug.log)
 use simplelog::{ CombinedLogger, WriteLogger, TermLogger, LevelFilter, ConfigBuilder, TerminalMode, ColorChoice };
@@ -257,6 +258,13 @@ fn get_display_info(window: tauri::WebviewWindow) -> serde_json::Value {
         "xft_dpi": xft_dpi,
         "monitors": monitors,
     })
+}
+
+/// Reports the WebKit DMABUF workaround decision made at startup, so the
+/// About page can show it for support purposes.
+#[tauri::command]
+fn get_webkit_workaround_status() -> webkit_workaround::WebKitWorkaroundStatus {
+    webkit_workaround::status()
 }
 
 /// Simple test command to verify the Tauri command infrastructure.
@@ -485,6 +493,10 @@ pub fn run() {
         }
     }
 
+    // Apply WebKit DMABUF workaround on NVIDIA + Wayland before any WebKitGTK
+    // code runs. See webkit_workaround.rs and issue #5 / tauri#10702.
+    webkit_workaround::apply();
+
     // When running under XWayland (AppImage with GDK_BACKEND=x11 on a Wayland
     // session), GTK/WebKit reports scale_factor=1 even on HiDPI monitors.
     // We detect the expected scale from Xft.dpi (set by all major Wayland
@@ -549,6 +561,7 @@ pub fn run() {
                 app_log,
                 get_log_file_path,
                 get_display_info,
+                get_webkit_workaround_status,
 
                 // System checks (vm.max_map_count, file limits, monitor detection)
                 system_check::run_system_check,
