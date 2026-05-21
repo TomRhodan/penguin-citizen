@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] - 2026-05-21
+
+### Fixed
+- **App crashed at startup on NVIDIA + Wayland systems** ([#5](https://github.com/TomRhodan/penguin-citizen/issues/5)) — WebKitGTK's DMABUF renderer is incompatible with NVIDIA's Wayland driver, producing `Gdk-Message: Error 71 (Protocol error)` before the main window opened (the visible "missing config" message was misleading). Penguin Citizen now detects this combination at startup by reading `/sys/class/drm/card*/device/vendor` plus `WAYLAND_DISPLAY` and sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` in the process environment before WebKitGTK initializes. Tracked upstream at [tauri-apps/tauri#10702](https://github.com/tauri-apps/tauri/issues/10702). AMD and Intel users keep the faster DMABUF path; the full decision is logged at startup so future bug reports are self-diagnosable.
+
+### Added
+- **System Diagnostics card on the About page** — surfaces the detected GPU vendor, Wayland session state, the WebKit-workaround status (Active/Inactive badge) and the reason for the decision. Users can copy this straight into bug reports without opening `debug.log`.
+- **`PENGUIN_FORCE_DMABUF=1` / `PENGUIN_DISABLE_DMABUF=1` env-var overrides** — support escape hatches: the first forces the workaround off (e.g. keep DMABUF on an NVIDIA box if you know it works); the second forces it on (e.g. to verify the fix on a non-NVIDIA system).
+
+### Internal
+- **`sc-watch` developer tool (work in progress)** — new internal `cargo` binary for empirically capturing the mapping between Star Citizen's in-game settings (USER.cfg, attributes.xml, actionmaps.xml) and their UI labels while SC is running. Each session produces a Markdown table that can be used to refresh `src/pages/environments/usercfg.js` for future SC patches. Shipped in this release: the binary itself (`src-tauri/src/bin/sc-watch.rs`), the curated label seed map (`src/data/sc-attribute-labels.json`) and the corresponding `usercfg.js` import. The environments-page module split that this feeds into is at 6/9 modules — bindings, profiles and `index.js` are still pending and will land in a follow-up release.
+
+### Build
+- **121 backend tests passing** (was 120), incl. a new sysfs probe test for `webkit_workaround::detect_gpu_vendor_sync`. `cargo clippy --tests --all-targets -- -D warnings` clean.
+
 ## [0.5.8-2] - 2026-05-15
 
 ### Fixed
