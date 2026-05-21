@@ -68,15 +68,15 @@ export const FALLBACK = {
   version: '0.5.9',
   assets: {
     deb: {
-      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.9/Penguin.Citizen_0.5.9_amd64.deb',
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.9-1/Penguin.Citizen_0.5.9_amd64.deb',
       size: 9_536_646,
     },
     appimage: {
-      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.9/Penguin.Citizen_0.5.9_amd64.AppImage',
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.9-1/Penguin.Citizen_0.5.9_amd64.AppImage',
       size: 81_762_808,
     },
     portable: {
-      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.9/penguin-citizen_0.5.9_amd64_portable.tar.gz',
+      url: 'https://github.com/TomRhodan/penguin-citizen/releases/download/v0.5.9-1/penguin-citizen_0.5.9_amd64_portable.tar.gz',
       size: 97_204_144,
     },
   },
