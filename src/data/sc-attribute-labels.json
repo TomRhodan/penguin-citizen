@@ -1,0 +1,369 @@
+{
+  "sc_version": "unknown",
+  "env": "LIVE",
+  "last_updated": "2026-05-17T13:44:35+01:00",
+  "files": {
+    "attributes.xml": {
+      "BombsDesiredImpactPointDirection": {
+        "label": "Bombs - Desired Impact Point Direction",
+        "last_value": "1"
+      },
+      "CameraSpringMovement": {
+        "label": "Camera Spring Movement",
+        "last_value": "0"
+      },
+      "CockpitAudioSubtitles": {
+        "label": "Cockpit Audio Subtitles",
+        "last_value": "1"
+      },
+      "ContextualDialogSubtitles": {
+        "label": "Contextual Dialog Subtitles",
+        "last_value": "1"
+      },
+      "ControlHintsEnabled": {
+        "label": "Control Hints",
+        "last_value": "0"
+      },
+      "CrosshairMode": {
+        "label": "Crosshair Mode",
+        "last_value": "0"
+      },
+      "CrosshairOpacity": {
+        "label": "Crosshair Opacity",
+        "last_value": "0.8"
+      },
+      "CrouchToggle": {
+        "label": "Crouch Toggle",
+        "last_value": "0"
+      },
+      "EnableCinematicCamera": {
+        "label": "Cinematic Cameras",
+        "last_value": "0"
+      },
+      "Engineering_AutomaticPowerDistributionEnabled": {
+        "label": "Power - Draw missing power from other pools when assigning",
+        "last_value": "1"
+      },
+      "FlightController_Setting_AdvancedHudLabelsEnabled": {
+        "label": "Defaults - HUD - Advance HUD prefers labels",
+        "last_value": "1"
+      },
+      "FlightController_Setting_AdvancedHudNavEnabled": {
+        "label": "Defaults - HUD - Advanced HUD on in NAV",
+        "last_value": "1"
+      },
+      "FlightController_Setting_AdvancedHudScmEnabled": {
+        "label": "Defaults - HUD - Advanced HUD on in SCM",
+        "last_value": "1"
+      },
+      "FlightController_Setting_CoursePredictionEnabled": {
+        "label": "Defaults - HUD - Course Prediction On",
+        "last_value": "0"
+      },
+      "FlightController_Setting_LightAmplificationEnabled": {
+        "label": "Pilot - Light Amplification Enabled",
+        "last_value": "1"
+      },
+      "FlightRelativeThrottleTrapThreshold": {
+        "label": "Pilot - Relative Throttle - Axis Crossing Trap Threshold",
+        "last_value": "0.1"
+      },
+      "FlightRelativeThrottleTrapTime": {
+        "label": "Pilot - Relative Throttle - Axis Crossing Trap Time (sec)",
+        "last_value": "0.5"
+      },
+      "FlightThrustInvertToggle": {
+        "label": "Flight - HOTAS Thrust Invert Toggle",
+        "last_value": "0"
+      },
+      "HitmarkerMode": {
+        "label": "Hitmarker enabled",
+        "last_value": "0"
+      },
+      "HoldToggleZoom": {
+        "label": "Aim Down Sights Toggle",
+        "last_value": "1"
+      },
+      "IFCS_Setting_AutoPrecisionModeEnabled": {
+        "label": "Defaults - Flight - Automatic Slowdown On",
+        "last_value": "0"
+      },
+      "IFCS_Setting_CoupledEnabled": {
+        "label": "Defaults - Flight - Decoupled On",
+        "last_value": "0"
+      },
+      "IFCS_Setting_EspEnabled": {
+        "label": "Defaults - Flight - ESP on",
+        "last_value": "0"
+      },
+      "IFCS_Setting_GSafeDisabledByBoost": {
+        "label": "Defaults - Flight - Boost Disables G-Safe",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_GSafeEnabled": {
+        "label": "Defaults - Flight - G-Safe On",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_GravityCompensationEnabled": {
+        "label": "Defaults - Flight - Gravity Compensation On",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_ProximityAssistEnabled": {
+        "label": "Defaults - Flight - Proximity Assist On",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_SpacebrakeEnablesBoost": {
+        "label": "Defaults - Flight - Space Brake Enables Boost",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_SpeedLimiterOn": {
+        "label": "Defaults - Flight - Speed Limiter On",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_StickyThrottleEnabled": {
+        "label": "Defaults - Flight - Cruise Mode On",
+        "last_value": "(removed)"
+      },
+      "IFCS_Setting_WindCompensationEnabled": {
+        "label": "Defaults - Flight - Wind Compensation On",
+        "last_value": "(removed)"
+      },
+      "InputPromptDisplayInputIcon": {
+        "label": "Interaction Prompt: Display Input Icon",
+        "last_value": "0"
+      },
+      "InteractionHighlightMode": {
+        "label": "Highlighting Mode",
+        "last_value": "1"
+      },
+      "InteractionToggle": {
+        "label": "Interaction Mode Toggle",
+        "last_value": "1"
+      },
+      "LeanToggle": {
+        "label": "Lean Toggle",
+        "last_value": "0"
+      },
+      "LightGroupController_Setting_LightsEnabled": {
+        "label": "Defaults - Light - Enabled",
+        "last_value": "1"
+      },
+      "ManualGimbalModeMgvDefault": {
+        "label": "Driver - Weapons - Manual Gimbal Mode - Default Slaving",
+        "last_value": "(removed)"
+      },
+      "ManualGimbalModeMgvFreeLook": {
+        "label": "Driver - Weapons - Manual Gimbal Mode - Freelook Slaving",
+        "last_value": "0"
+      },
+      "ManualGimbalModeShipsDefault": {
+        "label": "Pilot - Weapons - Manual Gimbal Mode - Default Slaving",
+        "last_value": "(removed)"
+      },
+      "ManualGimbalModeShipsFreeLook": {
+        "label": "Pilot - Weapons - Manual Gimbal Mode - Freelook Slaving",
+        "last_value": "(removed)"
+      },
+      "ManualGimbalModeTurretsDefault": {
+        "label": "Turret - Weapons - Manual Gimbals - Default Target",
+        "last_value": "(removed)"
+      },
+      "ManualGimbalModeTurretsFreeLook": {
+        "label": "Turret - Weapons - Manual Gimbals - Freelook Target",
+        "last_value": "1"
+      },
+      "PilotEspDampening_DEPRECATED": {
+        "label": "Pilot - ESP - Dampening Amount",
+        "last_value": "0.9"
+      },
+      "PilotEspStrength": {
+        "label": "Pilot - ESP - Assist Strength",
+        "last_value": "0.9"
+      },
+      "ProneToggle": {
+        "label": "Prone Toggle",
+        "last_value": "0"
+      },
+      "ReportCrimeIfIgnoring": {
+        "label": "Law - Report Crime Automatically if Notification is Ignored",
+        "last_value": "0"
+      },
+      "SalvageAimNudgeSensitivity": {
+        "label": "Salvage - Aim Nudge Sensivity",
+        "last_value": "8"
+      },
+      "SalvageFreeGimbalLocksRotation": {
+        "label": "Salvage - Mouse Input - Lock vehicle rotation when using free gimb",
+        "last_value": "0"
+      },
+      "ShipEntryLabelsEnabled": {
+        "label": "Ship Entry Labels Enabled",
+        "last_value": "0"
+      },
+      "ShowHints": {
+        "label": "Show Hints",
+        "last_value": "0"
+      },
+      "ShowSelectedTargetReticle": {
+        "label": "Vehicles - Targeting - Show Rectile",
+        "last_value": "0"
+      },
+      "SprintToggle": {
+        "label": "Sprint Toggle",
+        "last_value": "1"
+      },
+      "StarMapZoomSpeed": {
+        "label": "Star Map Zoom Speed",
+        "last_value": "3.6"
+      },
+      "SubtitlesEnabled": {
+        "label": "Subtitles Enabled",
+        "last_value": "1"
+      },
+      "TargetSelectionDirectionSource": {
+        "label": "Vehicles - Targeting - Targeting Direction",
+        "last_value": "1"
+      },
+      "TargetingArrowDisplayMode": {
+        "label": "Vehicles - Targeting - Target Arrow Display Mode",
+        "last_value": "1"
+      },
+      "TargetingShowDistance": {
+        "label": "Vehicles - Targeting - Locked - Show Distance",
+        "last_value": "0"
+      },
+      "TargetingShowHeading": {
+        "label": "Vehicles - Targeting - Locked - Show Heading",
+        "last_value": "0"
+      },
+      "TargetingShowName": {
+        "label": "Vehicles - Targeting - Locked - Show Name",
+        "last_value": "0"
+      },
+      "TextInputRepeatDelay": {
+        "label": "Text Input Repeat Delay",
+        "last_value": "1.1"
+      },
+      "TextInputRepeatRate": {
+        "label": "Text Input Repeat Rate",
+        "last_value": "20"
+      },
+      "TractorBeamRotationMode": {
+        "label": "Tractor Beam - when rotating use rotated object space instead of",
+        "last_value": "1"
+      },
+      "TurretDefaultMouseMode": {
+        "label": "Turret - Mouse - Move Mode",
+        "last_value": "2"
+      },
+      "TurretRelativeMouseModeAdaptiveZoomSensitivity": {
+        "label": "Turret - Mouse - Adaptive Sensivity (except VJoy)",
+        "last_value": "0"
+      },
+      "Turret_Setting_LightAmplificationEnabled": {
+        "label": "Turret - Light Amplification Enabled",
+        "last_value": "1"
+      },
+      "TurretsEspDampening": {
+        "label": "Turret E.S.P. - Dampening Curvature",
+        "last_value": "0.6"
+      },
+      "TurretsEspDefaultOn": {
+        "label": "Turret E.S.P. - Enabled By Default",
+        "last_value": "(removed)"
+      },
+      "TurretsEspStrength": {
+        "label": "Turret E.S.P. - Strength",
+        "last_value": "0.8"
+      },
+      "VJoyAnglePilots": {
+        "label": "VJoy - Pilots - Range (degrees)",
+        "last_value": "14"
+      },
+      "VJoyCombinedDeadZone": {
+        "label": "Pilot - VJoy - Mouse Deadzone (% of the range)",
+        "last_value": "9.02"
+      },
+      "VJoyMgvAngle": {
+        "label": "VJoy - Drivers - Range (degrees)",
+        "last_value": "20"
+      },
+      "VJoyMgvCombinedDeadZone": {
+        "label": "Driver - VJoy - Mouse Deadzone (% of the range)",
+        "last_value": "8.98"
+      },
+      "VJoyShowDeadzone": {
+        "label": "VJoy - Show deadzone for mouse",
+        "last_value": "0"
+      },
+      "VJoyTurretAngle": {
+        "label": "VJoy - Turret Gunners - Range (degrees)",
+        "last_value": "18"
+      },
+      "VJoyTurretCombinedDeadZone": {
+        "label": "Turrets - VJoy - Mouse Deadzone (% of the range)",
+        "last_value": "5.01"
+      },
+      "VJoyUseRawInput": {
+        "label": "VJoy - Pilots - Use Raw Input",
+        "last_value": "1"
+      },
+      "VJoyVisibility": {
+        "label": "VJoy - Visibility",
+        "last_value": "0"
+      },
+      "VelocityIndicatorDisplayType": {
+        "label": "Pilot - Velocity Indicator",
+        "last_value": "0"
+      },
+      "Vibration": {
+        "label": "Vibration",
+        "last_value": "0"
+      },
+      "WeaponMountUseFPSRotation": {
+        "label": "Weapon Mount - Use FPS-Style Mouse Rotation (Instead of Turret)",
+        "last_value": "0"
+      },
+      "Weapon_Setting_Fading_Pips": {
+        "label": "Defaults - Weapons Fading PIPs On",
+        "last_value": "1"
+      },
+      "Weapon_Setting_FallbackConvergenceDistance": {
+        "label": "Defaults - Weapons - Default Convergence Distance",
+        "last_value": "973"
+      },
+      "Weapon_Setting_Gimbals_Locked_Driver": {
+        "label": "Defaults - Weapons (Driver) - Gimbals Locked",
+        "last_value": "1"
+      },
+      "Weapon_Setting_Gimbals_Locked_Gunner": {
+        "label": "Defaults - Weapons (Gunner) - Gimbals Locked",
+        "last_value": "1"
+      },
+      "Weapon_Setting_Gimbals_Locked_Pilot": {
+        "label": "Defaults - Weapons (Pilot) - Gimbals Locked",
+        "last_value": "0"
+      },
+      "Weapon_Setting_Lag_Pips": {
+        "label": "Defaults - Weapons - Lag PIPs On",
+        "last_value": "1"
+      },
+      "Weapon_Setting_Magnified_UI": {
+        "label": "Defaults - Weapons - Magnified UI On",
+        "last_value": "1"
+      },
+      "Weapon_Setting_Precision_Lines": {
+        "label": "Defaults - Weapons - Precision Lines On",
+        "last_value": "1"
+      },
+      "Weapon_Setting_Single_Pips": {
+        "label": "Defaults - Weapons - Use Individual PIPs",
+        "last_value": "1"
+      },
+      "Weapon_Setting_Staggered_Firing": {
+        "label": "Defaults - Weapons - Staggered Fire On",
+        "last_value": "1"
+      }
+    }
+  }
+}

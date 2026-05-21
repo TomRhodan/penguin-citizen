@@ -23,6 +23,11 @@ Thumbs.db
 # Logs
 *.log
 
+# sc-watch session artifacts (mapping captures, not source)
+LabelLogs/
+sc-mapping-*.md
+sc-mapping-*.json
+
 # Claude Code
 .claude/
 GEMINI.md
