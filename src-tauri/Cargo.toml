@@ -6,6 +6,7 @@ authors = ["TomRhodan <tomrhodan@gmail.com>"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/TomRhodan/penguin-citizen"
 edition = "2021"
+default-run = "penguin-citizen"
 
 [lib]
 name = "penguin_citizen_lib"
