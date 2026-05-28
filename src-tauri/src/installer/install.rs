@@ -1,6 +1,6 @@
 use crate::config::AppConfig;
 use crate::runners::resolve_wine_bin;
-use crate::util::{ expand_tilde, http_client };
+use crate::util::{ clean_appimage_env, expand_tilde, http_client };
 use serde::Deserialize;
 use std::path::Path;
 use std::process::{ Command, Stdio };
@@ -156,10 +156,10 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         let base_percent = 5.0 + ((i as f64) / verb_count) * 40.0;
 
         // Kill wineserver before each verb to avoid hangs from lingering processes
-        let _ = Command::new(wineserver.to_string_lossy().as_ref())
-            .arg("-k")
-            .env("WINEPREFIX", &install_path)
-            .output();
+        let mut ws_cmd = Command::new(wineserver.to_string_lossy().as_ref());
+        ws_cmd.arg("-k").env("WINEPREFIX", &install_path);
+        clean_appimage_env(&mut ws_cmd);
+        let _ = ws_cmd.output();
 
         emit_progress(
             &app,
@@ -169,7 +169,8 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             &format!("Running: winetricks -q {}", verb)
         );
 
-        let mut child = Command::new(winetricks_path.to_string_lossy().as_ref())
+        let mut wt_cmd = Command::new(winetricks_path.to_string_lossy().as_ref());
+        wt_cmd
             .args(["-q", verb])
             .env("WINEPREFIX", &install_path)
             .env("WINE", wine.to_string_lossy().as_ref())
@@ -177,7 +178,9 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
             .env("WINEDEBUG", "-all")
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        clean_appimage_env(&mut wt_cmd);
+        let mut child = wt_cmd
             .spawn()
             .map_err(|e| format!("Failed to run winetricks {}: {}", verb, e))?;
 

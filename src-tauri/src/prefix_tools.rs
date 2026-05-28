@@ -31,7 +31,7 @@ use std::process::{ Command, Stdio };
 use tauri::{ AppHandle, Emitter };
 
 use crate::runners::resolve_wine_bin;
-use crate::util::expand_tilde;
+use crate::util::{ clean_appimage_env, expand_tilde };
 
 /// Determines the paths for the Wine binary, runner bin directory, and prefix.
 ///
@@ -310,13 +310,14 @@ pub async fn install_powershell(
     let _ = std::fs::write(&marker, "");
 
     // Kill any running wineserver to avoid conflicts
-    let _ = Command::new(wineserver.to_string_lossy().as_ref())
-        .arg("-k")
-        .env("WINEPREFIX", prefix.to_string_lossy().as_ref())
-        .output();
+    let mut ws_cmd = Command::new(wineserver.to_string_lossy().as_ref());
+    ws_cmd.arg("-k").env("WINEPREFIX", prefix.to_string_lossy().as_ref());
+    clean_appimage_env(&mut ws_cmd);
+    let _ = ws_cmd.output();
 
     // Run winetricks with PowerShell package (-q = quiet mode)
-    let mut child = Command::new(winetricks_path.to_string_lossy().as_ref())
+    let mut wt_cmd = Command::new(winetricks_path.to_string_lossy().as_ref());
+    wt_cmd
         .args(["-q", "powershell"])
         .env("WINEPREFIX", prefix.to_string_lossy().as_ref())
         .env("WINE", wine.to_string_lossy().as_ref())
@@ -324,7 +325,9 @@ pub async fn install_powershell(
         .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
         .env("WINEDEBUG", "-all")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    clean_appimage_env(&mut wt_cmd);
+    let mut child = wt_cmd
         .spawn()
         .map_err(|e| format!("Failed to run winetricks: {}", e))?;
 

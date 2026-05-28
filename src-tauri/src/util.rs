@@ -44,6 +44,22 @@ pub(crate) fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// Removes AppImage-injected loader/path variables so a child process loads
+/// host system libraries instead of the AppImage's bundled ones.
+///
+/// Required for any subprocess that itself dlopens system libraries (wget,
+/// curl, terminals, browsers). Without this, the host's wget will pick up the
+/// AppImage's older libssl/libcrypto via LD_LIBRARY_PATH and crash when other
+/// host libs require newer OpenSSL symbols (e.g. Fedora 44 / Bazzite, #6).
+///
+/// No-op when not running from an AppImage (the variables simply aren't set).
+pub(crate) fn clean_appimage_env(cmd: &mut std::process::Command) {
+    cmd.env_remove("LD_LIBRARY_PATH");
+    cmd.env_remove("LD_PRELOAD");
+    cmd.env_remove("APPDIR");
+    cmd.env_remove("APPIMAGE");
+}
+
 /// Pinned Winetricks version and its SHA-256 hash.
 ///
 /// Using a fixed release tag instead of `master` ensures reproducible installs
