@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.10] - 2026-05-28
+
+### Fixed
+- **winetricks downloads failed on Fedora 44 / Bazzite when running the AppImage** ([#6](https://github.com/TomRhodan/penguin-citizen/issues/6)) — When the host shipped a newer OpenSSL than the AppImage bundle (e.g. Bazzite/Fedora 44 with OpenSSL 3.6.2 vs. the AppImage's 3.4/3.5), the AppImage-injected `LD_LIBRARY_PATH` leaked into the winetricks subprocess. The host's `wget` then loaded the older `libssl.so.3` / `libcrypto.so.3` from the AppImage mount, while other host libs (`libunbound.so.8`, `libngtcp2_crypto_ossl.so.0`) required newer OpenSSL symbols — every winetricks download (arial, tahoma, powershell) aborted with `version 'OPENSSL_3.X.0' not found`, and the installation wizard stopped at the first verb. Penguin Citizen now strips `LD_LIBRARY_PATH`, `LD_PRELOAD`, `APPDIR` and `APPIMAGE` from the winetricks and `wineserver -k` invocations in both `installer::install` and `prefix_tools::install_powershell`, matching the cleanup pattern already used for terminal detection, the Wine shell launcher and the XDG browser fallback. No effect on non-AppImage builds (the variables simply aren't set there).
+
+### Build
+- **121 backend tests passing**, `cargo clippy --tests --all-targets -- -D warnings` clean.
+
 ## [0.5.9] - 2026-05-21
 
 ### Fixed
