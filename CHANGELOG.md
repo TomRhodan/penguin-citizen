@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.11] - 2026-06-06
+
+### Fixed
+- **External links never opened when the default browser was a Flatpak** ([#7](https://github.com/TomRhodan/penguin-citizen/issues/7)) — Two bugs reinforcing each other: (1) `detect_default_browser` took only the first whitespace token of the `.desktop` file's `Exec=` line. For native browsers that's `/usr/bin/firefox`, but for a Flatpak browser it's `/usr/bin/flatpak`, with the actual app id buried later. The direct-launch path then ran `flatpak --new-window URL`, which flatpak rejects, and dropped to the portal fallback. (2) The portal/gio/xdg-open fallbacks all used a `spawn → sleep 100 ms → try_wait` heuristic that returned `Ok(())` whenever the child was still running after 100 ms. `dbus-send --print-reply` to the XDG portal routinely takes longer than that, so the code reported success without ever knowing whether the URL had been opened — the silent fail in the Bazzite logs. `detect_default_browser` now parses the full Exec line into a `Vec<String>` (XDG field codes like `%u`/`%U` stripped) so direct launch becomes `flatpak run <opts> <app-id> --new-window URL` on Flatpak setups and `firefox --new-window URL` on native ones. The portal/gio/xdg-open path now uses synchronous `output()` and checks the real exit status; only the direct browser launch keeps `spawn` (a running browser process is the desired end state there). Affects every external link in the app: LUG Wiki, RSI News, Google login redirects from the RSI Launcher, About-page links.
+
+### Internal
+- **`util::clean_appimage_env` helper applied to the four `open_browser` subprocess sites** — finishes the migration started in 0.5.10 from inline `env_remove(LD_LIBRARY_PATH/LD_PRELOAD/APPDIR/APPIMAGE)` blocks to the shared helper. No behavior change on non-AppImage builds.
+
+### Build
+- **121 backend tests passing**, `cargo clippy --tests --all-targets -- -D warnings` clean.
+
 ## [0.5.10] - 2026-05-28
 
 ### Fixed
