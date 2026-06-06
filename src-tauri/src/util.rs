@@ -211,10 +211,24 @@ pub async fn save_screenshot(base64_data: String, filename: String) -> Result<()
     Ok(())
 }
 
-/// Detects the default browser binary on Linux.
-/// Reads the .desktop file's Exec= line to find the actual binary name.
+/// XDG Desktop Entry field codes that get substituted at launch time.
+/// We strip them so they don't end up as literal arguments to the browser.
+/// See https://specifications.freedesktop.org/desktop-entry-spec/latest/exec-variables.html
 #[cfg(target_os = "linux")]
-fn detect_default_browser() -> Option<String> {
+fn is_field_code(token: &str) -> bool {
+    matches!(token, "%u" | "%U" | "%f" | "%F" | "%i" | "%c" | "%k")
+}
+
+/// Detects the default browser launch command on Linux.
+///
+/// Returns the full tokenized `Exec=` line from the default browser's `.desktop`
+/// file (field codes stripped), not just the first binary. This is required for
+/// Flatpak browsers, whose Exec line looks like
+/// `/usr/bin/flatpak run --branch=stable --arch=x86_64 org.mozilla.firefox %u`
+/// — taking only the first token would yield `flatpak`, which then can't be
+/// invoked with browser-specific flags like `--new-window` (#7).
+#[cfg(target_os = "linux")]
+fn detect_default_browser() -> Option<Vec<String>> {
     let output = std::process::Command::new("xdg-settings")
         .args(["get", "default-web-browser"])
         .output()
@@ -232,41 +246,38 @@ fn detect_default_browser() -> Option<String> {
         search_dirs.push(std::path::PathBuf::from(dir).join("applications"));
     }
 
+    let which_succeeds = |name: &str| -> bool {
+        std::process::Command::new("which")
+            .arg(name)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    };
+
     for dir in &search_dirs {
         let path = dir.join(&desktop_name);
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            for line in content.lines() {
-                if let Some(exec) = line.strip_prefix("Exec=") {
-                    // Exec line is e.g. "/usr/bin/google-chrome-stable %U"
-                    // Take the first token as the binary
-                    let binary = exec.split_whitespace().next()?;
-                    // Could be a full path or just a name
-                    let bin_name = std::path::Path::new(binary)
-                        .file_name()?
-                        .to_str()?
-                        .to_string();
-                    if std::process::Command::new("which")
-                        .arg(&bin_name)
-                        .output()
-                        .map(|o| o.status.success())
-                        .unwrap_or(false)
-                    {
-                        return Some(bin_name);
-                    }
-                }
+        let Ok(content) = std::fs::read_to_string(&path) else { continue; };
+        for line in content.lines() {
+            let Some(exec) = line.strip_prefix("Exec=") else { continue; };
+            // Naive whitespace tokenization. XDG spec allows quoting, but real-world
+            // browser .desktop files don't use it; we'd add `shell_words` if needed.
+            let tokens: Vec<String> = exec
+                .split_whitespace()
+                .filter(|t| !is_field_code(t))
+                .map(|s| s.to_string())
+                .collect();
+            let first = tokens.first()?;
+            let bin_name = std::path::Path::new(first).file_name()?.to_str()?;
+            if which_succeeds(bin_name) {
+                return Some(tokens);
             }
         }
     }
 
-    // Fallback: try the desktop file name without .desktop suffix
+    // Fallback: try the desktop file name without .desktop suffix as a bare binary
     let name = desktop_name.strip_suffix(".desktop")?;
-    if std::process::Command::new("which")
-        .arg(name)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        Some(name.to_string())
+    if which_succeeds(name) {
+        Some(vec![name.to_string()])
     } else {
         None
     }
@@ -284,26 +295,29 @@ pub fn open_browser(url: String) -> Result<(), String> {
 
     let target = if is_path { expand_tilde(&url) } else { url.clone() };
 
-    log::info!("Opening via XDG Portal (D-Bus): {}", target);
-
     #[cfg(target_os = "linux")]
     {
-        // For URLs, try launching the default browser directly with --new-window
+        // For URLs, try launching the default browser directly with --new-window.
+        // The parsed argv carries `flatpak run <app-id>` for Flatpak browsers, so
+        // appending --new-window + URL works for both native and Flatpak (#7).
         if is_url {
-            if let Some(browser) = detect_default_browser() {
-                log::info!("Trying direct browser launch: {} --new-window {}", browser, target);
-                let mut cmd = std::process::Command::new(&browser);
-                cmd.arg("--new-window").arg(&target);
-                cmd.env_remove("LD_LIBRARY_PATH");
-                cmd.env_remove("LD_PRELOAD");
-                cmd.env_remove("APPDIR");
-                cmd.env_remove("APPIMAGE");
+            if let Some(mut argv) = detect_default_browser() {
+                argv.push("--new-window".to_string());
+                argv.push(target.clone());
+                log::info!("Trying direct browser launch: {}", argv.join(" "));
+                let mut cmd = std::process::Command::new(&argv[0]);
+                cmd.args(&argv[1..]);
+                clean_appimage_env(&mut cmd);
                 if let Ok(mut child) = cmd.spawn() {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    if let Ok(Some(status)) = child.try_wait() {
-                        if status.success() { return Ok(()); }
-                    } else {
-                        return Ok(());
+                    // Browser processes stay alive in the background. A short
+                    // probe distinguishes "started OK and detached" (try_wait =
+                    // None) from "spawn succeeded but the binary rejected its
+                    // args and died instantly" (try_wait = Some(non-zero)).
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    match child.try_wait() {
+                        Ok(None) => return Ok(()),
+                        Ok(Some(s)) if s.success() => return Ok(()),
+                        _ => log::warn!("Direct browser launch failed, trying portal"),
                     }
                 }
             }
@@ -315,6 +329,7 @@ pub fn open_browser(url: String) -> Result<(), String> {
             target.clone()
         };
 
+        log::info!("Trying XDG Portal (D-Bus): {}", target);
         let mut command = std::process::Command::new("dbus-send");
         command.args([
             "--session",
@@ -339,41 +354,31 @@ pub fn open_browser(url: String) -> Result<(), String> {
             command.env("WAYLAND_DISPLAY", w_display);
         }
 
-        if let Ok(mut child) = command.spawn() {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            if let Ok(Some(status)) = child.try_wait() {
-                if status.success() { return Ok(()); }
-            } else {
-                return Ok(());
-            }
+        // dbus-send --print-reply blocks until the portal answers. Wait for the
+        // real exit status instead of guessing after 100ms (#7).
+        if let Ok(out) = command.output() {
+            if out.status.success() { return Ok(()); }
+            log::warn!("Portal call failed (exit {:?}), trying gio", out.status.code());
         }
 
+        log::info!("Trying gio open: {}", target);
         let mut gio_cmd = std::process::Command::new("gio");
         gio_cmd.arg("open").arg(&target);
-        gio_cmd.env_remove("LD_LIBRARY_PATH");
-        gio_cmd.env_remove("LD_PRELOAD");
-        gio_cmd.env_remove("APPDIR");
-        gio_cmd.env_remove("APPIMAGE");
-        if let Ok(mut child) = gio_cmd.spawn() {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            if let Ok(Some(status)) = child.try_wait() {
-                if status.success() { return Ok(()); }
-            } else {
-                return Ok(());
-            }
+        clean_appimage_env(&mut gio_cmd);
+        if let Ok(out) = gio_cmd.output() {
+            if out.status.success() { return Ok(()); }
+            log::warn!("gio open failed (exit {:?}), trying xdg-open", out.status.code());
         }
 
+        log::info!("Trying xdg-open: {}", target);
         let mut xdg_cmd = std::process::Command::new("xdg-open");
         xdg_cmd.arg(&target);
-        xdg_cmd.env_remove("LD_LIBRARY_PATH");
-        xdg_cmd.env_remove("LD_PRELOAD");
-        xdg_cmd.env_remove("APPDIR");
-        xdg_cmd.env_remove("APPIMAGE");
+        clean_appimage_env(&mut xdg_cmd);
         xdg_cmd.env_remove("XDG_DATA_DIRS");
-
-        match xdg_cmd.spawn() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Failed to open browser: {}", e))
+        match xdg_cmd.output() {
+            Ok(o) if o.status.success() => Ok(()),
+            Ok(o) => Err(format!("xdg-open failed with exit {:?}", o.status.code())),
+            Err(e) => Err(format!("Failed to open browser: {}", e)),
         }
     }
 
