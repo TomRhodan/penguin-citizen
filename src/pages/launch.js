@@ -179,14 +179,6 @@ const BUILTIN_ENV_VARS = new Set([
  */
 let pendingAutoLaunch = false;
 
-/**
- * Sets the auto-launch flag so that on the next render of the launch page,
- * the game is automatically started (e.g., from dashboard quick-launch).
- */
-export function requestAutoLaunch() {
-  pendingAutoLaunch = true;
-}
-
 // --- Main Render ---
 
 /**

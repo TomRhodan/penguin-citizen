@@ -56,13 +56,6 @@ export async function loadActionDefinitions() {
 let bindingStats = { total: 0, custom: 0 };
 
 /**
- * Returns the current binding stats (for external access).
- */
-export function getBindingStats() {
-  return bindingStats;
-}
-
-/**
  * Loads the complete binding list for the active profile from the backend.
  * Contains both default and custom bindings.
  */
@@ -755,43 +748,6 @@ export function formatDeviceType(deviceType) {
     unknown: t('environments:device.unknown'),
   };
   return labels[deviceType] || deviceType;
-}
-
-/**
- * Resolve a concrete device name from the active profile's device_map.
- */
-export function resolveDeviceLabel(input) {
-  if (!input) return 'Unbound';
-  const s = getState();
-  const deviceType = resolveDeviceType(input);
-
-  const instanceMatch = input.match(/^js(\d+)_/);
-  if (instanceMatch) {
-    const scInstance = parseInt(instanceMatch[1], 10);
-    const activeBackup = s.lastRestoredBackupId ? s.backups.find(b => b.id === s.lastRestoredBackupId) : null;
-    const deviceMap = activeBackup?.device_map || [];
-    const dm = deviceMap.find(d => d.sc_instance === scInstance && d.device_type === 'joystick');
-    if (dm) {
-      return dm.alias || dm.product_name;
-    }
-    return `Joystick ${scInstance}`;
-  }
-
-  return formatDeviceType(deviceType);
-}
-
-/**
- * Generates an inline SVG icon for the given device type.
- */
-export function getDeviceIconSvg(deviceType) {
-  const icons = {
-    keyboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="8" y1="16" x2="16" y2="16"/></svg>`,
-    mouse: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="6"/><line x1="12" y1="6" x2="12" y2="10"/></svg>`,
-    joystick: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="21"/><line x1="3" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="21" y2="12"/></svg>`,
-    gamepad: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><circle cx="6" cy="12" r="2"/><circle cx="10" cy="9" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="18" cy="12" r="2"/></svg>`,
-  };
-  const icon = icons[deviceType] || icons.joystick;
-  return `<span class="device-icon">${icon}</span>`;
 }
 
 /**
