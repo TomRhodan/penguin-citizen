@@ -528,77 +528,58 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             &format!("Downloading {}", installer_filename)
         );
 
-        // Download RSI Launcher installer (typically ~100 MB)
-        let response = client
-            .get(&download_url)
-            .send().await
-            .map_err(|e| format!("Failed to download RSI Launcher: {}", e))?;
-
-        // Streaming download with progress display - the file is downloaded
-        // and written in chunks instead of loading everything into memory
-        let total_bytes = response.content_length().unwrap_or(0);
-        let mut downloaded: u64 = 0;
+        // Download RSI Launcher installer (~320 MB). Uses the shared helper with
+        // automatic retry + Range-based resume so a transient CDN reset or stall
+        // near the end of this long transfer no longer fails the install (#8).
         let installer_path = tmp_dir.join(&installer_filename);
 
-        use futures_util::StreamExt;
-        use tokio::io::AsyncWriteExt;
-
-        let mut file = tokio::fs::File
-            ::create(&installer_path).await
-            .map_err(|e| format!("Failed to create installer file: {}", e))?;
-
-        let mut stream = response.bytes_stream();
         let mut last_emit = std::time::Instant::now();
-        while let Some(chunk_result) = stream.next().await {
-            if is_cancelled() {
-                let _ = file.flush().await;
-                drop(file);
+        let dl_result = crate::util::download_to_file(
+            &download_url,
+            &installer_path,
+            |downloaded, total_bytes| {
+                // Limit progress messages to at most one per 500ms to avoid
+                // flooding the frontend with events.
+                let is_complete = total_bytes > 0 && downloaded >= total_bytes;
+                if is_complete || last_emit.elapsed() >= std::time::Duration::from_millis(500) {
+                    let dl_percent = if total_bytes > 0 {
+                        65.0 + ((downloaded as f64) / (total_bytes as f64)) * 20.0
+                    } else {
+                        75.0
+                    };
+                    let status_msg = if total_bytes > 0 {
+                        format!(
+                            "Downloading... {:.1} MB / {:.1} MB",
+                            (downloaded as f64) / 1_048_576.0,
+                            (total_bytes as f64) / 1_048_576.0
+                        )
+                    } else {
+                        format!("Downloading... {:.1} MB", (downloaded as f64) / 1_048_576.0)
+                    };
+                    emit_progress(
+                        &app,
+                        "download",
+                        "Downloading RSI Launcher...",
+                        dl_percent,
+                        &status_msg
+                    );
+                    last_emit = std::time::Instant::now();
+                }
+            },
+            is_cancelled,
+        ).await;
+
+        match dl_result {
+            Ok(()) => {}
+            Err(crate::util::DownloadError::Cancelled) => {
+                let _ = tokio::fs::remove_file(&installer_path).await;
                 return Err("Installation cancelled".into());
             }
-
-            match chunk_result {
-                Ok(chunk) => {
-                    file
-                        .write_all(&chunk).await
-                        .map_err(|e| format!("Failed to write installer chunk: {}", e))?;
-                    downloaded += chunk.len() as u64;
-
-                    // Limit progress messages to at most one per 500ms
-                    // to avoid flooding the frontend with events
-                    let is_complete = total_bytes > 0 && downloaded >= total_bytes;
-                    if is_complete || last_emit.elapsed() >= std::time::Duration::from_millis(500) {
-                        let dl_percent = if total_bytes > 0 {
-                            65.0 + ((downloaded as f64) / (total_bytes as f64)) * 20.0
-                        } else {
-                            75.0
-                        };
-                        let status_msg = if total_bytes > 0 {
-                            format!(
-                                "Downloading... {:.1} MB / {:.1} MB",
-                                (downloaded as f64) / 1_048_576.0,
-                                (total_bytes as f64) / 1_048_576.0
-                            )
-                        } else {
-                            format!("Downloading... {:.1} MB", (downloaded as f64) / 1_048_576.0)
-                        };
-                        emit_progress(
-                            &app,
-                            "download",
-                            "Downloading RSI Launcher...",
-                            dl_percent,
-                            &status_msg
-                        );
-                        last_emit = std::time::Instant::now();
-                    }
-                }
-                Err(e) => {
-                    return Err(format!("Download stream error: {}", e));
-                }
+            Err(crate::util::DownloadError::Failed(msg)) => {
+                let _ = tokio::fs::remove_file(&installer_path).await;
+                return Err(format!("Download stream error: {}", msg));
             }
         }
-
-        file.flush().await.map_err(|e| format!("Failed to flush installer file: {}", e))?;
-        drop(file);
 
         emit_progress(
             &app,

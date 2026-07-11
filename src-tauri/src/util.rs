@@ -31,17 +31,172 @@ static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 /// Returns the shared HTTP client with sensible defaults:
 /// - User-Agent: `penguin-citizen/{version}`
 /// - Connect timeout: 10 seconds
-/// - Request timeout: 30 seconds
+/// - Read timeout: 30 seconds (per read, resets on each received chunk)
 /// - Connection pooling across all requests
+///
+/// We deliberately use `read_timeout` rather than the total `timeout`: the
+/// latter caps the *entire* request including body streaming, which aborts
+/// large downloads (e.g. the ~320 MB RSI Launcher) that cannot finish inside
+/// the window even though bytes keep flowing (#8). `read_timeout` instead
+/// detects a genuinely stalled connection (no bytes for 30 s) without limiting
+/// the total transfer duration.
 pub(crate) fn http_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .user_agent(concat!("penguin-citizen/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(std::time::Duration::from_secs(10))
-            .timeout(std::time::Duration::from_secs(30))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     })
+}
+
+/// Maximum number of retry attempts for a failed streaming download (on top of
+/// the initial attempt), so a transient CDN reset or stall doesn't fail a large
+/// install.
+const MAX_DOWNLOAD_RETRIES: u32 = 4;
+
+/// Outcome of a failed [`download_to_file`] call.
+pub(crate) enum DownloadError {
+    /// The caller's cancel check returned `true` mid-download.
+    Cancelled,
+    /// The download failed (after exhausting retries). Carries a message.
+    Failed(String),
+}
+
+/// Streams `url` to `dest` with progress reporting, automatic retry, and
+/// HTTP Range-based resume.
+///
+/// - `on_progress(downloaded, total)` is invoked after each written chunk
+///   (and once at the start of each attempt). `total` is 0 if the server did
+///   not report a content length. Callers own throttling/percent-mapping.
+/// - `is_cancelled()` is checked before each chunk; when it returns `true` the
+///   function stops and returns [`DownloadError::Cancelled`].
+///
+/// On a mid-stream failure (stall via the client's `read_timeout`, a CDN
+/// connection reset, etc.) the download is retried up to
+/// [`MAX_DOWNLOAD_RETRIES`] times with exponential backoff, resuming from the
+/// current byte offset via a `Range: bytes=<offset>-` header. If the server
+/// ignores the range (responds `200` instead of `206`), the download restarts
+/// from the beginning. The caller is responsible for removing `dest` on error.
+pub(crate) async fn download_to_file(
+    url: &str,
+    dest: &Path,
+    mut on_progress: impl FnMut(u64, u64),
+    is_cancelled: impl Fn() -> bool,
+) -> Result<(), DownloadError> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let client = http_client();
+    let mut downloaded: u64 = 0;
+    let mut total: u64 = 0;
+    let mut last_err = String::new();
+
+    for attempt in 0..=MAX_DOWNLOAD_RETRIES {
+        if is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
+
+        // Back off before a retry (never before the first attempt), capped at 5s.
+        if attempt > 0 {
+            let backoff = std::time::Duration::from_millis(500u64 << (attempt - 1))
+                .min(std::time::Duration::from_secs(5));
+            tokio::time::sleep(backoff).await;
+            log::warn!(
+                "Download retry {}/{} for {} (resuming at {} bytes): {}",
+                attempt, MAX_DOWNLOAD_RETRIES, url, downloaded, last_err
+            );
+        }
+
+        // Resume via Range header when we already have bytes on disk.
+        let mut req = client.get(url);
+        if downloaded > 0 {
+            req = req.header(reqwest::header::RANGE, format!("bytes={}-", downloaded));
+        }
+
+        let response = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = e.to_string();
+                continue;
+            }
+        };
+
+        let status = response.status();
+        // Did the server honor our Range request?
+        let resuming = downloaded > 0 && status == reqwest::StatusCode::PARTIAL_CONTENT;
+        if downloaded > 0 && !resuming {
+            // Server ignored the range (200 OK) — start over from scratch.
+            downloaded = 0;
+        }
+
+        if !status.is_success() {
+            last_err = format!("unexpected HTTP status {}", status);
+            continue;
+        }
+
+        // Full length is only meaningful on a fresh (200) response; on a 206
+        // resume content_length is just the remaining bytes, so keep the prior total.
+        if !resuming {
+            total = response.content_length().unwrap_or(0);
+        }
+
+        // Truncate on a fresh download, append when resuming.
+        let file_result = if resuming {
+            tokio::fs::OpenOptions::new().append(true).open(dest).await
+        } else {
+            tokio::fs::File::create(dest).await
+        };
+        let mut file = match file_result {
+            Ok(f) => f,
+            Err(e) => {
+                return Err(DownloadError::Failed(format!(
+                    "Failed to open destination file: {}", e
+                )));
+            }
+        };
+
+        on_progress(downloaded, total);
+
+        let mut stream = response.bytes_stream();
+        let mut stream_failed = false;
+        while let Some(chunk_result) = stream.next().await {
+            if is_cancelled() {
+                let _ = file.flush().await;
+                return Err(DownloadError::Cancelled);
+            }
+            match chunk_result {
+                Ok(chunk) => {
+                    if let Err(e) = file.write_all(&chunk).await {
+                        return Err(DownloadError::Failed(format!(
+                            "Failed to write chunk: {}", e
+                        )));
+                    }
+                    downloaded += chunk.len() as u64;
+                    on_progress(downloaded, total);
+                }
+                Err(e) => {
+                    last_err = e.to_string();
+                    stream_failed = true;
+                    break;
+                }
+            }
+        }
+
+        if !stream_failed {
+            file.flush().await.map_err(|e| {
+                DownloadError::Failed(format!("Failed to flush file: {}", e))
+            })?;
+            return Ok(());
+        }
+        // Stream broke mid-transfer: flush what we have and retry (resume).
+        let _ = file.flush().await;
+    }
+
+    Err(DownloadError::Failed(format!(
+        "download failed after {} retries: {}", MAX_DOWNLOAD_RETRIES, last_err
+    )))
 }
 
 /// Removes AppImage-injected loader/path variables so a child process loads
@@ -587,5 +742,91 @@ mod tests {
         let a = http_client() as *const reqwest::Client;
         let b = http_client() as *const reqwest::Client;
         assert_eq!(a, b, "http_client should return the same instance");
+    }
+
+    // ── download_to_file ──
+
+    /// A mid-stream connection drop must be recovered via a Range-based resume,
+    /// yielding the complete file — this is the core of the #8 fix.
+    #[tokio::test]
+    async fn download_to_file_resumes_after_midstream_drop() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        // Full body the client should end up with on disk.
+        let body: &[u8] = b"0123456789ABCDEF";
+        let split = 6; // bytes served before the simulated drop
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Mock server: attempt 1 sends headers + a partial body then closes the
+        // socket (simulating a CDN reset). Attempt 2 must carry `Range: bytes=6-`
+        // and is answered with a 206 serving the remaining bytes.
+        let server = std::thread::spawn(move || {
+            // attempt 1: partial, then drop
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).unwrap();
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\n\r\n",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.write_all(&body[..split]).unwrap();
+            sock.flush().unwrap();
+            drop(sock); // close mid-stream
+
+            // attempt 2: honor the Range request with a 206
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let n = sock.read(&mut buf).unwrap();
+            let req = String::from_utf8_lossy(&buf[..n]);
+            assert!(
+                req.contains(&format!("range: bytes={}-", split))
+                    || req.contains(&format!("Range: bytes={}-", split)),
+                "expected resume Range header, got:\n{}",
+                req
+            );
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\n\r\n",
+                    body.len() - split,
+                    split,
+                    body.len() - 1,
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.write_all(&body[split..]).unwrap();
+            sock.flush().unwrap();
+        });
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("out.bin");
+        let url = format!("http://{}/file", addr);
+
+        let result = download_to_file(&url, &dest, |_d, _t| {}, || false).await;
+
+        assert!(matches!(result, Ok(())), "download should succeed after resume");
+        let got = std::fs::read(&dest).unwrap();
+        assert_eq!(got, body, "resumed file must equal the full body");
+
+        server.join().unwrap();
+    }
+
+    /// Cancellation before the first chunk must short-circuit with `Cancelled`.
+    #[tokio::test]
+    async fn download_to_file_honors_cancellation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("out.bin");
+        // URL never contacted because the cancel check trips immediately.
+        let result =
+            download_to_file("http://127.0.0.1:1/never", &dest, |_d, _t| {}, || true).await;
+        assert!(matches!(result, Err(DownloadError::Cancelled)));
     }
 }

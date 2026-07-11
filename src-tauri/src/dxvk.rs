@@ -249,49 +249,31 @@ pub async fn install_dxvk(
     emit("downloading", 0.0, "Downloading DXVK...");
 
     // --- Download phase ---
-    let client = http_client();
-
-    let response = client
-        .get(&download_url)
-        .send().await
-        .map_err(|e| format!("Download failed: {}", e))?;
-
-    let total_bytes = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-
+    // Stream to disk with retry + Range-resume via the shared helper.
     let archive_path = tmp_dir.join("dxvk.tar.gz");
 
-    use futures_util::StreamExt;
-    use tokio::io::AsyncWriteExt;
+    let dl_result = crate::util::download_to_file(
+        &download_url,
+        &archive_path,
+        |downloaded, total_bytes| {
+            // Download progress: 0-50% of total progress
+            let percent = if total_bytes > 0 {
+                ((downloaded as f64) / (total_bytes as f64)) * 50.0
+            } else {
+                25.0
+            };
+            emit("downloading", percent, "Downloading DXVK...");
+        },
+        || false,
+    ).await;
 
-    let mut file = tokio::fs::File
-        ::create(&archive_path).await
-        .map_err(|e| format!("Failed to create file: {}", e))?;
-
-    // Download data in chunks -- progress goes up to 50%
-    let mut stream = response.bytes_stream();
-    while let Some(chunk_result) = stream.next().await {
-        match chunk_result {
-            Ok(chunk) => {
-                file.write_all(&chunk).await.map_err(|e| format!("Write error: {}", e))?;
-                downloaded += chunk.len() as u64;
-                // Download progress: 0-50% of total progress
-                let percent = if total_bytes > 0 {
-                    ((downloaded as f64) / (total_bytes as f64)) * 50.0
-                } else {
-                    25.0
-                };
-                emit("downloading", percent, "Downloading DXVK...");
-            }
-            Err(e) => {
-                let _ = tokio::fs::remove_file(&archive_path).await;
-                return Err(format!("Stream error: {}", e));
-            }
-        }
+    if let Err(e) = dl_result {
+        let _ = tokio::fs::remove_file(&archive_path).await;
+        return Err(match e {
+            crate::util::DownloadError::Cancelled => "Download cancelled".to_string(),
+            crate::util::DownloadError::Failed(m) => format!("Stream error: {}", m),
+        });
     }
-
-    file.flush().await.map_err(|e| format!("Flush error: {}", e))?;
-    drop(file);
 
     // --- Extraction phase ---
     emit("extracting", 50.0, "Extracting DXVK...");

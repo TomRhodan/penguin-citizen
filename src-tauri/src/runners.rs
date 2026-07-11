@@ -412,55 +412,30 @@ pub async fn install_runner(
         });
     };
 
-    let client = http_client();
+    emit_progress("downloading", 0, 0, "Starting download...");
 
-    // Start HTTP request
-    let response = match client.get(&download_url).send().await {
-        Ok(r) => r,
-        Err(e) => {
+    // Stream to disk with retry + Range-resume (shared helper). Track the final
+    // byte counts so the extraction phase can report them. Atomics (not Cell) so
+    // the download future stays `Send` for the Tauri command.
+    let final_downloaded = std::sync::atomic::AtomicU64::new(0);
+    let final_total = std::sync::atomic::AtomicU64::new(0);
+
+    let dl_result = crate::util::download_to_file(
+        &download_url,
+        &archive_path,
+        |downloaded, total| {
+            final_downloaded.store(downloaded, Ordering::SeqCst);
+            final_total.store(total, Ordering::SeqCst);
+            emit_progress("downloading", downloaded, total, "Downloading...");
+        },
+        || CANCEL_FLAG.load(Ordering::SeqCst),
+    ).await;
+
+    match dl_result {
+        Ok(()) => {}
+        Err(crate::util::DownloadError::Cancelled) => {
             let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-            emit_progress("error", 0, 0, &format!("Download failed: {}", e));
-            return InstallRunnerResult {
-                success: false,
-                runner_name: runner_name.clone(),
-                install_path: String::new(),
-                message: format!("Download failed: {}", e),
-            };
-        }
-    };
-
-    let total_bytes = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-
-    emit_progress("downloading", 0, total_bytes, "Starting download...");
-
-    use futures_util::StreamExt;
-    use tokio::io::AsyncWriteExt;
-
-    // Create destination file for the download
-    let mut file = match tokio::fs::File::create(&archive_path).await {
-        Ok(f) => f,
-        Err(e) => {
-            let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-            emit_progress("error", 0, 0, &format!("Failed to create file: {}", e));
-            return InstallRunnerResult {
-                success: false,
-                runner_name: runner_name.clone(),
-                install_path: String::new(),
-                message: format!("Failed to create file: {}", e),
-            };
-        }
-    };
-
-    // Download data in chunks and write to file
-    let mut stream = response.bytes_stream();
-    while let Some(chunk_result) = stream.next().await {
-        // Check on each chunk whether the user has cancelled the download
-        if CANCEL_FLAG.load(Ordering::SeqCst) {
-            let _ = file.flush().await;
-            drop(file);
-            let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-            emit_progress("error", downloaded, total_bytes, "Download cancelled");
+            emit_progress("error", final_downloaded.load(Ordering::SeqCst), final_total.load(Ordering::SeqCst), "Download cancelled");
             return InstallRunnerResult {
                 success: false,
                 runner_name: runner_name.clone(),
@@ -468,47 +443,20 @@ pub async fn install_runner(
                 message: "Download cancelled by user".into(),
             };
         }
-
-        match chunk_result {
-            Ok(chunk) => {
-                if let Err(e) = file.write_all(&chunk).await {
-                    let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-                    emit_progress("error", downloaded, total_bytes, &format!("Write error: {}", e));
-                    return InstallRunnerResult {
-                        success: false,
-                        runner_name: runner_name.clone(),
-                        install_path: String::new(),
-                        message: format!("Write error: {}", e),
-                    };
-                }
-                downloaded += chunk.len() as u64;
-                emit_progress("downloading", downloaded, total_bytes, "Downloading...");
-            }
-            Err(e) => {
-                let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-                emit_progress("error", downloaded, total_bytes, &format!("Stream error: {}", e));
-                return InstallRunnerResult {
-                    success: false,
-                    runner_name: runner_name.clone(),
-                    install_path: String::new(),
-                    message: format!("Stream error: {}", e),
-                };
-            }
+        Err(crate::util::DownloadError::Failed(msg)) => {
+            let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+            emit_progress("error", final_downloaded.load(Ordering::SeqCst), final_total.load(Ordering::SeqCst), &format!("Download failed: {}", msg));
+            return InstallRunnerResult {
+                success: false,
+                runner_name: runner_name.clone(),
+                install_path: String::new(),
+                message: format!("Download failed: {}", msg),
+            };
         }
     }
 
-    // Ensure all data has been written to disk
-    if let Err(e) = file.flush().await {
-        let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
-        emit_progress("error", downloaded, total_bytes, &format!("Flush error: {}", e));
-        return InstallRunnerResult {
-            success: false,
-            runner_name: runner_name.clone(),
-            install_path: String::new(),
-            message: format!("Flush error: {}", e),
-        };
-    }
-    drop(file);
+    let downloaded = final_downloaded.load(Ordering::SeqCst);
+    let total_bytes = final_total.load(Ordering::SeqCst);
 
     // --- Extraction phase ---
     emit_progress("extracting", downloaded, total_bytes, "Extracting archive...");
