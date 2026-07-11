@@ -84,6 +84,24 @@ pub async fn fetch_rsi_news() -> RsiNewsResult {
     }
 }
 
+/// Resolves one of the five predefined XML entity names to its character.
+///
+/// Since quick-xml 0.38, entity references inside text are no longer part of
+/// `Event::Text` — they arrive as separate `Event::GeneralRef` events and are
+/// not auto-resolved. Numeric character references are handled by
+/// `BytesRef::resolve_char_ref`; this covers the named predefined entities so
+/// escaped characters (e.g. `&amp;` in a news title) aren't dropped.
+fn resolve_predefined_entity(name: &str) -> Option<&'static str> {
+    match name {
+        "amp" => Some("&"),
+        "lt" => Some("<"),
+        "gt" => Some(">"),
+        "quot" => Some("\""),
+        "apos" => Some("'"),
+        _ => None,
+    }
+}
+
 /// Internal implementation of the news fetch.
 ///
 /// Loads the Atom feed from leonick.se (a community mirror of RSI news)
@@ -162,7 +180,7 @@ async fn fetch_rsi_news_inner() -> Result<
             }
             // Text content inside a tag
             Ok(Event::Text(ref e)) if in_entry => {
-                let text = e.unescape().unwrap_or_default().to_string();
+                let text = e.decode().unwrap_or_default().to_string();
                 // Assign text to the correct field based on the current tag
                 match current_tag.as_str() {
                     "title" => current_title.push_str(&text),
@@ -172,6 +190,27 @@ async fn fetch_rsi_news_inner() -> Result<
                         current_published = text;
                     }
                     _ => {}
+                }
+            }
+            // Entity/character references (e.g. &amp;, &#39;) — separate events
+            // since quick-xml 0.38. Resolve and append so escaped characters in
+            // titles/summaries aren't lost.
+            Ok(Event::GeneralRef(ref e)) if in_entry => {
+                // Numeric refs (&#39;, &#x27;) resolve via the library; named
+                // refs fall back to the predefined-entity table.
+                let resolved = match e.resolve_char_ref() {
+                    Ok(Some(c)) => Some(c.to_string()),
+                    _ => e
+                        .decode()
+                        .ok()
+                        .and_then(|name| resolve_predefined_entity(&name).map(str::to_string)),
+                };
+                if let Some(resolved) = resolved {
+                    match current_tag.as_str() {
+                        "title" => current_title.push_str(&resolved),
+                        "summary" => current_summary.push_str(&resolved),
+                        _ => {}
+                    }
                 }
             }
             // CDATA sections can also contain titles or summaries
