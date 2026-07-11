@@ -570,7 +570,7 @@ pub(super) fn parse_actionmaps_xml(c: &str) -> Result<ParsedActionMaps, String> 
                                     if end_pos <= product.len() {
                                         product = format!(
                                             "{}{}",
-                                            &product[..start].trim_end(),
+                                            product[..start].trim_end(),
                                             &product[end_pos..]
                                         );
                                     } else {

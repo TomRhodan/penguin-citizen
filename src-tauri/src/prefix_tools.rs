@@ -164,7 +164,7 @@ pub async fn launch_wine_shell(base_path: String, runner_name: String) -> Result
         "konsole" => build_cmd("konsole", &["--hold", "-e", "bash", &script_path_str])?,
         "gnome-terminal" => build_cmd("gnome-terminal", &["--", "bash", &script_path_str])?,
         "xfce4-terminal" =>
-            build_cmd("xfce4-terminal", &["-e", &format!("bash {}", &script_path_str)])?,
+            build_cmd("xfce4-terminal", &["-e", &format!("bash {}", script_path_str)])?,
         "xterm" => build_cmd("xterm", &["-e", "bash", &script_path_str])?,
         _ => {
             return Err("No terminal emulator found".into());
