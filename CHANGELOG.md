@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.12] - 2026-07-11
+
+### Fixed
+- **RSI Launcher download aborted near completion with "error decoding response body"** ([#8](https://github.com/TomRhodan/penguin-citizen/issues/8)) — The shared HTTP client set a 30-second *total* request timeout, which reqwest applies to the entire request including body streaming. The ~320 MB RSI Launcher installer cannot finish inside 30 s at typical bandwidth, so reqwest aborted the in-flight body near the end (observed at ~97 %) and surfaced it as a stream decode error. Smaller downloads (winetricks, DXVK) finished well under the window and were unaffected. The client now uses a per-read `read_timeout` (resets on each received chunk), which detects a genuinely stalled connection without capping total transfer duration.
+
+### Changed
+- **All streaming downloads now retry and resume automatically** — The RSI Launcher, Wine/Proton runner and DXVK downloads route through a shared helper that, on a mid-stream failure (stall or CDN connection reset), retries up to four times with exponential backoff and resumes from the current byte offset via an HTTP `Range` request (falling back to a full restart if the server ignores the range). This also recovers from the intermittent CDN resets reported in #8. Per-module progress reporting and cancellation behaviour are unchanged.
+
+### Security
+- **quick-xml bumped 0.37 → 0.41** ([RUSTSEC-2026-0194](https://rustsec.org/advisories/RUSTSEC-2026-0194), [RUSTSEC-2026-0195](https://rustsec.org/advisories/RUSTSEC-2026-0195)) — quick-xml 0.37.5 is affected by two high-severity advisories (quadratic runtime when checking a start tag for duplicate attribute names; unbounded namespace-declaration allocation enabling memory-exhaustion DoS), both fixed in ≥ 0.41.0. The dashboard Atom-feed parser was updated for the 0.38 API change (entity references are now separate `Event::GeneralRef` events) so escaped characters in news titles/summaries are still resolved.
+
+### Build
+- **npm and cargo dependencies refreshed** to their latest semver-compatible versions (Tauri 2.11.4/2.11.5, plus routine lockfile updates); major upgrades (vite 8, i18next 26) deferred.
+- Added the `fallow` static-analysis tool and configuration; removed verified-dead exports.
+- **123 backend tests passing**, `cargo clippy --tests --all-targets -- -D warnings` clean on Rust stable 1.97.
+
 ## [0.5.11] - 2026-06-06
 
 ### Fixed
