@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.13] - 2026-07-26
+
+### Fixed
+- **German localization install with "Blueprint-Integration" failed with `Failed to parse blueprint JSON: missing field \`title\``** — The blueprint dataset (`bp-contracts_short.json`, pulled unpinned from the `main` branch of `rjcncpt/StarCitizen-Deutsch-INI`) changed shape: of its 813 entries, only 365 still carry the `title`/`description` override fields, while the other 448 are contract-metadata-only entries (carrying `contractInfo`, `prerequisites`, cooldowns, etc. plus just the loc-keys). The `BpEntry` deserialization struct required `title` and `description` as non-optional strings, so serde aborted the entire parse on the first metadata-only entry and the whole install failed. Both fields are now optional (`Option<String>` with `#[serde(default)]`, also tolerating an explicit JSON `null`); entries without override text are cleanly skipped. This also fixed a latent second bug: the "blueprint data only partially matches" warning was computed against `entries_total × 2`, which after the upstream format change would have fired on every install even on a perfect match — it now compares against the number of injectable strings the data actually carries.
+
+### Build
+- **126 backend tests passing** (3 new blueprint-parser regression tests), `cargo clippy --tests --all-targets -- -D warnings` clean on Rust stable 1.97.
+
 ## [0.5.12] - 2026-07-11
 
 ### Fixed
