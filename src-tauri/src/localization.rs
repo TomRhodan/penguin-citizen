@@ -975,10 +975,14 @@ pub async fn install_localization(
         // `inject_blueprints` as a local name shadows the fn; qualify with self::
         let (merged, stats) = self::inject_blueprints_with_stats(&global_ini_text, &bp_json)?;
 
-        // Sanity-check: if fewer than half the BP entries matched, the data
-        // probably doesn't fit this SC build. Surface a non-fatal warning in
-        // the install result — the install itself proceeds (user opted in).
-        let max_possible = stats.entries_total.saturating_mul(2);
+        // Sanity-check: if fewer than half the *injectable* strings matched, the
+        // data probably doesn't fit this SC build. Surface a non-fatal warning in
+        // the install result — the install itself proceeds (user opted in). We
+        // compare against `injectable` (title/description strings the BP data
+        // actually carries), not `entries_total * 2`: many entries carry only
+        // loc-keys and no override text, so `entries_total * 2` would falsely
+        // trigger the warning on a perfect match.
+        let max_possible = stats.injectable;
         bp_low_hit_rate_warning = if max_possible > 0 && stats.hits * 2 < max_possible {
             log::warn!(
                 "Blueprint hit rate low: {}/{} (entries={}, misses={})",
@@ -1142,23 +1146,37 @@ struct BpContractsRoot {
 }
 
 /// One blueprint entry — describes how to modify the mission's title and description.
+///
+/// `title`/`description` are optional: the upstream `bp-contracts_short.json` (pulled
+/// unpinned from `main`) mixes entries that carry an override marker/text with
+/// contract-metadata-only entries that have just the loc-keys and no override. A
+/// missing (or `null`) `title`/`description` means "nothing to inject for this entry"
+/// and must not abort the whole parse (#blueprint-title-parse). The loc-keys stay
+/// required — they are the join key against the INI and are present on every entry.
 #[derive(Deserialize)]
 #[allow(non_snake_case)] // field names match the JSON shape
 struct BpEntry {
     titleLocKey: String,
-    title: String,
+    #[serde(default)]
+    title: Option<String>,
     descriptionLocKey: String,
-    description: String,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 /// Statistics about a blueprint injection pass — exposed to the install flow so
 /// it can warn the user when the BP data is a poor match for the installed SC build.
 pub(crate) struct BpInjectStats {
-    /// Number of (title or description) keys actually found and modified.
+    /// Number of (title or description) strings actually found in the INI and modified.
     pub hits: usize,
-    /// Number of (title or description) keys that were absent in the INI and skipped.
+    /// Number of (title or description) strings that were present in the BP data but
+    /// whose loc-key was absent in the INI (skipped).
     pub misses: usize,
-    /// Number of entries in the BP JSON. Maximum possible `hits` is `2 * entries_total`.
+    /// Number of injectable strings the BP data actually carries (entries that have a
+    /// `title` and/or `description`). This is the real maximum possible `hits`
+    /// (`injectable == hits + misses`) — many entries carry only loc-keys and no text.
+    pub injectable: usize,
+    /// Number of entries in the BP JSON (for logging/diagnostics only).
     pub entries_total: usize,
 }
 
@@ -1233,32 +1251,42 @@ pub(crate) fn inject_blueprints_with_stats(
 
     let mut hits = 0_usize;
     let mut misses = 0_usize;
+    let mut injectable = 0_usize;
     for entry in &bp.entries {
-        if let Some(&idx) = key_to_idx.get(&entry.titleLocKey) {
-            if let Line::KeyValue { value, .. } = &mut lines[idx] {
-                let new_value = format!("{}{}", entry.title, value);
-                *value = new_value;
-                hits += 1;
+        // Only entries that actually carry a title contribute a title injection;
+        // metadata-only entries (title == None) are silently skipped.
+        if let Some(title) = &entry.title {
+            injectable += 1;
+            if let Some(&idx) = key_to_idx.get(&entry.titleLocKey) {
+                if let Line::KeyValue { value, .. } = &mut lines[idx] {
+                    let new_value = format!("{}{}", title, value);
+                    *value = new_value;
+                    hits += 1;
+                }
+            } else {
+                misses += 1;
+                log::debug!("Blueprint titleLocKey not found in INI: {}", entry.titleLocKey);
             }
-        } else {
-            misses += 1;
-            log::debug!("Blueprint titleLocKey not found in INI: {}", entry.titleLocKey);
         }
-        if let Some(&idx) = key_to_idx.get(&entry.descriptionLocKey) {
-            if let Line::KeyValue { value, .. } = &mut lines[idx] {
-                let new_value = format!("{}{}", value, entry.description);
-                *value = new_value;
-                hits += 1;
+        if let Some(description) = &entry.description {
+            injectable += 1;
+            if let Some(&idx) = key_to_idx.get(&entry.descriptionLocKey) {
+                if let Line::KeyValue { value, .. } = &mut lines[idx] {
+                    let new_value = format!("{}{}", value, description);
+                    *value = new_value;
+                    hits += 1;
+                }
+            } else {
+                misses += 1;
+                log::debug!("Blueprint descriptionLocKey not found in INI: {}", entry.descriptionLocKey);
             }
-        } else {
-            misses += 1;
-            log::debug!("Blueprint descriptionLocKey not found in INI: {}", entry.descriptionLocKey);
         }
     }
     log::info!(
-        "Blueprint injection: {} hits, {} misses across {} entries",
+        "Blueprint injection: {} hits, {} misses ({} injectable) across {} entries",
         hits,
         misses,
+        injectable,
         bp.entries.len()
     );
 
@@ -1285,6 +1313,7 @@ pub(crate) fn inject_blueprints_with_stats(
     let stats = BpInjectStats {
         hits,
         misses,
+        injectable,
         entries_total: bp.entries.len(),
     };
     Ok((out, stats))
@@ -1468,6 +1497,89 @@ mod blueprint_inject_tests {
         // Should round-trip (modulo trailing newline normalization)
         assert!(result.contains("alpha=1"));
         assert!(result.contains("beta=2"));
+    }
+
+    #[test]
+    fn inject_tolerates_entries_without_title_or_description() {
+        // The Beta-2026 upstream mixes in contract-metadata-only entries that have
+        // just the loc-keys and no `title`/`description` (plus extra fields serde must
+        // ignore). These must NOT abort the parse — the exact bug from the field report.
+        let global_ini = ini(&[
+            "roughready_delivery_station_title_001=Deliver Cargo",
+            "roughready_delivery_station_desc_001=Take it there",
+        ]);
+        let bp_json = r##"{
+            "_meta": {"version": "Beta 16.07.2026"},
+            "entries": [
+                {
+                    "descriptionLocKey": "roughready_delivery_station_desc_001",
+                    "titleLocKey": "roughready_delivery_station_title_001",
+                    "contractInfo": "# Cooldown: 45 Minuten",
+                    "canBeShared": true,
+                    "illegal": false,
+                    "personalCooldownTime": 45,
+                    "prerequisites": { "location": [{"name": "Checkmate", "navIcon": "Station"}], "locality": [] }
+                }
+            ]
+        }"##;
+        let result = inject_blueprints(&global_ini, bp_json)
+            .expect("entries without title/description must not error");
+        // No override text → the matched values are left untouched.
+        assert!(result.contains("roughready_delivery_station_title_001=Deliver Cargo"));
+        assert!(result.contains("roughready_delivery_station_desc_001=Take it there"));
+    }
+
+    #[test]
+    fn inject_stats_count_only_injectable_fields() {
+        // A mixed dataset: one entry carries title+description, one is metadata-only.
+        // `injectable` must count only the strings actually present (2, not 4), so the
+        // low-hit-rate warning stays meaningful.
+        let global_ini = ini(&[
+            "mission_title=Eliminate Targets",
+            "mission_desc=Base desc",
+            "meta_only_title=Untouched",
+        ]);
+        let bp_json = r##"{
+            "_meta": {},
+            "entries": [
+                {
+                    "titleLocKey": "mission_title",
+                    "title": " <EM4>[BP]</EM4>",
+                    "descriptionLocKey": "mission_desc",
+                    "description": "\\n---\\ninfo"
+                },
+                {
+                    "titleLocKey": "meta_only_title",
+                    "descriptionLocKey": "meta_only_desc",
+                    "contractInfo": "# metadata only"
+                }
+            ]
+        }"##;
+        let (result, stats) = inject_blueprints_with_stats(&global_ini, bp_json).unwrap();
+        assert_eq!(stats.injectable, 2, "only the first entry's two fields are injectable");
+        assert_eq!(stats.hits, 2, "both injectable fields match an INI key");
+        assert_eq!(stats.misses, 0);
+        assert_eq!(stats.entries_total, 2);
+        assert!(result.contains("mission_title= <EM4>[BP]</EM4>Eliminate Targets"));
+        assert!(result.contains("meta_only_title=Untouched"));
+    }
+
+    #[test]
+    fn inject_treats_null_title_and_description_as_absent() {
+        // `#[serde(default)]` on Option also maps an explicit JSON null to None.
+        let global_ini = ini(&["k_title=Val", "k_desc=Desc"]);
+        let bp_json = r#"{
+            "_meta": {},
+            "entries": [
+                { "titleLocKey": "k_title", "title": null, "descriptionLocKey": "k_desc", "description": null }
+            ]
+        }"#;
+        let (result, stats) = inject_blueprints_with_stats(&global_ini, bp_json)
+            .expect("null title/description must parse");
+        assert_eq!(stats.injectable, 0);
+        assert_eq!(stats.hits, 0);
+        assert!(result.contains("k_title=Val"));
+        assert!(result.contains("k_desc=Desc"));
     }
 }
 
