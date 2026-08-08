@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.14] - 2026-08-08
+
+### Added
+- **Installed runners now show size, install date, Wine version and origin** — The runner list only ever displayed a name. A new `get_runner_details` command reports the directory size, the installation timestamp, the version reported by `wine --version`, the detected layout (standard Wine vs. Proton) and the source the build came from; the full install path is available as a tooltip on the runner name. This deliberately does not extend `scan_runners`, which five other pages call and which must stay fast — the details are fetched in parallel and patched in when they arrive. Provenance is recorded in a `.penguin-citizen-runner.json` marker written at install time, with a fallback that matches older runners against the release cache by name.
+- **Winetricks is reachable from the Prefix Tools card** — Both the graphical Winetricks menu (`run_winetricks`, checked up front for `zenity`/`kdialog` so a missing GUI dependency reports an error instead of appearing to do nothing) and a set of one-click repair actions. The actions are an allowlist traceable to the Star Citizen LUG sources: `vcrun2022` (documented fix for RSI Launcher error 3221225477), `arial` + `tahoma` (the fonts the LUG install recipe uses) and `win11`. DXVK is deliberately not offered — it has its own card with a version picker, and a Winetricks run would replace the DLLs while leaving the version marker stale. A new `detect_winetricks_verbs` command reads the prefix's `winetricks.log` so actions already applied stay marked.
+- **Prefix Tools state which prefix and runner they act on** — The card previously used the active profile's runner without saying so. It now shows the prefix path and a runner selector, defaulting to the active runner. The selection applies to the tools only and never touches the launch profiles.
+- **Live console for prefix tool operations** — Winetricks can sit silent for minutes while downloading. Long-running operations now show a console with a status bar naming the running task, a ticking elapsed timer and streamed output, ending in an explicit success or failure state.
+- **Installation progress is recorded in `debug.log`** — `emit_progress` previously only sent Tauri events, so the entire installation log lived in the wizard window and was gone once it closed; an installation was impossible to diagnose after the fact. Every progress line, including streamed Winetricks output, is now also written to `debug.log`. Repeating counters (bytes downloaded, seconds waited) route through a separate UI-only path so they don't drown the file.
+
+### Changed
+- **The downloadable runner list is sorted newest-first** — Entries were appended in GitHub's response order and never sorted, so the newest build was not reliably at the top. The list is now ordered by release publication date descending, with ties broken by a natural comparison of the release tag (a plain string comparison ranks `11.9-1` above `11.14-1`). Sorting is stable, so assets belonging to the same release keep their upstream order. A runner cache written before this change carries no publication date and is refetched once.
+- **The RSI Launcher installer now runs with the LUG DLL overrides** — `dxwebsetup.exe` and `dotNetFx45_Full_setup.exe` are disabled for the launcher setup, matching the LUG reference install, so the bundled redistributable sub-installers cannot stall the silent install.
+- **The `LIVE` directory is created after installation** — The RSI Launcher sometimes fails to create it, which then breaks the first game install. The LUG helper works around this the same way.
+- **PowerShell stays actionable once installed** — The row previously collapsed to a badge with no button. Refreshing PowerShell is the documented LUG remedy for the "dotnet48 required" prompt during launcher installs, so that action must remain reachable.
+
+### Fixed
+- **Prefix tool output only appeared after the operation had finished** — The log element was rendered only when the log already had content, but that render happened immediately after the log was cleared. Every streamed line was therefore appended to a DOM node that did not exist and was silently dropped, until the closing render dumped everything at once. Clicking a Winetricks action looked like nothing happened for minutes. The console is now present for the whole run and seeded with a first line.
+- **`install_powershell` passed a directory as `WINESERVER`** — The third value returned by `get_wine_paths` is the runner's `bin` directory, but it was bound as the `wineserver` binary. The `wineserver -k` call therefore tried to execute a directory and failed silently (its result was discarded), and Winetricks received `WINESERVER=<runner>/bin` instead of the executable.
+- **Winetricks repair actions no longer skip already-installed packages** — Without `-f`, Winetricks prints `<verb> already installed, skipping` and exits successfully, so a repair action would have done nothing on exactly the prefixes that needed it.
+- **Runner usage badges appeared in English in the German UI** — `badge.usedByProfileOne`, `badge.usedByProfileMany` and `badge.fallback` were missing from both locale files and only worked through their inline fallback text.
+
+### Build
+- **138 backend tests passing** (12 new: natural version comparison, runner sort order including stability and undated entries, layout detection, recursive directory size), `cargo clippy --tests --all-targets -- -D warnings` clean on Rust stable 1.97.
+
 ## [0.5.13] - 2026-07-26
 
 ### Fixed
