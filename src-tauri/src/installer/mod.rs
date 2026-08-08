@@ -89,10 +89,33 @@ pub struct InstallationStatus {
     pub message: String,
 }
 
-/// Sends a progress message as an event to the frontend.
-/// The frontend receives these via the "install-progress" event listener
-/// and uses them to update the progress bar and log output.
+/// Sends a progress message as an event to the frontend and records it in the
+/// debug log.
+///
+/// The frontend receives these via the "install-progress" event listener and
+/// uses them to update the progress bar and log output. That view is gone the
+/// moment the window closes, so the same line also goes to `debug.log` — an
+/// installation is otherwise impossible to diagnose after the fact. The LUG
+/// helper keeps a full install log for the same reason.
+///
+/// Use [`emit_progress_tick`] for messages that repeat every few hundred
+/// milliseconds; those are UI-only and would drown the log.
 pub(crate) fn emit_progress(app: &AppHandle, phase: &str, step: &str, percent: f64, log_line: &str) {
+    log::info!("[install:{}] {}", phase, log_line);
+    emit_progress_tick(app, phase, step, percent, log_line);
+}
+
+/// Sends a progress message to the frontend **without** logging it.
+///
+/// For repeating counters (bytes downloaded, seconds waited) whose content is
+/// already implied by the surrounding log lines and their timestamps.
+pub(crate) fn emit_progress_tick(
+    app: &AppHandle,
+    phase: &str,
+    step: &str,
+    percent: f64,
+    log_line: &str
+) {
     let _ = app.emit("install-progress", InstallProgress {
         phase: phase.to_string(),
         step: step.to_string(),

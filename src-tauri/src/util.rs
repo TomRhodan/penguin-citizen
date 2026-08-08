@@ -580,6 +580,37 @@ pub(crate) fn safe_unpack<R: io::Read>(archive: &mut tar::Archive<R>, dst: &Path
     Ok(())
 }
 
+/// Recursively sums the size of all regular files below `dir`.
+///
+/// Symlinks are not followed (their own size is ignored) so a runner that
+/// links into the host system cannot inflate the number or cause a cycle.
+/// Unreadable entries are skipped rather than aborting the walk - a partial
+/// size is more useful here than an error.
+pub(crate) fn dir_size(dir: &Path) -> u64 {
+    let mut total: u64 = 0;
+    let mut stack = vec![dir.to_path_buf()];
+
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            // DirEntry::metadata does not traverse symlinks, so links are
+            // classified as neither dir nor file and simply skipped.
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                total = total.saturating_add(meta.len());
+            }
+        }
+    }
+
+    total
+}
+
 pub(crate) fn validate_env_var_key(key: &str) -> Result<(), String> {
     if key.is_empty() { return Err("Empty".to_string()); }
     if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { return Err("Invalid".to_string()); }
@@ -671,6 +702,40 @@ mod tests {
             assert_eq!(validate_env_var_key(key).unwrap_err(), "Blocked",
                        "{} should be blocked", key);
         }
+    }
+
+    // ── dir_size ──
+
+    #[test]
+    fn dir_size_sums_nested_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        std::fs::write(root.join("a.bin"), vec![0u8; 100]).unwrap();
+        std::fs::create_dir_all(root.join("sub/deeper")).unwrap();
+        std::fs::write(root.join("sub/b.bin"), vec![0u8; 250]).unwrap();
+        std::fs::write(root.join("sub/deeper/c.bin"), vec![0u8; 7]).unwrap();
+
+        assert_eq!(dir_size(root), 357);
+    }
+
+    #[test]
+    fn dir_size_empty_and_missing_dirs_are_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(dir_size(tmp.path()), 0);
+        assert_eq!(dir_size(&tmp.path().join("does-not-exist")), 0);
+    }
+
+    #[test]
+    fn dir_size_ignores_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        std::fs::write(root.join("real.bin"), vec![0u8; 40]).unwrap();
+        std::os::unix::fs::symlink(root.join("real.bin"), root.join("link.bin")).unwrap();
+
+        // Only the real file counts - the symlink must not be counted twice.
+        assert_eq!(dir_size(root), 40);
     }
 
     // ── safe_unpack ──

@@ -1155,7 +1155,7 @@ function renderAvailableRunnersList() {
       </div>
       ${r.installed
         ? `<span class="runner-installed-badge">${t('installation:runner.installedBadge')}</span>`
-        : `<button class="btn btn-sm btn-install" data-url="${escapeHtml(r.download_url)}" data-file="${escapeHtml(r.file_name)}" data-name="${escapeHtml(r.name)}">${t('installation:button.install')}</button>`
+        : `<button class="btn btn-sm btn-install" data-url="${escapeHtml(r.download_url)}" data-file="${escapeHtml(r.file_name)}" data-name="${escapeHtml(r.name)}" data-source="${escapeHtml(r.source)}" data-version="${escapeHtml(r.version || '')}">${t('installation:button.install')}</button>`
       }
     </div>
   `).join('');
@@ -1163,7 +1163,7 @@ function renderAvailableRunnersList() {
   // Bind install button listeners for each runner
   list.querySelectorAll('.btn-install').forEach(btn => {
     btn.addEventListener('click', () => {
-      installRunner(btn.dataset.url, btn.dataset.file, btn.dataset.name);
+      installRunner(btn.dataset);
     });
   });
 }
@@ -1173,13 +1173,14 @@ function renderAvailableRunnersList() {
  * Similar to runners.js, but with automatic selection of the
  * newly installed runner if none is selected yet.
  *
- * @param {string} downloadUrl - Download URL of the runner archive
- * @param {string} fileName - File name of the archive
- * @param {string} displayName - Display name of the runner
+ * @param {{url: string, file: string, name: string, source: string, version: string}} runner
+ *   Dataset of the clicked install button
  */
-async function installRunner(downloadUrl, fileName, displayName) {
+async function installRunner(runner) {
   if (isInstallingRunner) return;
   isInstallingRunner = true;
+
+  const { url: downloadUrl, file: fileName, name: displayName } = runner;
 
   // Show progress overlay
   const overlay = document.getElementById('runner-install-overlay');
@@ -1225,10 +1226,14 @@ async function installRunner(downloadUrl, fileName, displayName) {
   }
 
   try {
+    // source/version are recorded in the runner directory so the runners page
+    // can show where the build came from later on
     await invoke('install_runner', {
       downloadUrl,
       fileName,
       basePath: configState.installPath,
+      source: runner.source || null,
+      version: runner.version || null,
     });
   } catch (err) {
     if (statusEl) statusEl.textContent = t('installation:status.installError', { error: String(err) });

@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use tauri::{ AppHandle, Emitter };
 
 use super::{
-    configure_wine_env, emit_progress, is_cancelled, stream_command_output,
+    configure_wine_env, emit_progress, emit_progress_tick, is_cancelled, stream_command_output,
     GAME_PID, INSTALL_CANCEL,
 };
 
@@ -556,7 +556,9 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
                     } else {
                         format!("Downloading... {:.1} MB", (downloaded as f64) / 1_048_576.0)
                     };
-                    emit_progress(
+                    // Tick: repeats twice a second, the byte counter adds
+                    // nothing to a post-mortem log
+                    emit_progress_tick(
                         &app,
                         "download",
                         "Downloading RSI Launcher...",
@@ -607,11 +609,19 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         // try_wait() with timeout is used because the NSIS process may not
         // exit until the RSI Launcher it spawned exits
         // (Wine keeps the parent process alive).
+        //
+        // dxwebsetup.exe and dotNetFx45_Full_setup.exe are the redistributable
+        // sub-installers bundled inside the launcher setup. Disabling them
+        // matches the LUG reference install (`lug-helper.sh`), which stops them
+        // from running under Wine where they only stall the silent install.
         let mut install_child = Command::new(wine.to_string_lossy().as_ref())
             .arg(installer_path.to_string_lossy().as_ref())
             .arg("/S")
             .env("WINEPREFIX", &install_path)
-            .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
+            .env(
+                "WINEDLLOVERRIDES",
+                "dxwebsetup.exe,dotNetFx45_Full_setup.exe,winemenubuilder.exe=d;winedbg.exe=d"
+            )
             .env("WINEDEBUG", "-all")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -688,7 +698,9 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
 
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     let elapsed = install_start.elapsed().as_secs();
-                    emit_progress(
+                    // Tick: one per second, and the wait duration is already
+                    // visible from the surrounding log timestamps
+                    emit_progress_tick(
                         &app,
                         "install",
                         "Installing RSI Launcher...",
@@ -735,6 +747,19 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
 
         // Give wineserver a moment to shut down all processes
         std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // The RSI Launcher sometimes fails to create its LIVE directory, which
+        // then breaks the first game install. The LUG reference install works
+        // around this the same way (`mkdir -p "${game_path}/LIVE"`).
+        let live_dir = Path::new(&install_path)
+            .join("drive_c")
+            .join("Program Files")
+            .join("Roberts Space Industries")
+            .join("StarCitizen")
+            .join("LIVE");
+        if let Err(e) = std::fs::create_dir_all(&live_dir) {
+            log::warn!("Could not create LIVE directory {}: {}", live_dir.display(), e);
+        }
 
         emit_progress(
             &app,

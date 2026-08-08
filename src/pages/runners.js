@@ -36,7 +36,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { escapeHtml } from '../utils.js';
-import { t } from '../i18n.js';
+import { t, getCurrentLanguage } from '../i18n.js';
 import { prompt as customPrompt, showNotification } from '../utils/dialogs.js';
 import { logError } from '../utils/error-handler.js';
 
@@ -52,6 +52,44 @@ function sortSources(sources) {
   const lugSources = sources.filter(s => s.includes('LUG')).sort((a, b) => a.length - b.length);
   const otherSources = sources.filter(s => !s.includes('LUG')).sort();
   return [...lugSources, ...otherSources];
+}
+
+/**
+ * Winetricks repair actions offered as one-click buttons.
+ *
+ * Every entry comes from the Star Citizen LUG sources, not from a generic
+ * Windows-gaming verb list. `id` must stay in sync with `WINETRICKS_ACTIONS`
+ * in `src-tauri/src/prefix_tools.rs`, which rejects anything outside that set.
+ * `verbs` is only used to recognise an action as already installed from the
+ * prefix's winetricks log.
+ *
+ * DXVK is deliberately not offered here - it has its own card with a version
+ * picker, and a winetricks run would silently replace it.
+ *
+ * @type {{id: string, verbs: string[]}[]}
+ */
+const WINETRICKS_ACTIONS = [
+  { id: 'vcrun2022', verbs: ['vcrun2022'] },
+  { id: 'fonts', verbs: ['arial', 'tahoma'] },
+  { id: 'win11', verbs: ['win11'] },
+];
+
+/**
+ * Checks whether the cached runner list is still usable.
+ *
+ * Besides the 1-hour TTL, a cache written before the backend started sorting
+ * by release date is rejected: it carries no `published_at`, so keeping it
+ * would leave the download list in the old, unsorted order until it expired.
+ *
+ * @param {{runners: Array, cached_at: number}} cache - The runner cache
+ * @returns {boolean} True if the cache can be displayed as-is
+ */
+function isRunnerCacheUsable(cache) {
+  if (!cache || !cache.runners || cache.runners.length === 0) return false;
+  const cacheAge = Date.now() / 1000 - (cache.cached_at || 0);
+  if (cacheAge >= 3600) return false;
+  // Pre-sorting cache format: no entry carries a release date
+  return cache.runners.some(r => r.published_at);
 }
 
 // --- State variables ---
@@ -96,6 +134,24 @@ let isRunningPrefixTool = false;
 let unlistenPrefixLog = null;
 /** @type {boolean} Whether PowerShell is installed in the Wine prefix */
 let powershellInstalled = false;
+/**
+ * Runner the prefix tools operate on. Defaults to the active runner but can be
+ * switched independently - changing it never touches the launch profiles.
+ * @type {string}
+ */
+let toolsRunnerName = '';
+/** @type {Object<string, Object>} Extra info per installed runner, keyed by name */
+let runnerDetails = {};
+/** @type {string[]} Winetricks verbs already installed in the prefix */
+let installedVerbs = [];
+/**
+ * The prefix tool operation currently running, or the last one that finished.
+ * Drives the console panel: what is running, since when, and how it ended.
+ * @type {{label: string, status: 'running'|'success'|'error', startedAt: number, endedAt: number|null}|null}
+ */
+let prefixToolActivity = null;
+/** @type {number|null} Interval id of the elapsed-time ticker */
+let prefixToolTicker = null;
 
 /** @type {{installed: boolean, available: boolean, dxvk: boolean, dxvkReleases: boolean, dpi: boolean}} Tracks which sections are still loading */
 let loadingFlags = { installed: true, available: true, dxvk: true, dxvkReleases: true, dpi: true };
@@ -123,6 +179,7 @@ export function cleanupRunners() {
   if (unlistenRunnerProgress) { unlistenRunnerProgress(); unlistenRunnerProgress = null; }
   if (unlistenDxvkProgress) { unlistenDxvkProgress(); unlistenDxvkProgress = null; }
   if (unlistenPrefixLog) { unlistenPrefixLog(); unlistenPrefixLog = null; }
+  stopPrefixToolTicker();
 }
 
 export function renderRunners(container) {
@@ -134,6 +191,12 @@ export function renderRunners(container) {
   dxvkReleases = [];
   dxvkStatus = null;
   currentDpi = 96;
+  toolsRunnerName = '';
+  runnerDetails = {};
+  installedVerbs = [];
+  prefixToolActivity = null;
+  prefixToolLog = [];
+  stopPrefixToolTicker();
   loadingFlags = { installed: true, available: true, dxvk: true, dxvkReleases: true, dpi: true };
   activeContainer = container;
 
@@ -181,19 +244,19 @@ function loadData(container) {
       return;
     }
 
-    // Use cache data if less than 1 hour (3600s) old
+    // Use cache data if it is fresh and in the current format
     // The "installed" flags will be synchronized later after scan_runners
-    const cacheAge = Date.now() / 1000 - (runnerCache.cached_at || 0);
+    const runnerCacheUsable = isRunnerCacheUsable(runnerCache);
     const dxvkCacheAge = Date.now() / 1000 - (dxvkCache.cached_at || 0);
 
     // Populate runner sources from config or cache
     if (cfg && cfg.runner_sources && cfg.runner_sources.length > 0) {
       availableSources = sortSources(cfg.runner_sources.map(s => s.name));
-      if (runnerCache.runners && runnerCache.runners.length > 0 && cacheAge < 3600) {
+      if (runnerCacheUsable) {
         availableRunners = runnerCache.runners.map(r => ({ ...r, installed: false }));
         loadingFlags.available = false;
       }
-    } else if (runnerCache.runners && runnerCache.runners.length > 0 && cacheAge < 3600) {
+    } else if (runnerCacheUsable) {
       // Fallback: Extract sources from cached runners
       availableRunners = runnerCache.runners.map(r => ({ ...r, installed: false }));
       const sources = [...new Set(availableRunners.map(r => r.source))].sort();
@@ -231,10 +294,8 @@ function loadData(container) {
  * @param {boolean} forceRefresh - Forces a re-fetch even if the cache is current
  */
 function syncAvailableRunners(container, forceRefresh) {
-  const cacheAge = Date.now() / 1000 - (runnerCache.cached_at || 0);
-
-  // Only fetch from GitHub if cache is empty, expired, or refresh is forced
-  if (forceRefresh || !runnerCache.runners || runnerCache.runners.length === 0 || cacheAge >= 3600) {
+  // Only fetch from GitHub if the cache is unusable or a refresh is forced
+  if (forceRefresh || !isRunnerCacheUsable(runnerCache)) {
     invoke('fetch_available_runners', { basePath: config.install_path }).then(result => {
       if (activeContainer !== container) return;
       availableRunners = result.runners || [];
@@ -342,6 +403,7 @@ function fireDataFetches(container, forceRefresh = false) {
     if (activeContainer !== container) return;
     installedRunners = result.runners || [];
     loadingFlags.installed = false;
+    syncToolsRunner(container);
 
     // Re-enable refresh button
     const refreshInstalledBtn = document.getElementById('btn-refresh-installed');
@@ -367,6 +429,8 @@ function fireDataFetches(container, forceRefresh = false) {
   }).catch(err => {
     logError(err, 'runners:scan_runners');
     loadingFlags.installed = false;
+    // Still resolve the tools section, otherwise it keeps spinning forever
+    syncToolsRunner(container);
 
     const refreshInstalledBtn = document.getElementById('btn-refresh-installed');
     if (refreshInstalledBtn) {
@@ -425,31 +489,59 @@ function fireDataFetches(container, forceRefresh = false) {
     bindDxvkEvents(container);
   }
 
-  // Only load DPI setting and PowerShell status if a runner is selected
+  // Collect size / install date / wine version / origin for the installed
+  // runners. Deliberately separate from scan_runners: this walks every runner
+  // directory and runs `wine --version`, so it must not slow down the other
+  // pages that only need the names. Results are patched in when they arrive.
+  refreshRunnerDetails(container);
+
+  // PowerShell lives in the prefix, not in a runner, so this runs regardless
+  // of which runner is active. Optional - errors are ignored.
+  invoke('detect_powershell', { basePath: config.install_path }).then(result => {
+    if (activeContainer !== container) return;
+    powershellInstalled = result;
+    refreshPrefixTools(container);
+  }).catch(err => logError(err, 'runners:detect_powershell'));
+
+  // Which winetricks verbs are already present, so their buttons show it
+  refreshInstalledVerbs().then(() => {
+    if (activeContainer !== container) return;
+    refreshPrefixTools(container);
+  });
+
+  // DPI is read per runner, so it needs an active runner
   if (config.launch_working_state.runner_name) {
     invoke('get_dpi', { basePath: config.install_path, runnerName: config.launch_working_state.runner_name }).then(result => {
       if (activeContainer !== container) return;
       currentDpi = result || 96;
       loadingFlags.dpi = false;
-      patchSection('prefix-tools-slot', renderPrefixToolsContent());
-      bindPrefixToolEvents(container);
+      refreshPrefixTools(container);
     }).catch(err => {
       logError(err, 'runners:get_dpi');
       loadingFlags.dpi = false;
-      patchSection('prefix-tools-slot', renderPrefixToolsContent());
-      bindPrefixToolEvents(container);
+      refreshPrefixTools(container);
     });
-
-    // PowerShell detection is optional - errors are ignored
-    invoke('detect_powershell', { basePath: config.install_path }).then(result => {
-      if (activeContainer !== container) return;
-      powershellInstalled = result;
-      patchSection('prefix-tools-slot', renderPrefixToolsContent());
-      bindPrefixToolEvents(container);
-    }).catch(err => logError(err, 'runners:detect_powershell'));
   } else {
     loadingFlags.dpi = false;
   }
+}
+
+/**
+ * Keeps the prefix tool runner selection in sync with what is actually installed.
+ *
+ * Called after every runner scan: picks the active runner on first load and
+ * falls back to the first installed runner if the current selection vanished
+ * (e.g. it was just deleted).
+ *
+ * @param {HTMLElement} container - The container element
+ */
+function syncToolsRunner(container) {
+  const names = installedRunners.map(r => r.name);
+  if (toolsRunnerName && names.includes(toolsRunnerName)) return;
+
+  const active = config?.launch_working_state?.runner_name;
+  toolsRunnerName = names.includes(active) ? active : (names[0] || '');
+  refreshPrefixTools(container);
 }
 
 // --- DOM Patching ---
@@ -507,7 +599,6 @@ function renderNoConfig(container) {
  * @param {HTMLElement} container - The container element
  */
 function renderPageSkeleton(container) {
-  const hasRunner = !!config.launch_working_state.runner_name;
   const hasPrefix = !!config.install_path;
   const spinner = `<div class="runners-loading-state"><div class="runners-loading-spinner"></div><span>${t('runners:status.loading')}</span></div>`;
 
@@ -583,13 +674,13 @@ function renderPageSkeleton(container) {
         }
       </div>
 
-      <!-- Prefix tools: Winecfg, Wine Shell, PowerShell -->
+      <!-- Prefix tools: Winecfg, Wine Shell, Winetricks, PowerShell -->
       <div class="card">
         <h3 data-tooltip="${t('runners:tooltip.prefixTools')}" data-tooltip-pos="right">${t('runners:section.prefixTools')}</h3>
         <div id="prefix-tools-slot">
-          ${hasRunner && hasPrefix
+          ${hasPrefix
             ? spinner
-            : `<div class="runners-guard-notice-inline">${!hasRunner ? t('runners:notification.selectRunnerFirst') : t('runners:notification.runInstallationPrefix')}</div>`
+            : `<div class="runners-guard-notice-inline">${t('runners:notification.runInstallationPrefix')}</div>`
           }
         </div>
       </div>
@@ -646,6 +737,55 @@ function renderRunnerUsageBadges(runnerName) {
   return badges.join(' ');
 }
 
+/**
+ * Renders the detail line below a runner name: size on disk, install date,
+ * wine version and origin. Returns an empty string until `get_runner_details`
+ * has delivered the data, and silently omits values that are unavailable
+ * (e.g. the origin of a runner installed before provenance was recorded).
+ *
+ * @param {string} runnerName - Name of the installed runner
+ * @returns {string} HTML string, or empty string if nothing is known yet
+ */
+function renderRunnerDetailLine(runnerName) {
+  const d = runnerDetails[runnerName];
+  if (!d) return '';
+
+  const parts = [];
+
+  if (d.size_bytes > 0) {
+    parts.push(`<span class="installed-runner-detail">${formatSize(d.size_bytes)}</span>`);
+  }
+  if (d.wine_version) {
+    parts.push(`<span class="installed-runner-detail">${escapeHtml(d.wine_version)}</span>`);
+  }
+  if (d.installed_at) {
+    parts.push(`<span class="installed-runner-detail">${t('runners:label.installedAt', {
+      date: formatDate(d.installed_at),
+    })}</span>`);
+  }
+  if (d.source) {
+    parts.push(`<span class="runner-source-badge">${escapeHtml(d.source)}</span>`);
+  }
+  if (d.layout && d.layout !== 'wine') {
+    parts.push(`<span class="runner-source-badge">${escapeHtml(d.layout)}</span>`);
+  }
+
+  if (parts.length === 0) return '';
+  return `<div class="installed-runner-meta">${parts.join('')}</div>`;
+}
+
+/**
+ * Returns the install path of a runner as a `data-tooltip` attribute,
+ * or an empty string while the details are still loading.
+ *
+ * @param {string} runnerName - Name of the installed runner
+ * @returns {string} Attribute string ready for inlining into a tag
+ */
+function runnerPathTooltip(runnerName) {
+  const path = runnerDetails[runnerName]?.install_path;
+  return path ? ` data-tooltip="${escapeHtml(path)}"` : '';
+}
+
 function renderInstalledRunnersContent() {
   if (installedRunners.length === 0) {
     return `<div class="runner-empty-notice">${t('runners:notification.noRunnersInstalled')}</div>`;
@@ -661,11 +801,12 @@ function renderInstalledRunnersContent() {
     activeHtml = `
       <div class="active-runner-display">
         <div class="active-runner-label">${t('runners:label.activeRunner')}</div>
-        <div class="active-runner-name">
+        <div class="active-runner-name"${runnerPathTooltip(activeRunner.name)}>
           <span class="installed-runner-indicator active"></span>
           ${escapeHtml(activeRunner.name)}
           ${renderRunnerUsageBadges(activeRunner.name)}
         </div>
+        ${renderRunnerDetailLine(activeRunner.name)}
       </div>
     `;
   } else {
@@ -696,9 +837,12 @@ function renderInstalledRunnersContent() {
         ${otherRunners.map(r => `
           <div class="installed-runner-item">
             <div class="installed-runner-info">
-              <span class="installed-runner-indicator"></span>
-              <span class="installed-runner-name">${escapeHtml(r.name)}</span>
-              ${renderRunnerUsageBadges(r.name)}
+              <div class="installed-runner-title">
+                <span class="installed-runner-indicator"></span>
+                <span class="installed-runner-name"${runnerPathTooltip(r.name)}>${escapeHtml(r.name)}</span>
+                ${renderRunnerUsageBadges(r.name)}
+              </div>
+              ${renderRunnerDetailLine(r.name)}
             </div>
             <div class="installed-runner-actions">
               <button class="btn-sm btn-select-runner" data-name="${escapeHtml(r.name)}" ${isActivatingRunner ? 'disabled' : ''}>${t('runners:button.select')}</button>
@@ -744,11 +888,12 @@ function renderDownloadRunnersContent() {
               <span class="runner-item-meta">
                 <span class="runner-source-badge">${escapeHtml(r.source)}</span>
                 <span class="runner-item-size">${formatSize(r.size_bytes)}</span>
+                ${r.published_at ? `<span class="runner-item-date">${formatDate(r.published_at)}</span>` : ''}
               </span>
             </div>
             ${r.installed
               ? `<span class="runner-installed-badge">${t('runners:badge.installed')}</span>`
-              : `<button class="btn-sm btn-install" data-url="${escapeHtml(r.download_url)}" data-file="${escapeHtml(r.file_name)}" data-name="${escapeHtml(r.name)}">${t('runners:button.install')}</button>`
+              : `<button class="btn-sm btn-install" data-url="${escapeHtml(r.download_url)}" data-file="${escapeHtml(r.file_name)}" data-name="${escapeHtml(r.name)}" data-source="${escapeHtml(r.source)}" data-version="${escapeHtml(r.version || '')}">${t('runners:button.install')}</button>`
             }
           </div>
         `).join('')}
@@ -815,36 +960,53 @@ function renderDxvkReleasesContent() {
 
 /**
  * Renders the content of the "Prefix Tools" section.
- * Shows Winecfg launcher, Wine Shell, and PowerShell installation option.
- * If no runner is selected or no prefix exists,
- * a notice is displayed instead.
+ *
+ * Starts with a target header that makes explicit which prefix and which
+ * runner the tools operate on: the app has exactly one Wine prefix (it *is*
+ * the installation path), so only the runner is actually selectable.
+ * Below that: Winecfg, Wine Shell, Winetricks (GUI + quick verbs) and the
+ * PowerShell installation.
  *
  * @returns {string} HTML string for the section
  */
 function renderPrefixToolsContent() {
-  const hasRunner = !!config.launch_working_state.runner_name;
-
-  // Guard clause: Tools cannot be used without a runner or prefix
-  if (!config.launch_working_state.runner_name || !config.install_path) {
-    const msg = !config.launch_working_state.runner_name
-      ? t('runners:notification.selectRunnerFirst')
-      : t('runners:notification.runInstallationPrefix');
-    return `<div class="runners-guard-notice-inline">${msg}</div>`;
+  // Guard clauses: no prefix at all, or no runner installed to run tools with
+  if (!config.install_path) {
+    return `<div class="runners-guard-notice-inline">${t('runners:notification.runInstallationPrefix')}</div>`;
+  }
+  if (installedRunners.length === 0) {
+    return `<div class="runners-guard-notice-inline">${t('runners:notification.noRunnersInstalled')}</div>`;
   }
 
-  // Log output for running or completed prefix tool operations
-  const logHtml = prefixToolLog.length > 0
-    ? `<div class="prefix-tool-log" id="prefix-tool-log"><code>${escapeHtml(prefixToolLog.join('\n'))}</code></div>`
-    : '';
+  const busy = isRunningPrefixTool ? 'disabled' : '';
 
   return `
+    <!-- Target header: which prefix and which runner the tools act on -->
+    <div class="prefix-tool-target">
+      <div class="prefix-tool-target-row">
+        <span class="prefix-tool-target-label">${t('runners:label.prefixPath')}</span>
+        <span class="prefix-tool-target-path" data-tooltip="${escapeHtml(config.install_path)}">${escapeHtml(config.install_path)}</span>
+      </div>
+      <div class="prefix-tool-target-row">
+        <label class="prefix-tool-target-label" for="tools-runner-select">${t('runners:label.toolsRunner')}</label>
+        <select id="tools-runner-select" class="input input-sm" ${busy}>
+          ${installedRunners.map(r => `
+            <option value="${escapeHtml(r.name)}"${r.name === toolsRunnerName ? ' selected' : ''}>${escapeHtml(r.name)}</option>
+          `).join('')}
+        </select>
+      </div>
+      <p class="prefix-tool-target-hint">${t('runners:desc.toolsRunnerHint')}</p>
+    </div>
+
+    <div class="prefix-tool-divider"></div>
+
     <!-- Winecfg: Opens the Wine configuration window -->
     <div class="prefix-tool-row">
       <div class="prefix-tool-info">
         <span class="prefix-tool-name">${t('runners:label.winecfg')}</span>
         <span class="prefix-tool-hint">${t('runners:desc.winecfg')}</span>
       </div>
-      <button class="btn-sm btn-install" id="btn-winecfg">${t('runners:button.launch')}</button>
+      <button class="btn-sm btn-install" id="btn-winecfg" ${busy}>${t('runners:button.launch')}</button>
     </div>
 
     <div class="prefix-tool-divider"></div>
@@ -855,28 +1017,131 @@ function renderPrefixToolsContent() {
         <span class="prefix-tool-name">${t('runners:label.wineShell')}</span>
         <span class="prefix-tool-hint">${t('runners:desc.wineShell')}</span>
       </div>
-      <button class="btn-sm btn-install" id="btn-wine-shell" ${!hasRunner || isRunningPrefixTool ? 'disabled' : ''}>
+      <button class="btn-sm btn-install" id="btn-wine-shell" ${busy}>
         ${isRunningPrefixTool ? t('runners:status.starting') : t('runners:button.launch')}
       </button>
     </div>
 
     <div class="prefix-tool-divider"></div>
 
-    <!-- PowerShell: Install via Winetricks (takes several minutes) -->
+    <!-- Winetricks: GUI plus one-click buttons for the most common verbs -->
+    <div class="prefix-tool-row">
+      <div class="prefix-tool-info">
+        <span class="prefix-tool-name">${t('runners:label.winetricks')}</span>
+        <span class="prefix-tool-hint">${t('runners:desc.winetricks')}</span>
+      </div>
+      <button class="btn-sm btn-install" id="btn-winetricks" ${busy}>${t('runners:button.openGui')}</button>
+    </div>
+    <div class="prefix-tool-verbs">
+      <div class="prefix-tool-verbs-head">
+        <span class="prefix-tool-verbs-label">${t('runners:label.quickVerbs')}</span>
+        <span class="prefix-tool-verbs-hint">${t('runners:desc.quickVerbs')}</span>
+      </div>
+      <div class="prefix-tool-verbs-row">
+        ${WINETRICKS_ACTIONS.map(renderVerbButton).join('')}
+      </div>
+    </div>
+
+    <div class="prefix-tool-divider"></div>
+
+    <!-- PowerShell: Install/refresh via Winetricks (takes several minutes).
+         Stays actionable once installed: refreshing it is the documented LUG
+         remedy for the "dotnet48 required" prompt during launcher installs. -->
     <div class="prefix-tool-row">
       <div class="prefix-tool-info">
         <span class="prefix-tool-name">${t('runners:label.powershell')}</span>
         <span class="prefix-tool-hint">${powershellInstalled ? t('runners:desc.powershellInstalled') : t('runners:desc.powershellNotInstalled')}</span>
       </div>
-      ${powershellInstalled
-        ? `<span class="runner-installed-badge">${t('runners:badge.installed')}</span>`
-        : `<button class="btn-sm btn-install" id="btn-install-powershell" ${isRunningPrefixTool ? 'disabled' : ''}>
-            ${isRunningPrefixTool ? t('runners:status.installing') : t('runners:button.install')}
-          </button>`
-      }
+      <div class="prefix-tool-actions">
+        ${powershellInstalled ? `<span class="runner-installed-badge">${t('runners:badge.installed')}</span>` : ''}
+        <button class="btn-sm btn-install" id="btn-install-powershell" ${busy}>
+          ${isRunningPrefixTool
+            ? t('runners:status.installing')
+            : (powershellInstalled ? t('runners:button.refreshPowershell') : t('runners:button.install'))}
+        </button>
+      </div>
     </div>
 
-    ${logHtml}
+    ${renderPrefixToolConsole()}
+  `;
+}
+
+/**
+ * Renders one Winetricks repair action.
+ *
+ * The button carries its own state so a click is never silent: the running
+ * action keeps its label but gains a spinner, actions whose verbs are already
+ * present in the prefix keep a check mark, and the rest step back.
+ *
+ * @param {{id: string, verbs: string[]}} action - The repair action
+ * @returns {string} HTML string for the button
+ */
+function renderVerbButton(action) {
+  const { id, verbs } = action;
+  const isRunning = isRunningPrefixTool && prefixToolActivity?.label === verbActionLabel(id);
+  // An action counts as done only when every verb it installs is present
+  const isInstalled = verbs.every(v => installedVerbs.includes(v));
+
+  const classes = ['btn-sm', 'btn-winetricks-verb'];
+  if (isRunning) classes.push('running');
+  if (isInstalled) classes.push('installed');
+
+  const mark = isRunning
+    ? '<span class="verb-spinner" aria-hidden="true"></span>'
+    : (isInstalled ? '<span class="verb-check" aria-hidden="true">✓</span>' : '');
+
+  return `
+    <button class="${classes.join(' ')}" data-verb="${id}"
+            data-tooltip="${escapeHtml(t(`runners:verb.${id}.tooltip`))}"
+            ${isRunningPrefixTool ? 'disabled' : ''}>
+      ${mark}<span class="verb-name">${escapeHtml(verbActionLabel(id))}</span>
+    </button>
+  `;
+}
+
+/**
+ * Display label of a repair action, e.g. "vcrun2022" or "Schriftarten".
+ *
+ * @param {string} id - The action id
+ * @returns {string} Localized label
+ */
+function verbActionLabel(id) {
+  return t(`runners:verb.${id}.label`);
+}
+
+/**
+ * Renders the console panel for prefix tool operations.
+ *
+ * This is the primary feedback surface for winetricks, which can sit silent
+ * for minutes while downloading. The status bar names what is running and
+ * counts elapsed time, so a quiet log never reads as a frozen app.
+ *
+ * @returns {string} HTML string, or empty string if nothing has run yet
+ */
+function renderPrefixToolConsole() {
+  if (!prefixToolActivity) return '';
+
+  const { label, status } = prefixToolActivity;
+  const statusText = {
+    running: t('runners:status.consoleRunning'),
+    success: t('runners:status.consoleSuccess'),
+    error: t('runners:status.consoleError'),
+  }[status];
+
+  const indicator = status === 'running'
+    ? '<span class="runners-loading-spinner console-spinner" aria-hidden="true"></span>'
+    : `<span class="console-dot ${status}" aria-hidden="true"></span>`;
+
+  return `
+    <div class="prefix-tool-console ${status}">
+      <div class="prefix-tool-console-bar">
+        ${indicator}
+        <span class="console-task">${escapeHtml(label)}</span>
+        <span class="console-status">${statusText}</span>
+        <span class="console-elapsed" id="prefix-tool-elapsed">${formatElapsed(prefixToolElapsedMs())}</span>
+      </div>
+      <div class="prefix-tool-log" id="prefix-tool-log" role="log"><code>${escapeHtml(prefixToolLog.join('\n'))}</code></div>
+    </div>
   `;
 }
 
@@ -996,7 +1261,7 @@ function bindDownloadRunnerEvents(container) {
 
   slot.querySelectorAll('.btn-install').forEach(btn => {
     btn.addEventListener('click', () => {
-      installRunner(btn.dataset.url, btn.dataset.file, btn.dataset.name, container);
+      installRunner(btn.dataset, container);
     });
   });
 }
@@ -1018,12 +1283,22 @@ function bindDxvkEvents(container) {
 }
 
 /**
- * Binds event listeners for prefix tools (Winecfg, Wine Shell, PowerShell).
- * Also scrolls the log window to the bottom.
+ * Binds event listeners for prefix tools (runner selector, Winecfg, Wine Shell,
+ * Winetricks, PowerShell). Also scrolls the log window to the bottom.
  *
  * @param {HTMLElement} container - The container element
  */
 function bindPrefixToolEvents(container) {
+  const slot = document.getElementById('prefix-tools-slot');
+
+  // Runner selector: pure UI state, deliberately not persisted to the config
+  const runnerSelect = document.getElementById('tools-runner-select');
+  if (runnerSelect) {
+    runnerSelect.addEventListener('change', () => {
+      toolsRunnerName = runnerSelect.value;
+    });
+  }
+
   const winecfgBtn = document.getElementById('btn-winecfg');
   if (winecfgBtn) {
     winecfgBtn.addEventListener('click', launchWinecfg);
@@ -1032,6 +1307,17 @@ function bindPrefixToolEvents(container) {
   const wineShellBtn = document.getElementById('btn-wine-shell');
   if (wineShellBtn) {
     wineShellBtn.addEventListener('click', () => launchWineShell(container));
+  }
+
+  const winetricksBtn = document.getElementById('btn-winetricks');
+  if (winetricksBtn) {
+    winetricksBtn.addEventListener('click', () => launchWinetricks(container));
+  }
+
+  if (slot) {
+    slot.querySelectorAll('.btn-winetricks-verb').forEach(btn => {
+      btn.addEventListener('click', () => runWinetricksVerb(btn.dataset.verb, container));
+    });
   }
 
   const psBtn = document.getElementById('btn-install-powershell');
@@ -1221,9 +1507,13 @@ async function deleteRunner(name, container) {
     availableRunners = availableRunners.map(r =>
       r.name === name ? { ...r, installed: false } : r
     );
+    delete runnerDetails[name];
   } catch (err) {
     console.error('Failed to delete runner:', err);
   }
+  // Fall back to another runner if the deleted one was selected for the tools
+  syncToolsRunner(container);
+
   // Update both sections
   patchSection('installed-runners-slot', renderInstalledRunnersContent());
   bindInstalledRunnerEvents(container);
@@ -1236,14 +1526,15 @@ async function deleteRunner(name, container) {
  * Shows a progress overlay with download percentage and extraction status.
  * Receives progress events via the Tauri event listener 'runner-download-progress'.
  *
- * @param {string} downloadUrl - Download URL of the runner archive
- * @param {string} fileName - File name of the archive
- * @param {string} displayName - Display name of the runner
+ * @param {{url: string, file: string, name: string, source: string, version: string}} runner
+ *   Dataset of the clicked install button
  * @param {HTMLElement} container - The container element
  */
-async function installRunner(downloadUrl, fileName, displayName, container) {
+async function installRunner(runner, container) {
   if (isInstallingRunner) return;
   isInstallingRunner = true;
+
+  const { url: downloadUrl, file: fileName, name: displayName } = runner;
 
   // Show and initialize progress overlay
   const overlay = document.getElementById('runner-install-overlay');
@@ -1289,7 +1580,15 @@ async function installRunner(downloadUrl, fileName, displayName, container) {
   } catch { /* listen failed */ }
 
   try {
-    await invoke('install_runner', { downloadUrl, fileName, basePath: config.install_path });
+    // source/version are recorded in the runner directory so the installed
+    // list can show where the build came from later on
+    await invoke('install_runner', {
+      downloadUrl,
+      fileName,
+      basePath: config.install_path,
+      source: runner.source || null,
+      version: runner.version || null,
+    });
   } catch (err) {
     if (statusEl) statusEl.textContent = t('runners:error.prefix', { message: err });
   }
@@ -1310,11 +1609,29 @@ async function installRunner(downloadUrl, fileName, displayName, container) {
     availableRunners = availableRunners.map(r => ({ ...r, installed: installedNames.has(r.name) }));
   } catch { /* ignore */ }
 
+  syncToolsRunner(container);
+  refreshRunnerDetails(container);
+
   // Update both lists
   patchSection('installed-runners-slot', renderInstalledRunnersContent());
   bindInstalledRunnerEvents(container);
   patchSection('download-runners-slot', renderDownloadRunnersContent());
   bindDownloadRunnerEvents(container);
+}
+
+/**
+ * Reloads the per-runner details (size, install date, wine version, origin)
+ * and patches the installed runners list once they arrive.
+ *
+ * @param {HTMLElement} container - The container element
+ */
+function refreshRunnerDetails(container) {
+  invoke('get_runner_details', { basePath: config.install_path }).then(details => {
+    if (activeContainer !== container) return;
+    runnerDetails = Object.fromEntries((details || []).map(d => [d.name, d]));
+    patchSection('installed-runners-slot', renderInstalledRunnersContent());
+    bindInstalledRunnerEvents(container);
+  }).catch(err => logError(err, 'runners:get_runner_details'));
 }
 
 /**
@@ -1386,16 +1703,35 @@ async function installDxvk(downloadUrl, version, container) {
 }
 
 /**
- * Launches the Winecfg window for the currently selected runner.
+ * Base arguments every prefix tool command needs: the single Wine prefix
+ * (which is the installation path) and the runner picked in the tools header.
+ *
+ * @returns {{basePath: string, runnerName: string}|null} Arguments, or null if unusable
+ */
+function prefixToolArgs() {
+  if (!config || !config.install_path || !toolsRunnerName) return null;
+  return { basePath: config.install_path, runnerName: toolsRunnerName };
+}
+
+/**
+ * Re-renders the prefix tools section and rebinds its event listeners.
+ *
+ * @param {HTMLElement} container - The container element
+ */
+function refreshPrefixTools(container) {
+  patchSection('prefix-tools-slot', renderPrefixToolsContent());
+  bindPrefixToolEvents(container);
+}
+
+/**
+ * Launches the Winecfg window for the runner selected in the tools header.
  * Winecfg is the standard configuration tool for Wine.
  */
 async function launchWinecfg() {
-  if (!config || !config.launch_working_state.runner_name) return;
+  const args = prefixToolArgs();
+  if (!args) return;
   try {
-    await invoke('run_winecfg', {
-      basePath: config.install_path,
-      runnerName: config.launch_working_state.runner_name,
-    });
+    await invoke('run_winecfg', args);
   } catch (err) {
     console.error('Failed to launch winecfg:', err);
   }
@@ -1408,23 +1744,42 @@ async function launchWinecfg() {
  * @param {HTMLElement} container - The container element
  */
 async function launchWineShell(container) {
-  if (!config || !config.launch_working_state.runner_name) return;
+  const args = prefixToolArgs();
+  if (!args) return;
   isRunningPrefixTool = true;
-  patchSection('prefix-tools-slot', renderPrefixToolsContent());
-  bindPrefixToolEvents(container);
+  refreshPrefixTools(container);
 
   try {
-    await invoke('launch_wine_shell', {
-      basePath: config.install_path,
-      runnerName: config.launch_working_state.runner_name,
-    });
+    await invoke('launch_wine_shell', args);
   } catch (err) {
     console.error('Failed to launch wine shell:', err);
     showNotification(t('runners:error.failedLaunchWineShell', { error: err }), 'error');
   } finally {
     isRunningPrefixTool = false;
-    patchSection('prefix-tools-slot', renderPrefixToolsContent());
-    bindPrefixToolEvents(container);
+    refreshPrefixTools(container);
+  }
+}
+
+/**
+ * Opens the graphical Winetricks menu for the selected runner and prefix.
+ * Winetricks runs detached, so the command returns as soon as its window is up.
+ *
+ * @param {HTMLElement} container - The container element
+ */
+async function launchWinetricks(container) {
+  const args = prefixToolArgs();
+  if (!args || isRunningPrefixTool) return;
+  isRunningPrefixTool = true;
+  refreshPrefixTools(container);
+
+  try {
+    await invoke('run_winetricks', args);
+  } catch (err) {
+    console.error('Failed to launch winetricks:', err);
+    showNotification(t('runners:error.winetricksFailed', { error: err }), 'error');
+  } finally {
+    isRunningPrefixTool = false;
+    refreshPrefixTools(container);
   }
 }
 
@@ -1435,34 +1790,39 @@ async function launchWineShell(container) {
  * @param {HTMLElement} container - The container element
  */
 async function setDpi(dpi, container) {
-  if (!config || !config.launch_working_state.runner_name) return;
+  const args = prefixToolArgs();
+  if (!args) return;
   try {
-    await invoke('set_dpi', {
-      basePath: config.install_path,
-      runnerName: config.launch_working_state.runner_name,
-      dpi,
-    });
+    await invoke('set_dpi', { ...args, dpi });
     currentDpi = dpi;
   } catch (err) {
     console.error('Failed to set DPI:', err);
   }
-  patchSection('prefix-tools-slot', renderPrefixToolsContent());
-  bindPrefixToolEvents(container);
+  refreshPrefixTools(container);
 }
 
 /**
- * Installs PowerShell via Winetricks in the Wine prefix.
- * This process takes several minutes. Progress is displayed via
- * Tauri events ('prefix-tool-log') in a log window.
+ * Runs a long prefix tool command while streaming its output into the log window.
  *
+ * Shared by the PowerShell installation and the Winetricks quick verbs: both
+ * take minutes and report progress via `prefix-tool-log` events.
+ *
+ * @param {string} command - Tauri command name to invoke
+ * @param {Object} extraArgs - Additional arguments merged into the base args
  * @param {HTMLElement} container - The container element
+ * @param {function(Error): string} errorMessage - Builds the log line for a failure
+ * @returns {Promise<boolean>} True if the command completed successfully
  */
-async function installPowershell(container) {
-  if (isRunningPrefixTool || !config || !config.launch_working_state.runner_name) return;
+async function runStreamingPrefixTool(command, extraArgs, container, errorMessage, taskLabel) {
+  const args = prefixToolArgs();
+  if (!args || isRunningPrefixTool) return false;
+
   isRunningPrefixTool = true;
-  prefixToolLog = [];
-  patchSection('prefix-tools-slot', renderPrefixToolsContent());
-  bindPrefixToolEvents(container);
+  // Seed the log so the console has content the moment it appears - an empty
+  // box would read as "nothing happened" during winetricks' silent phases.
+  prefixToolLog = [t('runners:status.consoleStarted', { task: taskLabel })];
+  startPrefixToolActivity(taskLabel);
+  refreshPrefixTools(container);
 
   if (unlistenPrefixLog) { unlistenPrefixLog(); unlistenPrefixLog = null; }
 
@@ -1475,25 +1835,146 @@ async function installPowershell(container) {
     });
   } catch { /* listen failed */ }
 
+  let success = false;
   try {
-    await invoke('install_powershell', {
-      basePath: config.install_path,
-      runnerName: config.launch_working_state.runner_name,
-    });
+    await invoke(command, { ...args, ...extraArgs });
     prefixToolLog.push(t('runners:status.done'));
-
-    // Update PowerShell status after installation
-    try {
-      powershellInstalled = await invoke('detect_powershell', { basePath: config.install_path });
-    } catch { /* ignore */ }
+    success = true;
   } catch (err) {
-    prefixToolLog.push(t('runners:error.powershellError', { error: err }));
+    prefixToolLog.push(errorMessage(err));
   }
 
   if (unlistenPrefixLog) { unlistenPrefixLog(); unlistenPrefixLog = null; }
   isRunningPrefixTool = false;
-  patchSection('prefix-tools-slot', renderPrefixToolsContent());
-  bindPrefixToolEvents(container);
+  endPrefixToolActivity(success);
+  return success;
+}
+
+// --- Prefix tool activity tracking ---
+
+/**
+ * Marks the start of a prefix tool operation and starts the elapsed-time ticker.
+ *
+ * @param {string} label - What is running, shown in the console status bar
+ */
+function startPrefixToolActivity(label) {
+  prefixToolActivity = { label, status: 'running', startedAt: Date.now(), endedAt: null };
+  stopPrefixToolTicker();
+  // Update only the elapsed field, so streaming log lines and scroll position
+  // survive - a full re-render every second would fight the user.
+  prefixToolTicker = setInterval(() => {
+    const el = document.getElementById('prefix-tool-elapsed');
+    if (el) el.textContent = formatElapsed(prefixToolElapsedMs());
+  }, 1000);
+}
+
+/**
+ * Marks the current operation as finished and freezes the elapsed time.
+ *
+ * @param {boolean} success - Whether the operation completed successfully
+ */
+function endPrefixToolActivity(success) {
+  stopPrefixToolTicker();
+  if (!prefixToolActivity) return;
+  prefixToolActivity.status = success ? 'success' : 'error';
+  prefixToolActivity.endedAt = Date.now();
+}
+
+/** Stops the elapsed-time ticker if one is running. */
+function stopPrefixToolTicker() {
+  if (prefixToolTicker !== null) {
+    clearInterval(prefixToolTicker);
+    prefixToolTicker = null;
+  }
+}
+
+/**
+ * Milliseconds the current operation has been running, or took in total.
+ *
+ * @returns {number} Elapsed milliseconds (0 if no operation is tracked)
+ */
+function prefixToolElapsedMs() {
+  if (!prefixToolActivity) return 0;
+  return (prefixToolActivity.endedAt ?? Date.now()) - prefixToolActivity.startedAt;
+}
+
+/**
+ * Formats a duration as mm:ss.
+ *
+ * @param {number} ms - Duration in milliseconds
+ * @returns {string} Formatted duration (e.g. "01:23")
+ */
+function formatElapsed(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = String(Math.floor(total / 60)).padStart(2, '0');
+  const seconds = String(total % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+/**
+ * Installs PowerShell via Winetricks in the Wine prefix.
+ * This process takes several minutes. Progress is displayed via
+ * Tauri events ('prefix-tool-log') in a log window.
+ *
+ * @param {HTMLElement} container - The container element
+ */
+async function installPowershell(container) {
+  const success = await runStreamingPrefixTool(
+    'install_powershell',
+    {},
+    container,
+    (err) => t('runners:error.powershellError', { error: err }),
+    t('runners:label.powershell')
+  );
+
+  // Update PowerShell status after a successful installation
+  if (success) {
+    try {
+      powershellInstalled = await invoke('detect_powershell', { basePath: config.install_path });
+    } catch { /* ignore */ }
+  }
+
+  refreshPrefixTools(container);
+}
+
+/**
+ * Installs a single Winetricks verb (e.g. "corefonts") in the Wine prefix.
+ * The backend only accepts verbs from the quick-verb allowlist.
+ *
+ * @param {string} verb - The Winetricks verb to install
+ * @param {HTMLElement} container - The container element
+ */
+async function runWinetricksVerb(actionId, container) {
+  if (!WINETRICKS_ACTIONS.some(a => a.id === actionId)) return;
+
+  const success = await runStreamingPrefixTool(
+    'run_winetricks_verb',
+    { verb: actionId },
+    container,
+    (err) => t('runners:error.winetricksFailed', { error: err }),
+    verbActionLabel(actionId)
+  );
+
+  // Re-read the winetricks log so the verb keeps a check mark from now on
+  if (success) {
+    await refreshInstalledVerbs();
+  }
+
+  refreshPrefixTools(container);
+}
+
+/**
+ * Reloads the list of Winetricks verbs already installed in the prefix.
+ * Optional - a failure just means no check marks are shown.
+ *
+ * @returns {Promise<void>}
+ */
+async function refreshInstalledVerbs() {
+  try {
+    installedVerbs = await invoke('detect_winetricks_verbs', { basePath: config.install_path });
+  } catch (err) {
+    logError(err, 'runners:detect_winetricks_verbs');
+  }
 }
 
 /**
@@ -1546,6 +2027,18 @@ function formatCacheTime(timestamp) {
   if (!timestamp) return t('runners:label.cachedNever');
   const date = new Date(timestamp * 1000);
   return date.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/**
+ * Formats an RFC 3339 timestamp as a short date in the current UI language.
+ *
+ * @param {string} isoString - RFC 3339 timestamp (e.g. "2026-03-20T10:00:00Z")
+ * @returns {string} Localized short date, or an empty string if unparseable
+ */
+function formatDate(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(getCurrentLanguage(), { dateStyle: 'medium' });
 }
 
 

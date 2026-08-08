@@ -529,6 +529,12 @@ pub struct CachedRunner {
     pub file_name: String,
     /// File size in bytes - used for the download progress indicator
     pub size_bytes: u64,
+    /// Publication timestamp of the GitHub release (ISO-8601).
+    /// Preserves the sort order across cache reloads. Absent in caches
+    /// written before this field existed - the frontend treats such a
+    /// cache as stale and refetches once.
+    #[serde(default)]
+    pub published_at: Option<String>,
 }
 
 /// Cached information about an available DXVK release.

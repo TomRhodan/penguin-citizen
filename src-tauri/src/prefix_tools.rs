@@ -53,6 +53,17 @@ fn get_wine_paths(
     Ok((prefix.to_path_buf(), wine, runner_bin))
 }
 
+/// Checks whether a command is available on the host system.
+///
+/// AppImage sandboxes modify PATH/LD_LIBRARY_PATH, so the environment is
+/// cleaned first for `which` to find host system binaries.
+fn has_command(name: &str) -> bool {
+    let mut cmd = Command::new("which");
+    cmd.arg(name);
+    clean_appimage_env(&mut cmd);
+    cmd.output().map(|o| o.status.success()).unwrap_or(false)
+}
+
 /// Launches the Wine configuration dialog (winecfg).
 ///
 /// Opens the graphical Wine configuration tool in the context of the specified prefix.
@@ -93,25 +104,13 @@ pub async fn launch_wine_shell(base_path: String, runner_name: String) -> Result
     let wine_bin_str = wine_bin_dir.to_string_lossy().to_string();
 
     // Search for an available terminal emulator -- supports the most common Linux terminals.
-    // AppImage sandboxes modify PATH/LD_LIBRARY_PATH, so we must clean the environment
-    // for `which` to find host system binaries.
-    let find_terminal = |name: &str| -> bool {
-        let mut cmd = Command::new("which");
-        cmd.arg(name);
-        cmd.env_remove("LD_LIBRARY_PATH");
-        cmd.env_remove("LD_PRELOAD");
-        cmd.env_remove("APPDIR");
-        cmd.env_remove("APPIMAGE");
-        cmd.output().map(|o| o.status.success()).unwrap_or(false)
-    };
-
-    let terminal = if find_terminal("konsole") {
+    let terminal = if has_command("konsole") {
         "konsole"
-    } else if find_terminal("gnome-terminal") {
+    } else if has_command("gnome-terminal") {
         "gnome-terminal"
-    } else if find_terminal("xfce4-terminal") {
+    } else if has_command("xfce4-terminal") {
         "xfce4-terminal"
-    } else if find_terminal("xterm") {
+    } else if has_command("xterm") {
         "xterm"
     } else {
         return Err(
@@ -288,90 +287,279 @@ pub async fn install_powershell(
     base_path: String,
     runner_name: String
 ) -> Result<(), String> {
-    let (prefix, wine, wineserver) = get_wine_paths(&base_path, &runner_name)?;
+    let env = WinetricksEnv::prepare(&app, &base_path, &runner_name, "powershell").await?;
 
-    // Closure for sending log lines to the frontend
-    let emit_log = |line: &str| {
-        let _ = app.emit("prefix-tool-log", line.to_string());
-    };
+    emit_prefix_log(&app, "Installing PowerShell via winetricks (this may take several minutes)...");
 
-    emit_log("Downloading winetricks...");
-
-    // Download pinned Winetricks version with SHA-256 integrity verification
-    let tmp_dir = prefix.join(".tmp");
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create tmp dir: {}", e))?;
-
-    let winetricks_path = crate::util::download_winetricks(&tmp_dir).await?;
-
-    emit_log("Installing PowerShell via winetricks (this may take several minutes)...");
-
-    // Create marker to suppress Wine 64-bit warnings
-    let marker = prefix.join("no_win64_warnings");
-    let _ = std::fs::write(&marker, "");
-
-    // Kill any running wineserver to avoid conflicts
-    let mut ws_cmd = Command::new(wineserver.to_string_lossy().as_ref());
-    ws_cmd.arg("-k").env("WINEPREFIX", prefix.to_string_lossy().as_ref());
-    clean_appimage_env(&mut ws_cmd);
-    let _ = ws_cmd.output();
-
-    // Run winetricks with PowerShell package (-q = quiet mode)
-    let mut wt_cmd = Command::new(winetricks_path.to_string_lossy().as_ref());
-    wt_cmd
-        .args(["-q", "powershell"])
-        .env("WINEPREFIX", prefix.to_string_lossy().as_ref())
-        .env("WINE", wine.to_string_lossy().as_ref())
-        .env("WINESERVER", wineserver.to_string_lossy().as_ref())
-        .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
-        .env("WINEDEBUG", "-all")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    clean_appimage_env(&mut wt_cmd);
-    let mut child = wt_cmd
-        .spawn()
-        .map_err(|e| format!("Failed to run winetricks: {}", e))?;
-
-    // Read stderr in a separate thread and send to the frontend
-    // to avoid deadlocks (stdout and stderr could fill up simultaneously)
-    let stderr_handle = child.stderr.take().map(|stderr| {
-        let app_clone = app.clone();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().map_while(Result::ok) {
-                let _ = app_clone.emit("prefix-tool-log", line);
-            }
-        })
-    });
-
-    // Read stdout line by line and send to the frontend
-    if let Some(stdout) = child.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            emit_log(&line);
-        }
-    }
-
-    // Wait until the stderr thread is finished
-    if let Some(handle) = stderr_handle {
-        let _ = handle.join();
-    }
-
-    // Wait for the winetricks process to finish
-    let status = child.wait().map_err(|e| format!("Failed to wait for winetricks: {}", e))?;
-
-    // Clean up temporary files
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-
+    // -f so this also works as a refresh: reinstalling PowerShell is the LUG
+    // remedy for the "dotnet48 required" prompt during launcher installs, and
+    // winetricks would otherwise skip an already-installed verb.
+    let status = env.run_streaming(&app, &["-q", "-f", "powershell"])?;
     if !status.success() {
-        emit_log(&format!("winetricks powershell exited with code {:?}", status.code()));
+        emit_prefix_log(
+            &app,
+            &format!("winetricks powershell exited with code {:?}", status.code())
+        );
         return Err(format!("winetricks powershell failed with exit code {:?}", status.code()));
     }
 
     // Create marker file so detect_powershell() can recognize the installation
-    let ps_marker = prefix.join(".powershell_installed");
+    let ps_marker = env.prefix.join(".powershell_installed");
     let _ = std::fs::write(&ps_marker, "1");
 
-    emit_log("PowerShell installed successfully!");
+    emit_prefix_log(&app, "PowerShell installed successfully!");
+    Ok(())
+}
+
+// --- Winetricks ---
+
+/// Winetricks repair actions offered as one-click buttons in the UI.
+///
+/// Every entry is traceable to the Star Citizen LUG sources - this is not a
+/// generic Windows-gaming verb list:
+///
+/// - `vcrun2022`: documented fix for RSI Launcher error 3221225477
+///   (knowledge-base `Troubleshooting/install-update-problems.md`)
+/// - `arial` + `tahoma`: the fonts the LUG install recipe uses
+///   (`lug-helper.sh`: `winetricks -q arial tahoma dxvk powershell win11`)
+/// - `win11`: the Windows version that same recipe sets
+///
+/// Deliberately absent is `dxvk`. LUG installs it through winetricks, but this
+/// app manages DXVK itself (see `dxvk.rs`) with its own version picker and
+/// `.dxvk_version` marker. A winetricks run would replace the DLLs while
+/// leaving the marker stale, so the DXVK card would report a version that is
+/// no longer installed.
+///
+/// This is an allowlist, not a suggestion list: `run_winetricks_verb` rejects
+/// any action not defined here, so no caller-supplied string ever reaches the
+/// winetricks command line.
+const WINETRICKS_ACTIONS: &[(&str, &[&str])] = &[
+    ("vcrun2022", &["vcrun2022"]),
+    ("fonts", &["arial", "tahoma"]),
+    ("win11", &["win11"]),
+];
+
+/// Resolves a repair action id to the winetricks verbs it runs.
+fn winetricks_action_verbs(action: &str) -> Option<&'static [&'static str]> {
+    WINETRICKS_ACTIONS.iter().find(|(id, _)| *id == action).map(|(_, verbs)| *verbs)
+}
+
+/// Emits a single line to the frontend's prefix tool log.
+fn emit_prefix_log(app: &AppHandle, line: &str) {
+    let _ = app.emit("prefix-tool-log", line.to_string());
+}
+
+/// A prepared winetricks invocation for one prefix/runner combination.
+///
+/// Bundles the download of the pinned winetricks script with the environment
+/// every winetricks call needs, so the GUI, the quick verbs and the PowerShell
+/// installation all share one implementation.
+struct WinetricksEnv {
+    prefix: std::path::PathBuf,
+    wine: std::path::PathBuf,
+    wineserver: std::path::PathBuf,
+    script: std::path::PathBuf,
+}
+
+impl WinetricksEnv {
+    /// Resolves the runner paths and downloads the pinned winetricks script.
+    ///
+    /// `slot` names a dedicated subdirectory below `<prefix>/.tmp` so that
+    /// re-downloading the script for one invocation cannot truncate the copy
+    /// another, still-running invocation is executing.
+    async fn prepare(
+        app: &AppHandle,
+        base_path: &str,
+        runner_name: &str,
+        slot: &str
+    ) -> Result<Self, String> {
+        let (prefix, wine, runner_bin) = get_wine_paths(base_path, runner_name)?;
+        // The wineserver binary sits next to the wine binary. Passing the bin
+        // directory here instead would make WINESERVER point at a directory.
+        let wineserver = runner_bin.join("wineserver");
+
+        emit_prefix_log(app, "Downloading winetricks...");
+
+        // The script (~1 MB) is intentionally left in place afterwards: it is
+        // overwritten on the next run, and deleting it while a detached GUI is
+        // still executing it would be unsafe.
+        let tmp_dir = prefix.join(".tmp").join(format!("winetricks-{}", slot));
+        std::fs
+            ::create_dir_all(&tmp_dir)
+            .map_err(|e| format!("Failed to create tmp dir: {}", e))?;
+
+        let script = crate::util::download_winetricks(&tmp_dir).await?;
+
+        // Suppress Wine's 64-bit prefix warnings during winetricks runs
+        let _ = std::fs::write(prefix.join("no_win64_warnings"), "");
+
+        Ok(Self { prefix, wine, wineserver, script })
+    }
+
+    /// Builds a winetricks command with the full Wine environment applied.
+    fn command(&self, args: &[&str]) -> Command {
+        let mut cmd = Command::new(self.script.to_string_lossy().as_ref());
+        cmd.args(args)
+            .env("WINEPREFIX", self.prefix.to_string_lossy().as_ref())
+            .env("WINE", self.wine.to_string_lossy().as_ref())
+            .env("WINESERVER", self.wineserver.to_string_lossy().as_ref())
+            .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
+            .env("WINEDEBUG", "-all");
+        clean_appimage_env(&mut cmd);
+        cmd
+    }
+
+    /// Kills any running wineserver of this prefix to avoid conflicts.
+    fn kill_wineserver(&self) {
+        let mut cmd = Command::new(self.wineserver.to_string_lossy().as_ref());
+        cmd.arg("-k").env("WINEPREFIX", self.prefix.to_string_lossy().as_ref());
+        clean_appimage_env(&mut cmd);
+        let _ = cmd.output();
+    }
+
+    /// Runs winetricks and streams stdout/stderr to the frontend as
+    /// `prefix-tool-log` events, blocking until the process exits.
+    fn run_streaming(
+        &self,
+        app: &AppHandle,
+        args: &[&str]
+    ) -> Result<std::process::ExitStatus, String> {
+        self.kill_wineserver();
+
+        let mut cmd = self.command(args);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| format!("Failed to run winetricks: {}", e))?;
+
+        // Read stderr in a separate thread and send to the frontend
+        // to avoid deadlocks (stdout and stderr could fill up simultaneously)
+        let stderr_handle = child.stderr.take().map(|stderr| {
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    let _ = app_clone.emit("prefix-tool-log", line);
+                }
+            })
+        });
+
+        // Read stdout line by line and send to the frontend
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                emit_prefix_log(app, &line);
+            }
+        }
+
+        // Wait until the stderr thread is finished
+        if let Some(handle) = stderr_handle {
+            let _ = handle.join();
+        }
+
+        child.wait().map_err(|e| format!("Failed to wait for winetricks: {}", e))
+    }
+}
+
+/// Lists the winetricks verbs already installed in a prefix.
+///
+/// Winetricks appends every successfully installed verb to
+/// `$WINEPREFIX/winetricks.log`, one per line. Reading it lets the UI mark
+/// quick verbs as installed instead of leaving every button looking untouched
+/// after a successful run.
+#[tauri::command]
+pub async fn detect_winetricks_verbs(base_path: String) -> Result<Vec<String>, String> {
+    tokio::task
+        ::spawn_blocking(move || {
+            let expanded = expand_tilde(&base_path);
+            let log_path = Path::new(&expanded).join("winetricks.log");
+
+            let Ok(contents) = std::fs::read_to_string(&log_path) else {
+                // No log yet simply means nothing has been installed
+                return Vec::new();
+            };
+
+            let mut verbs: Vec<String> = contents
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(str::to_string)
+                .collect();
+            verbs.sort();
+            verbs.dedup();
+            verbs
+        }).await
+        .map_err(|e| format!("Failed to read winetricks log: {}", e))
+}
+
+/// Opens the graphical Winetricks menu for the given runner and prefix.
+///
+/// Winetricks is spawned detached: the user works in its own window and the
+/// command returns as soon as the process is up, so the UI stays responsive.
+/// Because of that, a missing GUI dependency would show up as "nothing
+/// happened" - so it is checked up front instead.
+#[tauri::command]
+pub async fn run_winetricks(
+    app: AppHandle,
+    base_path: String,
+    runner_name: String
+) -> Result<(), String> {
+    // Winetricks renders its menu with zenity or kdialog
+    if !has_command("zenity") && !has_command("kdialog") {
+        return Err(
+            "Winetricks needs zenity or kdialog to show its menu. \
+             Install one of them (e.g. `zenity`) and try again."
+                .to_string()
+        );
+    }
+
+    let env = WinetricksEnv::prepare(&app, &base_path, &runner_name, "gui").await?;
+    env.kill_wineserver();
+
+    // No arguments = winetricks GUI
+    let mut cmd = env.command(&[]);
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.spawn().map_err(|e| format!("Failed to launch winetricks: {}", e))?;
+
+    emit_prefix_log(&app, "Winetricks GUI started.");
+    Ok(())
+}
+
+/// Runs one repair action from the winetricks allowlist.
+///
+/// An action maps to one or more winetricks verbs, all installed in a single
+/// run. Output is streamed to the frontend as `prefix-tool-log` events.
+#[tauri::command]
+pub async fn run_winetricks_verb(
+    app: AppHandle,
+    base_path: String,
+    runner_name: String,
+    verb: String
+) -> Result<(), String> {
+    // Allowlist check: only defined repair actions may be executed.
+    let verbs = winetricks_action_verbs(&verb).ok_or_else(||
+        format!("Unsupported winetricks action: {}", verb)
+    )?;
+
+    let env = WinetricksEnv::prepare(&app, &base_path, &runner_name, "verb").await?;
+
+    let joined = verbs.join(" ");
+    emit_prefix_log(&app, &format!("Running winetricks {} (this may take a while)...", joined));
+
+    // -f (force) is essential here: without it winetricks prints
+    // "<verb> already installed, skipping" and exits successfully, so a repair
+    // button would silently do nothing on exactly the prefixes that need it.
+    let mut args = vec!["-q", "-f"];
+    args.extend_from_slice(verbs);
+
+    let status = env.run_streaming(&app, &args)?;
+    if !status.success() {
+        emit_prefix_log(
+            &app,
+            &format!("winetricks {} exited with code {:?}", joined, status.code())
+        );
+        return Err(format!("winetricks {} failed with exit code {:?}", joined, status.code()));
+    }
+
+    emit_prefix_log(&app, &format!("winetricks {} completed.", joined));
     Ok(())
 }
 

@@ -178,10 +178,38 @@
 
 .installed-runner-info {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Name row inside the info column (indicator + name + usage badges) */
+.installed-runner-title {
+  display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 1;
+}
+
+/* Detail line: size, wine version, install date, origin */
+.installed-runner-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 18px;
+}
+
+.installed-runner-detail {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.active-runner-display .installed-runner-meta {
+  padding-left: 18px;
+  margin-top: 6px;
 }
 
 .installed-runner-indicator {
@@ -323,6 +351,226 @@
   gap: 4px;
 }
 
+/* Prefix Tool Target: which prefix and runner the tools act on */
+.prefix-tool-target {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.prefix-tool-target-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.prefix-tool-target-label {
+  font-size: 0.714rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 70px;
+}
+
+.prefix-tool-target-path {
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prefix-tool-target-row select.input {
+  flex: 1;
+  min-width: 0;
+}
+
+.prefix-tool-target-hint {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Winetricks quick verbs */
+.prefix-tool-verbs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 10px;
+}
+
+.prefix-tool-verbs-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prefix-tool-verbs-label {
+  font-size: 0.714rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+}
+
+.prefix-tool-verbs-hint {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+}
+
+.prefix-tool-verbs-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn-winetricks-verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+}
+
+/* Badge + button side by side (PowerShell row) */
+.prefix-tool-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Already present in the prefix */
+.btn-winetricks-verb.installed {
+  border-color: rgba(34, 197, 94, 0.35);
+  color: var(--text-primary);
+}
+
+.btn-winetricks-verb .verb-check {
+  color: var(--success);
+  font-size: 0.9em;
+}
+
+/* The verb currently installing keeps full contrast while the rest step back */
+.btn-winetricks-verb.running {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+  background: var(--accent-dim);
+}
+
+.btn-winetricks-verb:disabled:not(.running) {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-winetricks-verb.running:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+
+.verb-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid transparent;
+  border-top-color: var(--accent-hover);
+  border-right-color: var(--accent-hover);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* Prefix tool console: status bar + streamed output */
+.prefix-tool-console {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.prefix-tool-console.success {
+  border-left-color: var(--success);
+}
+
+.prefix-tool-console.error {
+  border-left-color: var(--danger);
+}
+
+.prefix-tool-console-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.console-spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+.console-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.console-dot.success {
+  background: var(--success);
+}
+
+.console-dot.error {
+  background: var(--danger);
+}
+
+.console-task {
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.console-status {
+  font-size: 0.714rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+
+/* The ticking clock: the difference between "frozen" and "working" */
+.console-elapsed {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verb-spinner,
+  .console-spinner,
+  .runners-loading-spinner {
+    animation: none;
+    border-top-color: var(--accent);
+    border-right-color: var(--accent);
+  }
+}
+
 /* Prefix Tool Rows */
 .prefix-tool-row {
   display: flex;
@@ -390,17 +638,16 @@
 /* Prefix Tool Log */
 .prefix-tool-log {
   background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   padding: 10px 12px;
   font-family: var(--font-mono);
   font-size: 0.786rem;
-  color: var(--text-muted);
+  /* Secondary, not muted: this is the primary feedback surface during a run,
+     and muted only reaches ~3.5:1 against --bg-primary */
+  color: var(--text-secondary);
   max-height: 150px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
-  margin-top: 12px;
 }
 
 /* Per-runner badges next to the name: "Used by N profiles" / "Fallback".

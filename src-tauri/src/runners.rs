@@ -127,6 +127,11 @@ pub struct AvailableRunner {
     pub size_bytes: u64,
     /// Whether the runner is already installed locally
     pub installed: bool,
+    /// Publication timestamp of the GitHub release (ISO-8601).
+    /// Primary sort key for the download list. `None` for entries
+    /// restored from a cache written before this field existed.
+    #[serde(default)]
+    pub published_at: Option<String>,
 }
 
 /// Result of fetching available runners from all sources.
@@ -178,6 +183,9 @@ pub struct InstallRunnerResult {
 #[derive(Deserialize)]
 struct GhRelease {
     tag_name: String,
+    /// ISO-8601 publication timestamp. Absent for draft releases.
+    #[serde(default)]
+    published_at: Option<String>,
     assets: Vec<GhAsset>,
 }
 
@@ -205,6 +213,72 @@ fn strip_archive_ext(name: &str) -> String {
         }
     }
     s
+}
+
+/// Compares two version-like strings in "natural" order.
+///
+/// Digit runs are compared numerically, everything else byte-wise. This is
+/// required because a plain string comparison ranks `"11.9-1"` above
+/// `"11.14-1"`, which would put an older runner at the top of the list.
+///
+/// Leading zeros are ignored for the numeric comparison; a digit run always
+/// sorts after a non-digit run at the same position (so `"11.9"` < `"11.9a"`
+/// stays intuitive for suffixed tags).
+fn compare_natural(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let mut ai = a.chars().peekable();
+    let mut bi = b.chars().peekable();
+
+    loop {
+        let (Some(&ac), Some(&bc)) = (ai.peek(), bi.peek()) else {
+            // At least one side ran out: the shorter string sorts first.
+            return match (ai.peek().is_some(), bi.peek().is_some()) {
+                (false, true) => Ordering::Less,
+                (true, false) => Ordering::Greater,
+                _ => Ordering::Equal,
+            };
+        };
+
+        if ac.is_ascii_digit() && bc.is_ascii_digit() {
+            // Consume both digit runs and compare them as numbers.
+            let a_num: String = take_digits(&mut ai);
+            let b_num: String = take_digits(&mut bi);
+            let a_trim = a_num.trim_start_matches('0');
+            let b_trim = b_num.trim_start_matches('0');
+
+            // Longer digit run (after stripping zeros) means larger number.
+            match a_trim.len().cmp(&b_trim.len()).then_with(|| a_trim.cmp(b_trim)) {
+                Ordering::Equal => {}
+                other => {
+                    return other;
+                }
+            }
+        } else {
+            match ac.cmp(&bc) {
+                Ordering::Equal => {
+                    ai.next();
+                    bi.next();
+                }
+                other => {
+                    return other;
+                }
+            }
+        }
+    }
+}
+
+/// Consumes and returns the leading run of ASCII digits from `iter`.
+fn take_digits(iter: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut out = String::new();
+    while let Some(&c) = iter.peek() {
+        if !c.is_ascii_digit() {
+            break;
+        }
+        out.push(c);
+        iter.next();
+    }
+    out
 }
 
 /// Checks whether a file name has a supported archive format.
@@ -313,6 +387,7 @@ pub async fn fetch_available_runners(base_path: String) -> FetchRunnersResult {
                                     file_name: asset.name.clone(),
                                     size_bytes: asset.size,
                                     installed,
+                                    published_at: release.published_at.clone(),
                                 });
                             }
                         }
@@ -328,10 +403,39 @@ pub async fn fetch_available_runners(base_path: String) -> FetchRunnersResult {
         }
     }
 
+    sort_runners_newest_first(&mut all_runners);
+
     FetchRunnersResult {
         runners: all_runners,
         errors,
     }
+}
+
+/// Sorts available runners newest-first.
+///
+/// Primary key is the release publication date (ISO-8601 sorts correctly
+/// lexicographically); entries without a date go last. Ties are broken by a
+/// natural comparison of the release tag, so `11.14-1` outranks `11.9-1`.
+/// `sort_by` is stable, so assets belonging to the same release keep the
+/// order GitHub returned them in.
+fn sort_runners_newest_first(runners: &mut [AvailableRunner]) {
+    runners.sort_by(|a, b| {
+        let a_date = a.published_at.as_deref().unwrap_or("");
+        let b_date = b.published_at.as_deref().unwrap_or("");
+
+        // Missing dates sort last regardless of direction.
+        match (a_date.is_empty(), b_date.is_empty()) {
+            (true, false) => {
+                return std::cmp::Ordering::Greater;
+            }
+            (false, true) => {
+                return std::cmp::Ordering::Less;
+            }
+            _ => {}
+        }
+
+        b_date.cmp(a_date).then_with(|| compare_natural(&b.version, &a.version))
+    });
 }
 
 /// Installs a runner: downloads the archive, extracts it, and moves it
@@ -352,7 +456,9 @@ pub async fn install_runner(
     app: AppHandle,
     download_url: String,
     file_name: String,
-    base_path: String
+    base_path: String,
+    source: Option<String>,
+    version: Option<String>
 ) -> InstallRunnerResult {
     let expanded = expand_tilde(&base_path);
     let runner_name = strip_archive_ext(&file_name);
@@ -565,6 +671,10 @@ pub async fn install_runner(
     // Clean up temporary directory
     let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
 
+    // Record provenance so the runners page can show where this build came
+    // from. Best-effort: a missing marker only means the source is unknown.
+    write_runner_marker(&final_path, source.as_deref(), version.as_deref());
+
     emit_progress("complete", downloaded, total_bytes, "Installation complete!");
 
     InstallRunnerResult {
@@ -573,6 +683,217 @@ pub async fn install_runner(
         install_path: final_path.to_string_lossy().into_owned(),
         message: "Runner installed successfully".into(),
     }
+}
+
+// --- Runner provenance & details ---
+
+/// File name of the provenance marker written into every runner directory
+/// installed by Penguin Citizen. Runners installed before this existed (or
+/// unpacked by hand) simply have no marker.
+const RUNNER_MARKER_FILE: &str = ".penguin-citizen-runner.json";
+
+/// Provenance information stored alongside an installed runner.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct RunnerMarker {
+    /// Name of the source the runner was downloaded from (e.g. "LUG")
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Release tag the runner belonged to
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Installation timestamp (RFC 3339)
+    #[serde(default)]
+    pub installed_at: Option<String>,
+}
+
+/// Writes the provenance marker into a freshly installed runner directory.
+///
+/// Best-effort: failures are logged but never fail the installation, since
+/// the runner itself is already usable at this point.
+fn write_runner_marker(runner_dir: &Path, source: Option<&str>, version: Option<&str>) {
+    let marker = RunnerMarker {
+        source: source.map(str::to_string),
+        version: version.map(str::to_string),
+        installed_at: Some(chrono::Utc::now().to_rfc3339()),
+    };
+
+    match serde_json::to_string_pretty(&marker) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(runner_dir.join(RUNNER_MARKER_FILE), json) {
+                log::warn!("Failed to write runner marker for {}: {}", runner_dir.display(), e);
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize runner marker: {}", e),
+    }
+}
+
+/// Reads the provenance marker of an installed runner, if present.
+fn read_runner_marker(runner_dir: &Path) -> Option<RunnerMarker> {
+    let contents = std::fs::read_to_string(runner_dir.join(RUNNER_MARKER_FILE)).ok()?;
+    serde_json::from_str(&contents).ok()
+}
+
+/// Builds a name -> source map from the runner cache in `cache.json`.
+///
+/// Fallback for runners installed before markers existed. Only works while
+/// the runner is still among the cached releases of its source.
+fn cached_sources_by_name() -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+
+    let Some(cache_path) = dirs::config_dir().map(|p|
+        p.join("penguin-citizen").join("cache.json")
+    ) else {
+        return map;
+    };
+    let Ok(contents) = std::fs::read_to_string(cache_path) else {
+        return map;
+    };
+    let Ok(cache) = serde_json::from_str::<crate::config::AppCache>(&contents) else {
+        return map;
+    };
+
+    for runner in cache.runners.runners {
+        map.entry(runner.name).or_insert(runner.source);
+    }
+
+    map
+}
+
+/// Detailed information about an installed runner.
+///
+/// Deliberately kept out of `scan_runners`: gathering these values walks the
+/// whole runner directory and spawns `wine --version`, which is far too
+/// expensive for the five pages that only need the runner names.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RunnerDetails {
+    /// Directory name of the runner
+    pub name: String,
+    /// Absolute path of the runner directory
+    pub install_path: String,
+    /// Total size of the runner directory in bytes
+    pub size_bytes: u64,
+    /// Installation timestamp (RFC 3339), from the marker or the directory mtime
+    pub installed_at: Option<String>,
+    /// Version reported by `wine --version`, e.g. "wine-10.0"
+    pub wine_version: Option<String>,
+    /// Detected directory layout: "wine", "proton" or "proton-legacy"
+    pub layout: String,
+    /// Source the runner was downloaded from, if known
+    pub source: Option<String>,
+    /// Release tag the runner was installed from, if known
+    pub version: Option<String>,
+}
+
+/// Determines the layout label for a runner from the location of its wine binary.
+fn layout_label(runner_dir: &Path, wine_bin: &Path) -> &'static str {
+    let relative = wine_bin.strip_prefix(runner_dir).unwrap_or(wine_bin);
+    match relative.iter().next().and_then(|s| s.to_str()) {
+        Some("files") => "proton",
+        Some("dist") => "proton-legacy",
+        _ => "wine",
+    }
+}
+
+/// Queries the wine version of a runner by running `wine --version`.
+///
+/// Returns `None` if the binary cannot be executed or produces no output.
+/// `--version` returns immediately, so no timeout handling is needed.
+fn query_wine_version(wine_bin: &Path, prefix: &Path) -> Option<String> {
+    let mut cmd = std::process::Command::new(wine_bin);
+    cmd.arg("--version")
+        .env("WINEPREFIX", prefix)
+        .env("WINEDEBUG", "-all")
+        .stdin(std::process::Stdio::null());
+    crate::util::clean_appimage_env(&mut cmd);
+
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if version.is_empty() { None } else { Some(version) }
+}
+
+/// Collects detailed information about all locally installed runners.
+///
+/// Runs entirely on a blocking thread: it walks each runner directory to
+/// compute its size and executes `wine --version` once per runner. The
+/// frontend calls this in parallel to the cheap `scan_runners` and patches
+/// the results in once they arrive.
+#[tauri::command]
+pub async fn get_runner_details(base_path: String) -> Result<Vec<RunnerDetails>, String> {
+    tokio::task
+        ::spawn_blocking(move || {
+            let expanded = expand_tilde(&base_path);
+            let prefix = PathBuf::from(&expanded);
+            let runners_dir = prefix.join("runners");
+
+            let mut details = Vec::new();
+            if !runners_dir.is_dir() {
+                return details;
+            }
+
+            let cached_sources = cached_sources_by_name();
+
+            let Ok(entries) = std::fs::read_dir(&runners_dir) else {
+                return details;
+            };
+
+            for entry in entries.flatten() {
+                let runner_dir = entry.path();
+                if !runner_dir.is_dir() {
+                    continue;
+                }
+                // Same validity rule as scan_runners: must contain a wine binary
+                let Some(wine_bin) = resolve_wine_bin(&runner_dir) else {
+                    continue;
+                };
+
+                let name = runner_dir
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+
+                let marker = read_runner_marker(&runner_dir);
+
+                // Prefer the marker's timestamp; fall back to the directory mtime
+                let installed_at = marker
+                    .as_ref()
+                    .and_then(|m| m.installed_at.clone())
+                    .or_else(|| {
+                        runner_dir
+                            .metadata()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .map(|t| {
+                                let dt: chrono::DateTime<chrono::Utc> = t.into();
+                                dt.to_rfc3339()
+                            })
+                    });
+
+                let source = marker
+                    .as_ref()
+                    .and_then(|m| m.source.clone())
+                    .or_else(|| cached_sources.get(&name).cloned());
+
+                details.push(RunnerDetails {
+                    layout: layout_label(&runner_dir, &wine_bin).to_string(),
+                    size_bytes: crate::util::dir_size(&runner_dir),
+                    wine_version: query_wine_version(&wine_bin, &prefix),
+                    install_path: runner_dir.to_string_lossy().into_owned(),
+                    installed_at,
+                    source,
+                    version: marker.and_then(|m| m.version),
+                    name,
+                });
+            }
+
+            details.sort_by(|a, b| a.name.cmp(&b.name));
+            details
+        }).await
+        .map_err(|e| format!("Failed to collect runner details: {}", e))
 }
 
 /// Cancels an active runner download.
@@ -612,4 +933,121 @@ pub async fn delete_runner(runner_name: String, base_path: String) -> Result<(),
         .map_err(|e| format!("Failed to delete runner: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cmp::Ordering as Cmp;
+
+    fn runner(name: &str, version: &str, published_at: Option<&str>) -> AvailableRunner {
+        AvailableRunner {
+            name: name.to_string(),
+            source: "LUG".to_string(),
+            version: version.to_string(),
+            download_url: String::new(),
+            file_name: format!("{}.tar.xz", name),
+            size_bytes: 0,
+            installed: false,
+            published_at: published_at.map(str::to_string),
+        }
+    }
+
+    // ── compare_natural ──
+
+    #[test]
+    fn natural_compares_digit_runs_numerically() {
+        // The whole reason this helper exists: plain string order gets this wrong.
+        assert_eq!(compare_natural("11.14-1", "11.9-1"), Cmp::Greater);
+        assert_eq!(compare_natural("11.9-1", "11.14-1"), Cmp::Less);
+        assert!("11.14-1" < "11.9-1", "sanity: plain string order really is wrong here");
+    }
+
+    #[test]
+    fn natural_handles_multi_digit_and_zero_padding() {
+        assert_eq!(compare_natural("10.0", "9.0"), Cmp::Greater);
+        assert_eq!(compare_natural("v2.100", "v2.99"), Cmp::Greater);
+        assert_eq!(compare_natural("1.007", "1.7"), Cmp::Equal);
+        assert_eq!(compare_natural("1.08", "1.9"), Cmp::Less);
+    }
+
+    #[test]
+    fn natural_equal_and_prefix_strings() {
+        assert_eq!(compare_natural("11.14-1", "11.14-1"), Cmp::Equal);
+        assert_eq!(compare_natural("", ""), Cmp::Equal);
+        // Shorter string sorts first when one is a prefix of the other
+        assert_eq!(compare_natural("11.14", "11.14-1"), Cmp::Less);
+        assert_eq!(compare_natural("11.14-1", "11.14"), Cmp::Greater);
+    }
+
+    #[test]
+    fn natural_compares_non_digit_segments_bytewise() {
+        assert_eq!(compare_natural("lug-wine-11.1", "lug-wine-11.1"), Cmp::Equal);
+        assert_eq!(compare_natural("a-11", "b-11"), Cmp::Less);
+        // Digits sort before letters at the same position ('1' < 'a')
+        assert_eq!(compare_natural("11.9", "11.9a"), Cmp::Less);
+    }
+
+    // ── sort_runners_newest_first ──
+
+    #[test]
+    fn sort_puts_newest_release_first() {
+        let mut list = vec![
+            runner("old", "11.9-1", Some("2026-01-05T10:00:00Z")),
+            runner("new", "11.14-1", Some("2026-03-20T10:00:00Z")),
+            runner("mid", "11.12-1", Some("2026-02-10T10:00:00Z")),
+        ];
+        sort_runners_newest_first(&mut list);
+        let names: Vec<&str> = list.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["new", "mid", "old"]);
+    }
+
+    #[test]
+    fn sort_breaks_date_ties_by_natural_version() {
+        let date = Some("2026-03-20T10:00:00Z");
+        let mut list = vec![
+            runner("a", "11.9-1", date),
+            runner("b", "11.14-1", date),
+            runner("c", "11.10-1", date),
+        ];
+        sort_runners_newest_first(&mut list);
+        let names: Vec<&str> = list.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["b", "c", "a"]);
+    }
+
+    #[test]
+    fn sort_preserves_asset_order_within_one_release() {
+        // Same date and same tag: the GitHub asset order must survive,
+        // which only holds because sort_by is stable.
+        let date = Some("2026-03-20T10:00:00Z");
+        let mut list = vec![
+            runner("lug-wine-tkg-git-11.14-1", "11.14-1", date),
+            runner("lug-wine-tkg-staging-git-11.14-1", "11.14-1", date),
+        ];
+        sort_runners_newest_first(&mut list);
+        let names: Vec<&str> = list.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["lug-wine-tkg-git-11.14-1", "lug-wine-tkg-staging-git-11.14-1"]);
+    }
+
+    #[test]
+    fn sort_pushes_entries_without_date_to_the_end() {
+        let mut list = vec![
+            runner("undated", "99.0", None),
+            runner("dated-old", "1.0", Some("2020-01-01T00:00:00Z")),
+            runner("dated-new", "2.0", Some("2026-01-01T00:00:00Z")),
+        ];
+        sort_runners_newest_first(&mut list);
+        let names: Vec<&str> = list.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["dated-new", "dated-old", "undated"]);
+    }
+
+    // ── layout_label ──
+
+    #[test]
+    fn layout_label_detects_known_layouts() {
+        let root = Path::new("/runners/foo");
+        assert_eq!(layout_label(root, &root.join("bin/wine")), "wine");
+        assert_eq!(layout_label(root, &root.join("files/bin/wine")), "proton");
+        assert_eq!(layout_label(root, &root.join("dist/bin/wine")), "proton-legacy");
+    }
 }

@@ -595,6 +595,7 @@ pub fn run() {
                 runners::install_runner,
                 runners::cancel_runner_install,
                 runners::delete_runner,
+                runners::get_runner_details,
 
                 // Launch profiles (named, switchable launch configurations)
                 launch_profiles::create_launch_profile,
@@ -621,6 +622,9 @@ pub fn run() {
                 prefix_tools::set_dpi,
                 prefix_tools::install_powershell,
                 prefix_tools::detect_powershell,
+                prefix_tools::run_winetricks,
+                prefix_tools::run_winetricks_verb,
+                prefix_tools::detect_winetricks_verbs,
 
                 // Game installation and launch (RSI Launcher / Star Citizen)
                 installer::run_installation,

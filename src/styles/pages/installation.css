@@ -649,7 +649,8 @@
   letter-spacing: 0.3px;
 }
 
-.runner-item-size {
+.runner-item-size,
+.runner-item-date {
   font-size: 0.786rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
