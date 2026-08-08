@@ -63,12 +63,15 @@
           <h2>Installierte Runner</h2>
           <p>Der obere Bereich listet alle aktuell auf deinem System installierten Wine/Proton Runner auf. Jeder Runner zeigt:</p>
           <ul>
-            <li>Runner-Name und Version</li>
-            <li>Installationspfad</li>
+            <li>Runner-Name — der Hover zeigt den vollstaendigen Installationspfad</li>
+            <li><strong>Groesse auf der Platte</strong>, die von <code>wine --version</code> gemeldete <strong>Wine-Version</strong> und das <strong>Installationsdatum</strong></li>
+            <li><strong>Herkunft</strong> — die Quelle, aus der der Build stammt (z. B. <code>LUG</code>). Bei Runnern, die vor Version 0.5.14 installiert wurden, kann die Herkunft fehlen; sie wird dann nicht angezeigt.</li>
+            <li>Bei Proton-Builds zusaetzlich das erkannte Verzeichnis-Layout (<code>proton</code> bzw. <code>proton-legacy</code>)</li>
             <li>Ob er vom aktuell aktiven <a href="launch-profiles.html">Launch-Profil</a> genutzt wird (hervorgehoben)</li>
-            <li><strong>Nutzungs-Badges</strong> — <code>Used by N profile(s)</code> (Hover zeigt die Profilnamen) und <code>Fallback</code> wenn dieser Runner als globaler Wine-Runner-Fallback gesetzt ist</li>
+            <li><strong>Nutzungs-Badges</strong> — <code>Von N Profilen genutzt</code> (Hover zeigt die Profilnamen) und <code>Fallback</code> wenn dieser Runner als globaler Wine-Runner-Fallback gesetzt ist</li>
           </ul>
-          <p>Der <strong>Aktivieren</strong>-Button setzt einen Runner fuer das aktive Profil. Der Runner ist jetzt eine <em>profil-spezifische</em> Einstellung — ein Wechsel hier markiert das aktive Profil als Dirty, bis du den neuen Stand via Update Profile auf der Startseite uebernimmst (oder einfach so weiter spielst).</p>
+          <p>Diese Angaben werden nachgeladen, sobald die Liste steht — der Runner-Name erscheint also sofort, die Detailzeile Sekundenbruchteile spaeter.</p>
+          <p>Der <strong>Auswaehlen</strong>-Button setzt einen Runner fuer das aktive Profil. Der Runner ist jetzt eine <em>profil-spezifische</em> Einstellung — ein Wechsel hier markiert das aktive Profil als Dirty, bis du den neuen Stand via Update Profile auf der Startseite uebernimmst (oder einfach so weiter spielst).</p>
           <p>Der <strong>Loeschen</strong>-Button entfernt einen Runner von deinem System. Wenn der Runner von einem oder mehreren Profilen genutzt wird, listet der Bestaetigungsdialog diese Profile plus den Fallback-Hinweis auf, damit du nicht versehentlich ein funktionierendes Setup zerlegst.</p>
 
           <div class="handbook-tip">
@@ -78,13 +81,14 @@
           <h2>Verfuegbare Runner</h2>
           <p>Durchsuche und lade Runner aus mehreren Community-Quellen herunter:</p>
           <ul>
-            <li><strong>LUG Helper</strong> - Von der Star Citizen Linux Users Group kuratierte Runner. Dies ist die primaere und empfohlene Quelle.</li>
-            <li><strong>Kron4ek</strong> - Wine-GE Builds fuer allgemeine Kompatibilitaet.</li>
+            <li><strong>LUG</strong> - Von der Star Citizen Linux Users Group kuratierte Runner. Dies ist die primaere und empfohlene Quelle.</li>
+            <li><strong>LUG Experimental</strong> - Experimentelle LUG-Builds mit neueren Patches.</li>
             <li><strong>RawFox</strong> - Spezialisierte Wine Builds.</li>
-            <li><strong>Mactan</strong> - Community-gepflegte Runner-Builds.</li>
+            <li><strong>Kron4ek</strong> - Allgemeine Wine Builds (32-Bit- und WOW64-Varianten werden herausgefiltert, da Star Citizen sie nicht braucht).</li>
           </ul>
-          <p>Jeder verfuegbare Runner zeigt seinen Namen, Version und Veroeffentlichungsdatum. Klicke auf <strong>Installieren</strong>, um ihn herunterzuladen und zu entpacken. Ein Fortschrittsbalken zeigt den Download-Status. Bereits installierte Runner sind entsprechend markiert.</p>
-          <p>Verwende den <strong>Aktualisieren</strong>-Button, um die neuesten Runner-Listen von GitHub abzurufen. Runner-Listen werden eine Stunde lang zwischengespeichert, um uebermassige API-Aufrufe zu vermeiden.</p>
+          <p>Ueber den <strong>+</strong>-Button laesst sich jede weitere GitHub-Releases-Quelle ergaenzen; jede Quelle bekommt einen eigenen Tab.</p>
+          <p>Jeder verfuegbare Runner zeigt seinen Namen, die Quelle, die Dateigroesse und das Veroeffentlichungsdatum. Die Liste ist <strong>absteigend sortiert</strong> — der neueste Build steht oben. Klicke auf <strong>Installieren</strong>, um ihn herunterzuladen und zu entpacken. Ein Fortschrittsbalken zeigt den Download-Status. Bereits installierte Runner sind entsprechend markiert.</p>
+          <p>Verwende den <strong>Aktualisieren</strong>-Button, um die neuesten Runner-Listen von GitHub abzurufen, und <strong>LUG-Quellen laden</strong>, um die LUG-Quellenliste neu zu importieren. Runner-Listen werden eine Stunde lang zwischengespeichert, um uebermassige API-Aufrufe zu vermeiden.</p>
 
           <div class="handbook-tip">
             Wenn du einen GitHub-Token in den <a href="settings.html">Einstellungen</a> hinterlegst, erhaeltst du hoehere API-Rate-Limits beim Durchsuchen verfuegbarer Runner. Das ist nuetzlich, wenn du haeufig nach Updates suchst.
@@ -99,16 +103,30 @@
           </ul>
           <p>DXVK-DLLs werden waehrend der Installation automatisch an den richtigen Stellen im Wine-Prefix platziert.</p>
 
-          <h2>Prefix-Tools</h2>
-          <p>Schnellzugriff auf gaengige Wine-Prefix-Werkzeuge:</p>
+          <div class="handbook-note">
+            Verwalte DXVK ausschliesslich ueber diesen Bereich und <strong>nicht</strong> ueber <code>winetricks dxvk</code>. Winetricks wuerde die DLLs durch seine eigene mitgelieferte Version ersetzen, waehrend Penguin Citizen weiterhin die hier ausgewaehlte Version anzeigt. Genau deshalb fehlt <code>dxvk</code> auch bei den Reparatur-Aktionen weiter unten.
+          </div>
+
+          <h2>Prefix-Werkzeuge</h2>
+          <p>Star Citizen laeuft in genau <strong>einem</strong> Wine-Prefix — er ist identisch mit deinem Installationspfad. Die Kopfzeile dieses Bereichs zeigt daher den Prefix-Pfad und ein Auswahlfeld fuer den Runner, mit dem die Werkzeuge ausgefuehrt werden. Vorbelegt ist der aktive Runner; die Auswahl gilt <em>nur</em> fuer die Werkzeuge und laesst deine <a href="launch-profiles.html">Launch-Profile</a> unveraendert.</p>
           <ul>
             <li><strong>Winecfg</strong> - Oeffnet den Wine-Konfigurationsdialog. Nuetzlich zum Anpassen der DPI-Skalierung, Windows-Version und anderer Wine-Einstellungen.</li>
             <li><strong>Wine Shell</strong> - Oeffnet eine Terminal-Sitzung innerhalb des Wine-Prefix. Hilfreich fuer Debugging und manuelle Konfiguration.</li>
-            <li><strong>PowerShell</strong> - Installiert PowerShell Core im Wine-Prefix ueber winetricks. Einige Tools und Skripte benoetigen dies. Zeigt Download-Fortschritt und Installationslogs.</li>
+            <li><strong>Winetricks</strong> - Oeffnet das grafische Winetricks-Menue fuer diesen Prefix. Benoetigt <code>zenity</code> oder <code>kdialog</code> auf dem System.</li>
+            <li><strong>PowerShell</strong> - Installiert PowerShell Core im Wine-Prefix ueber winetricks; der RSI Launcher braucht es. Ist es bereits installiert, bleibt ein <strong>Erneuern</strong>-Button stehen (siehe Hinweis unten).</li>
           </ul>
 
-          <div class="handbook-note">
-            Runner-Quellen werden automatisch verwaltet. Penguin Citizen importiert und aktualisiert die LUG Helper-Quellenliste bei jedem Seitenaufruf, um sicherzustellen, dass du immer die neuesten empfohlenen Runner siehst.
+          <h3>Reparatur</h3>
+          <p>Ein-Klick-Aktionen fuer bekannte Probleme. Die Auswahl ist bewusst klein gehalten und stammt vollstaendig aus der <a href="https://wiki.starcitizen-lug.org/" target="_blank" rel="noopener">LUG-Wissensdatenbank</a> — es sind keine allgemeinen Windows-Gaming-Pakete:</p>
+          <ul>
+            <li><code>vcrun2022</code> - Die Visual-C++-2022-Runtime. Dokumentierte Abhilfe gegen RSI-Launcher-Fehler <strong>3221225477</strong>.</li>
+            <li><strong>Schriftarten</strong> - Installiert <code>arial</code> und <code>tahoma</code> neu, also genau die Schriften, die auch bei der Erstinstallation gesetzt werden. Hilft bei fehlendem oder falsch dargestelltem Text im RSI Launcher.</li>
+            <li><code>win11</code> - Setzt die Windows-Version des Prefix zurueck.</li>
+          </ul>
+          <p>Ein Haken markiert Aktionen, die im Prefix bereits angewandt wurden — abgelesen aus dem <code>winetricks.log</code> des Prefix. Erneutes Ausfuehren ist trotzdem moeglich und erzwingt die Neuinstallation. Waehrend eine Aktion laeuft, zeigt eine Konsole die Ausgabe live mit, samt laufender Zeitanzeige; Winetricks laedt teilweise minutenlang still im Hintergrund.</p>
+
+          <div class="handbook-tip">
+            Erscheint beim Installieren oder Aktualisieren des RSI Launchers der Hinweis <strong>„dotnet48 required"</strong>, kannst du ihn wegklicken — er bricht die Installation nicht ab. Er stammt von <code>LauncherSupport.exe</code>, einer .NET-4.8-Anwendung, die der Launcher mitbringt. Die von der LUG empfohlene Abhilfe ist, PowerShell im Prefix zu erneuern.
           </div>
 
           <nav class="handbook-nav-bottom">

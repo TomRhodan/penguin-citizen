@@ -63,12 +63,15 @@
           <h2>Installed Runners</h2>
           <p>The top section lists all Wine/Proton runners currently installed on your system. Each runner shows:</p>
           <ul>
-            <li>Runner name and version</li>
-            <li>Installation path</li>
+            <li>Runner name — hover it for the full installation path</li>
+            <li><strong>Size on disk</strong>, the <strong>Wine version</strong> reported by <code>wine --version</code>, and the <strong>installation date</strong></li>
+            <li><strong>Origin</strong> — the source the build came from (e.g. <code>LUG</code>). Runners installed before version 0.5.14 may have no recorded origin, in which case none is shown.</li>
+            <li>For Proton builds, the detected directory layout (<code>proton</code> or <code>proton-legacy</code>)</li>
             <li>Whether it is the runner used by the currently active <a href="launch-profiles.html">Launch Profile</a> (highlighted)</li>
-            <li><strong>Usage badges</strong> — <code>Used by N profile(s)</code> (hover for the list of profile names) and <code>Fallback</code> if this runner is set as the global Wine Runner Fallback</li>
+            <li><strong>Usage badges</strong> — <code>Used by N profiles</code> (hover for the list of profile names) and <code>Fallback</code> if this runner is set as the global Wine Runner Fallback</li>
           </ul>
-          <p>The <strong>Activate</strong> button sets a runner for the active profile. Note that the runner is now a <em>per-profile</em> setting — switching here puts the active profile into the dirty state until you commit the change via Update Profile on the Launch page or just keep launching with it.</p>
+          <p>These details are loaded after the list itself, so the runner name appears immediately and the detail line follows a moment later.</p>
+          <p>The <strong>Select</strong> button sets a runner for the active profile. Note that the runner is now a <em>per-profile</em> setting — switching here puts the active profile into the dirty state until you commit the change via Update Profile on the Launch page or just keep launching with it.</p>
           <p>The <strong>Delete</strong> button removes a runner from your system. If the runner is referenced by one or more profiles, the confirmation dialog lists those profiles plus the fallback hint so you don't accidentally break a working setup.</p>
 
           <div class="handbook-tip">
@@ -78,13 +81,14 @@
           <h2>Available Runners</h2>
           <p>Browse and download runners from multiple community sources:</p>
           <ul>
-            <li><strong>LUG Helper</strong> - Runners curated by the Star Citizen Linux Users Group. This is the primary and recommended source.</li>
-            <li><strong>Kron4ek</strong> - Wine-GE builds for general compatibility.</li>
+            <li><strong>LUG</strong> - Runners curated by the Star Citizen Linux Users Group. This is the primary and recommended source.</li>
+            <li><strong>LUG Experimental</strong> - Experimental LUG builds carrying newer patches.</li>
             <li><strong>RawFox</strong> - Specialized Wine builds.</li>
-            <li><strong>Mactan</strong> - Community-maintained runner builds.</li>
+            <li><strong>Kron4ek</strong> - General-purpose Wine builds (32-bit and WOW64 variants are filtered out, as Star Citizen does not need them).</li>
           </ul>
-          <p>Each available runner shows its name, version, and release date. Click <strong>Install</strong> to download and extract it. A progress bar shows the download status. Runners that are already installed are marked accordingly.</p>
-          <p>Use the <strong>Refresh</strong> button to re-fetch the latest runner lists from GitHub. Runner lists are cached for one hour to avoid excessive API calls.</p>
+          <p>The <strong>+</strong> button adds any further GitHub Releases source; each source gets its own tab.</p>
+          <p>Each available runner shows its name, source, file size, and release date. The list is sorted <strong>newest first</strong>. Click <strong>Install</strong> to download and extract it. A progress bar shows the download status. Runners that are already installed are marked accordingly.</p>
+          <p>Use the <strong>Refresh</strong> button to re-fetch the latest runner lists from GitHub, and <strong>Get LUG Sources</strong> to re-import the LUG source list. Runner lists are cached for one hour to avoid excessive API calls.</p>
 
           <div class="handbook-tip">
             If you set a GitHub token in <a href="settings.html">Settings</a>, you get higher API rate limits when browsing available runners. This is useful if you frequently check for updates.
@@ -99,16 +103,30 @@
           </ul>
           <p>DXVK DLLs are automatically placed in the correct Wine prefix locations during installation.</p>
 
+          <div class="handbook-note">
+            Manage DXVK from this section only, <strong>not</strong> via <code>winetricks dxvk</code>. Winetricks would replace the DLLs with its own bundled version while Penguin Citizen keeps reporting the version selected here. That is exactly why <code>dxvk</code> is absent from the repair actions below.
+          </div>
+
           <h2>Prefix Tools</h2>
-          <p>Quick access to common Wine prefix utilities:</p>
+          <p>Star Citizen runs in exactly <strong>one</strong> Wine prefix — it is your installation path. The header of this section therefore shows the prefix path and a selector for the runner the tools run with. It defaults to the active runner; the choice applies to the tools <em>only</em> and leaves your <a href="launch-profiles.html">launch profiles</a> untouched.</p>
           <ul>
             <li><strong>Winecfg</strong> - Opens the Wine configuration dialog. Useful for adjusting DPI scaling, Windows version, and other Wine settings.</li>
             <li><strong>Wine Shell</strong> - Opens a terminal session inside the Wine prefix. Helpful for debugging and manual configuration.</li>
-            <li><strong>PowerShell</strong> - Installs PowerShell Core into the Wine prefix via winetricks. Some tools and scripts may require this. Shows download progress and installation logs.</li>
+            <li><strong>Winetricks</strong> - Opens the graphical Winetricks menu for this prefix. Requires <code>zenity</code> or <code>kdialog</code> on the system.</li>
+            <li><strong>PowerShell</strong> - Installs PowerShell Core into the Wine prefix via winetricks; the RSI Launcher needs it. Once installed, a <strong>Refresh</strong> button remains available (see the tip below).</li>
           </ul>
 
-          <div class="handbook-note">
-            Runner sources are managed automatically. Penguin Citizen imports and updates the LUG Helper source list on each page load to ensure you always see the latest recommended runners.
+          <h3>Repair</h3>
+          <p>One-click actions for known problems. The selection is deliberately small and comes entirely from the <a href="https://wiki.starcitizen-lug.org/" target="_blank" rel="noopener">LUG knowledge base</a> — these are not generic Windows gaming packages:</p>
+          <ul>
+            <li><code>vcrun2022</code> - The Visual C++ 2022 runtime. Documented fix for RSI Launcher error <strong>3221225477</strong>.</li>
+            <li><strong>Fonts</strong> - Reinstalls <code>arial</code> and <code>tahoma</code>, the exact fonts set up during a fresh install. Helps with missing or misrendered text in the RSI Launcher.</li>
+            <li><code>win11</code> - Resets the prefix's Windows version.</li>
+          </ul>
+          <p>A check mark marks actions already applied to the prefix, read from the prefix's <code>winetricks.log</code>. Running them again is still possible and forces a reinstall. While an action runs, a console streams its output live along with an elapsed timer — Winetricks sometimes downloads silently for minutes.</p>
+
+          <div class="handbook-tip">
+            If installing or updating the RSI Launcher shows a <strong>"dotnet48 required"</strong> prompt, you can click through it — it does not abort the installation. It comes from <code>LauncherSupport.exe</code>, a .NET 4.8 application shipped with the launcher. The remedy recommended by the LUG is to refresh PowerShell in the prefix.
           </div>
 
           <nav class="handbook-nav-bottom">
