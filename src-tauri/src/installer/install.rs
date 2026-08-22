@@ -9,7 +9,7 @@ use tauri::{ AppHandle, Emitter };
 
 use super::{
     configure_wine_env, emit_progress, emit_progress_tick, is_cancelled, stream_command_output,
-    GAME_PID, INSTALL_CANCEL,
+    GAME_PID, INSTALL_CANCEL, LAST_RUNNER_DIR,
 };
 
 /// Performs the full installation of Star Citizen.
@@ -80,9 +80,10 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
     }
     let runner_name = config.launch_working_state.runner_name.as_str();
 
-    let runner_dir = Path::new(&install_path).join("runners").join(runner_name);
+    let runner_dir = crate::runners::runner_dir(&install_path, runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
+    *LAST_RUNNER_DIR.lock().unwrap_or_else(|e| e.into_inner()) = Some(runner_dir.clone());
     let runner_bin = wine.parent()
         .ok_or_else(|| "Wine binary has no parent directory".to_string())?
         .to_path_buf();
@@ -132,6 +133,16 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
     // Download pinned Winetricks version with SHA-256 integrity verification
     let winetricks_path = crate::util::download_winetricks(&tmp_dir).await?;
 
+    // Ephemeral winetricks verb cache. Without it winetricks falls back to
+    // ~/.cache/winetricks, where a stale entry keeps serving an outdated
+    // PowerShell and fails the prefix with "SHA256 mismatch" or "no valid
+    // cabinets found" (LUG knowledge base, Install & Update Problems).
+    let winetricks_cache = tmp_dir.join("winetricks-cache");
+    let _ = std::fs::remove_dir_all(&winetricks_cache);
+    std::fs
+        ::create_dir_all(&winetricks_cache)
+        .map_err(|e| format!("Failed to create winetricks cache directory: {}", e))?;
+
     emit_progress(&app, "prepare", "Environment ready", 5.0, "Environment prepared successfully");
 
     if is_cancelled() {
@@ -177,6 +188,10 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             .env("WINESERVER", wineserver.to_string_lossy().as_ref())
             .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
             .env("WINEDEBUG", "-all")
+            .env("W_CACHE", winetricks_cache.to_string_lossy().as_ref())
+            // Winetricks prefers wget, which is missing inside our AppImage and
+            // on immutable distros. curl is a hard dependency of this app.
+            .env("WINETRICKS_DOWNLOADER", "curl")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         clean_appimage_env(&mut wt_cmd);

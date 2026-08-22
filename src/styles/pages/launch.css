@@ -287,6 +287,19 @@
   border: 1px solid rgba(232, 167, 53, 0.2);
 }
 
+/* Warning shown inside an expanded card when two enabled options are
+   documented to break each other. Not a blocker - the user may still want it. */
+.launch-conflict-warning {
+  font-size: 0.714rem;
+  line-height: 1.4;
+  color: var(--warning, #e8a735);
+  background: rgba(232, 167, 53, 0.08);
+  border: 1px solid rgba(232, 167, 53, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin-top: 4px;
+}
+
 .launch-card-inactive {
   font-size: 0.643rem;
   font-style: italic;
@@ -813,4 +826,14 @@
   color: var(--warning, #facc15);
   background: rgba(234, 179, 8, 0.12);
   border-color: rgba(234, 179, 8, 0.3);
+}
+
+/* XWayland fallback: a sub-option of the Wayland toggle above it */
+.launch-x11-fallback {
+  margin-left: 24px;
+}
+
+.launch-x11-fallback.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

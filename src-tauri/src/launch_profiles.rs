@@ -42,7 +42,6 @@ use crate::config::{ensure_default_profile, AppConfig, LaunchProfile};
 use crate::runners::resolve_wine_bin;
 use crate::util::expand_tilde;
 use serde::Serialize;
-use std::path::Path;
 
 /// Profile-and-fallback usage info for a given runner name.
 ///
@@ -277,7 +276,7 @@ pub(crate) fn set_fallback_runner_in(
         return Ok(());
     };
     let install_path = expand_tilde(&config.install_path);
-    let dir = Path::new(&install_path).join("runners").join(name);
+    let dir = crate::runners::runner_dir(&install_path, name);
     if resolve_wine_bin(&dir).is_none() {
         return Err(format!("Runner '{}' is not installed", name));
     }

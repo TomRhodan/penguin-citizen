@@ -95,6 +95,9 @@ pub struct GamescopeSettings {
     pub force_grab_cursor: bool,
     /// Grab keyboard input (-g)
     pub keyboard_grab: bool,
+    /// Set GAMESCOPE_WSI_FORCE_BYPASS=1 - fixes a black game window under
+    /// gamescope (LUG knowledge base, Unexpected Behavior)
+    pub wsi_force_bypass: bool,
 }
 
 /// Performance settings for Wine/Star Citizen execution.
@@ -116,6 +119,14 @@ pub struct PerformanceSettings {
     pub dxvk_hud: bool,
     /// Native Wayland execution instead of X11/XWayland
     pub wayland: bool,
+    /// Keep the Wayland settings but render through XWayland.
+    ///
+    /// Wine picks its graphics driver per prefix, and from Wine 11.14 on the
+    /// Wayland driver never shows the RSI Launcher's window. This lets a user
+    /// stay on their Wayland setup and still get a visible launcher with such a
+    /// runner.
+    #[serde(default)]
+    pub x11_fallback: bool,
     /// Enable HDR mode (experimental, requires Wayland + HDR-capable monitor)
     pub hdr: bool,
     /// AMD FidelityFX Super Resolution - upscaling for performance improvement
@@ -152,6 +163,22 @@ pub struct PerformanceSettings {
     pub enable_hdr_wsi: bool,
     /// WINE_CPU_TOPOLOGY for multi-die CPUs (e.g. "16:0,1,2,...,15")
     pub wine_cpu_topology: Option<String>,
+    /// Set LC_ALL=en_US.utf8 - fixes EAC error 60099 ("Failed to load the
+    /// embedded resources") on non-English system locales
+    pub force_locale: bool,
+    /// Route Wine's input through XIM instead of IBus - fixes dead AltGr and
+    /// non-US keys (umlauts, accents) in the game
+    pub input_method_xim: bool,
+    /// LANG override for the game process, e.g. "de_DE". None = inherit
+    pub wine_lang: Option<String>,
+    /// Set __GL_THREADED_OPTIMIZATIONS=0 - needed on NVIDIA with gamescope
+    pub gl_threaded_off: bool,
+    /// Cap the VRAM the game is allowed to allocate, in MiB. None = no cap.
+    /// Works around VRAM exhaustion stutter on cards with little memory.
+    pub vram_limit_mb: Option<u32>,
+    /// Apply `vram_limit_mb` through the Mesa VRAM report layer instead of
+    /// DXVK's dxgi.maxDeviceMemory - the variant for the Vulkan renderer
+    pub vram_report_limit: bool,
 
     // --- Performance ---
     /// Wrap launch command with gamemoderun (Feral GameMode)
@@ -173,6 +200,7 @@ impl Default for PerformanceSettings {
             mangohud: false,
             dxvk_hud: false,
             wayland: true,
+            x11_fallback: false,
             hdr: false,
             fsr: false,
             primary_monitor: None,
@@ -187,6 +215,12 @@ impl Default for PerformanceSettings {
             vulkan_mailbox: false,
             enable_hdr_wsi: false,
             wine_cpu_topology: None,
+            force_locale: false,
+            input_method_xim: false,
+            wine_lang: None,
+            gl_threaded_off: false,
+            vram_limit_mb: None,
+            vram_report_limit: false,
             gamemode: false,
             gamescope: GamescopeSettings::default(),
         }
@@ -228,6 +262,27 @@ impl Default for RunnerSourceConfig {
 ///
 /// v1 = pre-Launch-Profiles (top-level `performance` and `selected_runner`).
 /// v2 = current — wraps launch settings into named, switchable profiles.
+pub(crate) fn default_show_system_runners() -> bool {
+    true
+}
+
+/// Reads `show_system_runners` straight from the config file.
+///
+/// Used by the blocking scan paths, which have no `AppConfig` at hand; a missing
+/// or unreadable config means the default (show them).
+pub(crate) fn show_system_runners() -> bool {
+    let Some(path) = config_file_path() else {
+        return default_show_system_runners();
+    };
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return default_show_system_runners();
+    };
+    serde_json
+        ::from_str::<AppConfig>(&contents)
+        .map(|c| c.show_system_runners)
+        .unwrap_or_else(|_| default_show_system_runners())
+}
+
 pub(crate) fn default_schema_version() -> u32 {
     2
 }
@@ -298,6 +353,10 @@ pub struct AppConfig {
     pub auto_backup_on_launch: Option<bool>,
     /// List of configured runner sources (GitHub repositories)
     pub runner_sources: Vec<RunnerSourceConfig>,
+    /// Whether runners found on the system (CachyOS packages, Steam
+    /// compatibility tools) are listed alongside the installed ones.
+    #[serde(default = "default_show_system_runners")]
+    pub show_system_runners: bool,
     /// Installation mode: "full" = complete installation with all steps,
     /// "quick" = quick installation without optional steps
     pub install_mode: String,
@@ -323,6 +382,7 @@ impl Default for AppConfig {
             log_level: "info".to_string(),
             auto_backup_on_launch: None,
             runner_sources: vec![],
+            show_system_runners: default_show_system_runners(),
             install_mode: "full".to_string(),
             ui_scale: 1.0,
             language: None,
@@ -622,6 +682,14 @@ pub struct DetectedRunner {
     pub bin_path: String,
     /// Full path to the Wine executable
     pub wine_executable: String,
+    /// `true` when the runner is provided by the system instead of installed
+    /// by Penguin Citizen (see `crate::system_runners`).
+    #[serde(default)]
+    pub system: bool,
+    /// Badge label of a system runner ("CachyOS", "Steam", "System").
+    /// `None` for runners installed by Penguin Citizen.
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 /// Result of scanning for locally installed runners.
@@ -846,6 +914,7 @@ pub async fn validate_install_path(path: String) -> Result<PathValidation, AppEr
 pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, AppError> {
     tokio::task
         ::spawn_blocking(move || {
+            let show_system_runners = show_system_runners();
             let expanded = expand_tilde(&base_path);
             let runners_dir = Path::new(&expanded).join("runners");
             let runners_dir_str = runners_dir.to_string_lossy().into_owned();
@@ -878,13 +947,44 @@ pub async fn scan_runners(base_path: String) -> Result<ScanRunnersResult, AppErr
                                 name,
                                 bin_path,
                                 wine_executable,
+                                system: false,
+                                origin: None,
                             });
+                        } else {
+                            log::warn!(
+                                "Skipping {}: no wine binary in a known layout (bin/wine, files/bin/wine, dist/bin/wine)",
+                                entry_path.display()
+                            );
                         }
                     }
                 }
             }
 
             runners.sort_by(|a, b| a.name.cmp(&b.name));
+
+            // Append runners the system provides (CachyOS packages, Steam
+            // compatibility tools). A local runner of the same name wins, so
+            // they are only added when the name is still free.
+            if show_system_runners {
+                for system in crate::system_runners::scan() {
+                    if runners.iter().any(|r| r.name == system.name) {
+                        continue;
+                    }
+                    let Some(wine_exe) = crate::runners::resolve_wine_bin(&system.path) else {
+                        continue;
+                    };
+                    runners.push(DetectedRunner {
+                        name: system.name,
+                        bin_path: wine_exe
+                            .parent()
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        wine_executable: wine_exe.to_string_lossy().into_owned(),
+                        system: true,
+                        origin: Some(system.origin.to_string()),
+                    });
+                }
+            }
 
             ScanRunnersResult {
                 runners,
@@ -1463,9 +1563,14 @@ pub async fn add_runner_source_from_github(
 /// Imports the predefined runner sources from the LUG helper project.
 ///
 /// LUG (Linux Users Group) provides special Wine builds optimized for
-/// Star Citizen. This function adds all four default sources
-/// (LUG, LUG Experimental, RawFox, Kron4ek) and skips already
-/// existing sources (duplicate check by name).
+/// Star Citizen. This function adds the three sources lug-helper ships with
+/// (LUG, LUG Experimental, RawFox) and skips already existing sources
+/// (duplicate check by name).
+///
+/// Kron4ek is deliberately not among them: lug-helper dropped it in v4.14 as
+/// unsuitable for Star Citizen. Configs that already have it keep it, and it
+/// can still be added by hand - the Kron4ek asset filter stays in place for
+/// exactly that case.
 #[tauri::command]
 pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, AppError> {
     // Predefined LUG helper Wine runner sources
@@ -1476,8 +1581,7 @@ pub async fn import_lug_helper_sources() -> Result<AddRunnerSourceResult, AppErr
             "LUG Experimental",
             "https://api.github.com/repos/starcitizen-lug/lug-wine-experimental/releases",
         ),
-        ("RawFox", "https://api.github.com/repos/starcitizen-lug/raw-wine/releases"),
-        ("Kron4ek", "https://api.github.com/repos/Kron4ek/Wine-Builds/releases")
+        ("RawFox", "https://api.github.com/repos/starcitizen-lug/raw-wine/releases")
     ];
 
     tokio::task
@@ -1605,6 +1709,7 @@ mod tests {
                 filter: Some("all".into()),
                 enabled: true,
             }],
+            show_system_runners: false,
             install_mode: "quick".into(),
             ui_scale: 1.25,
             language: Some("de".into()),
@@ -1623,6 +1728,7 @@ mod tests {
         assert_eq!(restored.log_level, "debug");
         assert_eq!(restored.runner_sources.len(), 1);
         assert_eq!(restored.runner_sources[0].name, "LUG");
+        assert!(!restored.show_system_runners);
         assert_eq!(restored.install_mode, "quick");
         assert_eq!(restored.ui_scale, 1.25);
         assert_eq!(restored.language, Some("de".into()));

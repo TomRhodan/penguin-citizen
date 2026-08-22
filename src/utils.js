@@ -73,3 +73,34 @@ export function debounce(fn, delay) {
   debounced.cancel = () => clearTimeout(timer);
   return debounced;
 }
+
+/**
+ * Builds a lookup of runner name -> origin label from a `scan_runners` result,
+ * containing only the runners the system provides (CachyOS packages, Steam
+ * compatibility tools). Runners installed by Penguin Citizen are absent.
+ *
+ * @param {Array<{name: string, system?: boolean, origin?: string}>} runners
+ * @returns {Record<string, string>} Map of runner name to origin label
+ */
+export function buildRunnerOrigins(runners) {
+  const origins = {};
+  for (const runner of runners || []) {
+    if (runner?.system && runner.name) {
+      origins[runner.name] = runner.origin || 'System';
+    }
+  }
+  return origins;
+}
+
+/**
+ * Label for a runner in a dropdown: system runners carry their origin so a
+ * package-provided build is distinguishable from one we installed.
+ *
+ * @param {string} name - Runner name
+ * @param {Record<string, string>} origins - Map from `buildRunnerOrigins`
+ * @returns {string} Plain-text label, still needs escaping for HTML output
+ */
+export function runnerOptionLabel(name, origins) {
+  const origin = origins?.[name];
+  return origin ? `${name} (${origin})` : name;
+}

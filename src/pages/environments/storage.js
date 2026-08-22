@@ -134,6 +134,13 @@ export function renderStorageTab() {
       ${renderShareDataP4kSection(activeScVersion, scVersions)}
 
       <div class="storage-actions" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 1rem;">
+        <div class="storage-repair-card">
+          <h4>${t('environments:storage.repairTitle')}</h4>
+          <p>${t('environments:storage.repairDesc')}</p>
+          <button class="btn btn-secondary" id="btn-p4k-placeholders" data-version="${escapeHtml(activeScVersion)}">
+            ${t('environments:storage.repairButton')}
+          </button>
+        </div>
         <div style="padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255, 50, 50, 0.05);">
           <h4 style="margin-top: 0; color: #ff6b6b; display: flex; align-items: center; gap: 0.5rem;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -150,6 +157,30 @@ export function renderStorageTab() {
       </div>
     </div>
   `;
+}
+
+/**
+ * Creates the empty Data.p4k / Data.p4k.part placeholders that get the RSI
+ * Launcher past its "calculating disk space" phase (errors 3004/3005/5006/5008).
+ *
+ * @param {string} version - SC version to repair
+ */
+export async function createP4kPlaceholders(version) {
+  const { config } = getState();
+  try {
+    const result = await invoke('create_p4k_placeholders', {
+      gp: config.install_path,
+      version,
+    });
+    // Nothing created means both files were already in place - still a valid
+    // outcome, but say so rather than implying a repair happened.
+    const key = (result.created_part || result.created_p4k)
+      ? 'environments:storage.repairDone'
+      : 'environments:storage.repairNothingToDo';
+    showNotification(t(key, { version }), 'success');
+  } catch (e) {
+    showNotification(t('environments:storage.repairFailed', { error: e }), 'error');
+  }
 }
 
 // ── Version Management ──

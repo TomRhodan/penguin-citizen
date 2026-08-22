@@ -29,7 +29,7 @@
 //! - `prefix_tools`: Wine prefix tools (winecfg, DPI settings, PowerShell)
 //! - `runners`: Wine/Proton runner management (download, install, delete)
 //! - `sc_config`: Star Citizen configuration, profile management and binding editor
-//! - `system_check`: System requirements check (vm.max_map_count, file limits, etc.)
+//! - `system_check`: System requirements check (memory, vm.max_map_count, file limits, joystick udev rules, etc.)
 //! - `binding_capture`: Input device event capture (joysticks, gamepads) for the binding editor
 //! - `action_definitions`: Definitions of available actions/key bindings in the game
 //!
@@ -64,8 +64,10 @@ mod binding_capture;
 mod runners;
 mod launch_profiles;
 pub mod sc_config;
+mod sc_logs;
 mod shader_cache;
 mod system_check;
+mod system_runners;
 mod action_definitions;
 mod webkit_workaround;
 
@@ -563,10 +565,12 @@ pub fn run() {
                 get_display_info,
                 get_webkit_workaround_status,
 
-                // System checks (vm.max_map_count, file limits, monitor detection)
+                // System checks (vm.max_map_count, file limits, joystick rules, monitor detection)
                 system_check::run_system_check,
                 system_check::fix_mapcount,
                 system_check::fix_filelimit,
+                system_check::fix_joystick_rules,
+                sc_logs::list_sc_logs,
                 system_check::detect_monitors,
                 system_check::get_default_install_path,
                 system_check::detect_gpu_vendor,
@@ -592,6 +596,7 @@ pub fn run() {
 
                 // Wine/Proton runner management (download, installation, deletion)
                 runners::fetch_available_runners,
+                runners::check_runner_glibc,
                 runners::install_runner,
                 runners::cancel_runner_install,
                 runners::delete_runner,
@@ -699,6 +704,7 @@ pub fn run() {
                 sc_config::p4k::copy_data_p4k,
                 sc_config::p4k::move_data_p4k,
                 sc_config::p4k::get_data_p4k_size,
+                sc_config::p4k::create_p4k_placeholders,
                 sc_config::p4k::abort_copy_data_p4k,
                 sc_config::versions::delete_sc_version,
                 sc_config::versions::create_sc_version,
@@ -734,6 +740,7 @@ pub fn run() {
 
                 // Dashboard (RSI news, server status, community statistics)
                 dashboard::fetch_rsi_news,
+                dashboard::fetch_lug_news,
                 dashboard::fetch_server_status,
                 dashboard::fetch_community_stats,
                 dashboard::fetch_community_stats_history,

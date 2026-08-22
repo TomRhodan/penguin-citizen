@@ -5,14 +5,186 @@ use std::path::Path;
 use std::process::{ Command, Stdio };
 use tauri::{ AppHandle, Emitter };
 
-use super::{ configure_wine_env, InstallationStatus, GAME_PID };
+use super::{ configure_wine_env, InstallationStatus, GAME_PID, LAST_RUNNER_DIR };
+
+/// Runner directories whose wineserver may still be running for our prefix.
+///
+/// The locally installed runners plus the runner of the last launch - the latter
+/// may be a system runner outside `<install_path>/runners/`.
+fn wineserver_cleanup_dirs(install_path: &str) -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = std::fs
+        ::read_dir(Path::new(install_path).join("runners"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .collect();
+
+    if let Some(last) = LAST_RUNNER_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        if !dirs.contains(&last) {
+            dirs.push(last);
+        }
+    }
+
+    dirs
+}
+
+/// Graphics driver the prefix should use for the requested display mode.
+///
+/// `wayland,x11` keeps Wine's Wayland driver with an X11 fallback, `x11` forces
+/// XWayland. Wine reads this from `HKCU\Software\Wine\Drivers`.
+fn wanted_graphics_driver(wayland: bool) -> &'static str {
+    if wayland { "wayland,x11" } else { "x11" }
+}
+
+/// Reads the currently configured graphics driver out of the prefix registry.
+///
+/// Parses `user.reg` directly instead of running `wine reg query`, so the common
+/// case (value already correct) costs no subprocess at all.
+fn current_graphics_driver(install_path: &str) -> Option<String> {
+    let contents = std::fs::read_to_string(Path::new(install_path).join("user.reg")).ok()?;
+    let section = contents.find("[Software\\\\Wine\\\\Drivers]")?;
+    let rest = &contents[section..];
+    // Stop at the next section so a "Graphics" value elsewhere cannot match
+    let end = rest[1..].find("\n[").map(|i| i + 1).unwrap_or(rest.len());
+    rest[..end]
+        .lines()
+        .find_map(|line| line.strip_prefix("\"Graphics\"=\""))
+        .map(|value| value.trim_end_matches('"').to_string())
+}
+
+/// Extracts `(major, minor)` from a `wine --version` string like
+/// `wine-11.15.r0.g2df1ee28039 ( TkG Plain )`.
+fn parse_wine_version(version: &str) -> Option<(u32, u32)> {
+    let digits = version.trim_start_matches("wine-");
+    let mut parts = digits.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts
+        .next()?
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .parse()
+        .ok()?;
+    Some((major, minor))
+}
+
+/// Wine versions whose Wayland driver never maps the RSI Launcher's windows.
+///
+/// From 11.14 on, winewayland.drv creates the launcher's surfaces, clears their
+/// xdg role again and never receives a configure event - the launcher runs but
+/// stays invisible. 11.13 and older are fine.
+fn wayland_launcher_is_broken(version: Option<&str>) -> bool {
+    match version.and_then(parse_wine_version) {
+        Some((major, minor)) => major > 11 || (major == 11 && minor >= 14),
+        None => false,
+    }
+}
+
+/// Puts the prefix on the graphics driver the display mode needs, and warns when
+/// the requested combination is known not to show the launcher.
+fn apply_graphics_driver(
+    app: &AppHandle,
+    wine: &Path,
+    install_path: &str,
+    wayland: bool,
+    wine_version: Option<&str>
+) {
+    let wanted = wanted_graphics_driver(wayland);
+
+    if current_graphics_driver(install_path).as_deref() != Some(wanted) {
+        let status = Command::new(wine.to_string_lossy().as_ref())
+            .arg("reg")
+            .arg("add")
+            .arg("HKCU\\Software\\Wine\\Drivers")
+            .arg("/v")
+            .arg("Graphics")
+            .arg("/d")
+            .arg(wanted)
+            .arg("/f")
+            .env("WINEPREFIX", install_path)
+            .env("WINEDEBUG", "-all")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        match status {
+            Ok(s) if s.success() => {
+                let _ = app.emit("launch-log", &format!("Driver:     {} (set in prefix)", wanted));
+            }
+            _ => {
+                log::warn!("Could not set the graphics driver to {}", wanted);
+                let _ = app.emit(
+                    "launch-log",
+                    &format!("Driver:     could not set {} - keeping the prefix as it is", wanted)
+                );
+            }
+        }
+    } else {
+        let _ = app.emit("launch-log", &format!("Driver:     {}", wanted));
+    }
+
+    if wayland && wayland_launcher_is_broken(wine_version) {
+        let msg = concat!(
+            "Wayland + this runner: from Wine 11.14 on the RSI Launcher window never appears - the ",
+            "launcher runs but stays invisible. Fix: tick \"Render via XWayland\" in the Wayland ",
+            "settings, or use a runner up to 11.13."
+        );
+        log::warn!("{}", msg);
+        let _ = app.emit("launch-log", msg);
+        let _ = app.emit("launch-warning", msg);
+    }
+}
+
+/// Whether any process is still alive in `prefix`.
+///
+/// `wineserver -w` waits for the last process in a prefix to terminate, so a
+/// short-timeout run distinguishes "session still running" (times out) from
+/// "prefix is empty" (returns at once). Used to tell a detached RSI Launcher
+/// apart from one that really exited.
+fn wineserver_session_alive(wineserver: &Path, prefix: &str) -> bool {
+    let mut child = match
+        Command::new(wineserver.to_string_lossy().as_ref())
+            .arg("-w")
+            .env("WINEPREFIX", prefix)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+    {
+        Ok(c) => c,
+        // Without a wineserver we cannot tell - assume the session is gone and
+        // keep the old behaviour of reporting the exit.
+        Err(e) => {
+            log::warn!("Could not probe the wine session: {}", e);
+            return false;
+        }
+    };
+
+    // Give it a moment: an empty prefix makes `-w` return practically instantly.
+    for _ in 0..10 {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return false;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(200)),
+            Err(_) => {
+                return false;
+            }
+        }
+    }
+
+    // Still waiting after 2s - something is alive. The probe is no longer needed,
+    // the caller starts its own blocking wait.
+    let _ = child.kill();
+    let _ = child.wait();
+    true
+}
 
 /// Checks whether a runner directory contains a usable wine binary.
 fn runner_is_installed(install_path: &str, runner_name: &str) -> bool {
     if runner_name.is_empty() {
         return false;
     }
-    let dir = Path::new(install_path).join("runners").join(runner_name);
+    let dir = crate::runners::runner_dir(install_path, runner_name);
     resolve_wine_bin(&dir).is_some()
 }
 
@@ -126,6 +298,8 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
 
     let install_path = expand_tilde(&config.install_path);
     let working = &config.launch_working_state;
+    let perf_wayland = working.performance.wayland;
+    let perf_x11_fallback = working.performance.x11_fallback;
     let (runner_name, used_fallback) = resolve_runner_for_launch(
         &install_path,
         &working.runner_name,
@@ -135,9 +309,10 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     let is_debug = log_level == "debug";
 
     // Resolve Wine binary from the runner directory (supports standard Wine + Proton layouts)
-    let runner_dir = Path::new(&install_path).join("runners").join(&runner_name);
+    let runner_dir = crate::runners::runner_dir(&install_path, &runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
+    *LAST_RUNNER_DIR.lock().unwrap_or_else(|e| e.into_inner()) = Some(runner_dir.clone());
     let runner_bin = wine.parent()
         .ok_or_else(|| "Wine binary has no parent directory".to_string())?
         .to_path_buf();
@@ -181,17 +356,30 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     let _ = app.emit("launch-log", &format!("Prefix:     {}", install_path));
 
     // --- Log: Determine and output Wine version ---
-    if
-        let Ok(out) = Command::new(wine.to_string_lossy().as_ref())
-            .arg("--version")
-            .env("WINEPREFIX", &install_path)
-            .output()
-    {
-        let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !version.is_empty() {
-            let _ = app.emit("launch-log", &format!("Version:    {}", version));
-        }
+    let wine_version = Command::new(wine.to_string_lossy().as_ref())
+        .arg("--version")
+        .env("WINEPREFIX", &install_path)
+        .output()
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|v| !v.is_empty());
+    if let Some(ref version) = wine_version {
+        let _ = app.emit("launch-log", &format!("Version:    {}", version));
     }
+
+    // --- Select the graphics driver in the prefix ---
+    // Which driver Wine uses is a per-prefix registry setting; there is no
+    // environment variable for it, and the LUG wayland builds load
+    // winewayland.drv even when DISPLAY is set. Removing DISPLAY alone
+    // therefore had no effect on them - the Wayland switch has to write the
+    // registry to mean anything.
+    apply_graphics_driver(
+        &app,
+        &wine,
+        &install_path,
+        perf_wayland && !perf_x11_fallback,
+        wine_version.as_deref()
+    );
 
     let _ = app.emit("launch-log", "");
 
@@ -418,13 +606,42 @@ pub async fn launch_game(app: AppHandle, config: AppConfig) -> Result<(), String
     // Store PID and installation path so stop_game can terminate the process
     *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = Some((pid, install_path.clone()));
 
-    // Monitor child process in the background - when the launcher exits,
-    // the thread sends a "launch-exited" event to the frontend
+    // Monitor the session in the background - when it ends, the thread sends a
+    // "launch-exited" event to the frontend.
+    //
+    // The process we spawned is only Wine's loader. Since Wine 11.14 it exits a
+    // few seconds after the RSI Launcher relaunches itself, while the launcher
+    // itself keeps running inside the prefix. Reporting that as "exited" resets
+    // the UI, drops the tracked PID (so Stop no longer works) and makes the next
+    // Start spawn a second launcher that dies instantly against the first one's
+    // single-instance lock - which looks exactly like "the runner starts and
+    // dies immediately". So after the loader is gone, wait for the prefix to go
+    // quiet: `wineserver -w` blocks while any process is still alive in it and
+    // returns immediately once none is.
+    let wineserver_wait = wineserver.clone();
+    let prefix_for_wait = install_path.clone();
     std::thread::spawn(move || {
         let status = child.wait();
         let code = status.ok().and_then(|s| s.code());
 
-        // Clear stored PID since the process is no longer running
+        let session_alive = wineserver_session_alive(&wineserver_wait, &prefix_for_wait);
+        if session_alive {
+            let _ = app.emit(
+                "launch-log",
+                &format!(
+                    "> Wine loader (PID {}) exited with code {:?} - the RSI Launcher is still running, waiting for it",
+                    pid,
+                    code
+                )
+            );
+            // Blocks until the last process in the prefix is gone
+            let _ = Command::new(wineserver_wait.to_string_lossy().as_ref())
+                .arg("-w")
+                .env("WINEPREFIX", &prefix_for_wait)
+                .status();
+        }
+
+        // Clear stored PID since nothing is running in the prefix any more
         *GAME_PID.lock().unwrap_or_else(|e| e.into_inner()) = None;
 
         let _ = app.emit("launch-log", "");
@@ -469,18 +686,15 @@ pub async fn stop_game(app: AppHandle) -> Result<(), String> {
 
     // Kill all wineservers in all runner directories
     // to clean up orphaned Wine processes (e.g. winedevice.exe)
-    let runner_dirs = std::fs::read_dir(Path::new(&install_path).join("runners")).ok();
-    if let Some(dirs) = runner_dirs {
-        for entry in dirs.flatten() {
-            if let Some(wine) = resolve_wine_bin(&entry.path()) {
-                let wineserver = wine.with_file_name("wineserver");
-                if wineserver.exists() {
-                    let _ = app.emit("launch-log", "> Killing wineserver...");
-                    let _ = Command::new(wineserver.to_string_lossy().as_ref())
-                        .arg("-k")
-                        .env("WINEPREFIX", &install_path)
-                        .output();
-                }
+    for dir in wineserver_cleanup_dirs(&install_path) {
+        if let Some(wine) = resolve_wine_bin(&dir) {
+            let wineserver = wine.with_file_name("wineserver");
+            if wineserver.exists() {
+                let _ = app.emit("launch-log", "> Killing wineserver...");
+                let _ = Command::new(wineserver.to_string_lossy().as_ref())
+                    .arg("-k")
+                    .env("WINEPREFIX", &install_path)
+                    .output();
             }
         }
     }
@@ -508,16 +722,14 @@ pub fn cleanup_child_processes() {
         let _ = Command::new("kill").arg("-9").arg(pid.to_string()).output();
 
         // Kill all wineservers to clean up Wine process trees
-        if let Ok(dirs) = std::fs::read_dir(Path::new(&install_path).join("runners")) {
-            for entry in dirs.flatten() {
-                if let Some(wine) = resolve_wine_bin(&entry.path()) {
-                    let wineserver = wine.with_file_name("wineserver");
-                    if wineserver.exists() {
-                        let _ = Command::new(wineserver.to_string_lossy().as_ref())
-                            .arg("-k")
-                            .env("WINEPREFIX", &install_path)
-                            .output();
-                    }
+        for dir in wineserver_cleanup_dirs(&install_path) {
+            if let Some(wine) = resolve_wine_bin(&dir) {
+                let wineserver = wine.with_file_name("wineserver");
+                if wineserver.exists() {
+                    let _ = Command::new(wineserver.to_string_lossy().as_ref())
+                        .arg("-k")
+                        .env("WINEPREFIX", &install_path)
+                        .output();
                 }
             }
         }
@@ -531,4 +743,100 @@ pub fn is_game_running() -> bool {
     GAME_PID.lock()
         .map(|guard| guard.is_some())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+
+    /// Writes an executable stand-in for `wineserver` that behaves like the
+    /// real one for the `-w` probe: `sleep_secs = 0` mimics an empty prefix
+    /// (returns at once), anything else mimics a live session (keeps waiting).
+    fn fake_wineserver(dir: &Path, sleep_secs: u32) -> PathBuf {
+        let path = dir.join("wineserver");
+        std::fs::write(&path, format!("#!/bin/sh\nsleep {}\n", sleep_secs)).unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&path, perms).unwrap();
+        path
+    }
+
+    #[test]
+    fn empty_prefix_is_reported_as_not_alive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = fake_wineserver(tmp.path(), 0);
+        assert!(!wineserver_session_alive(&server, &tmp.path().to_string_lossy()));
+    }
+
+    #[test]
+    fn running_session_is_detected() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Outlives the probe window, like a detached RSI Launcher would
+        let server = fake_wineserver(tmp.path(), 30);
+        assert!(wineserver_session_alive(&server, &tmp.path().to_string_lossy()));
+    }
+
+    #[test]
+    fn wine_versions_are_parsed_from_the_version_banner() {
+        assert_eq!(parse_wine_version("wine-11.15.r0.g2df1ee28039 ( TkG Plain )"), Some((11, 15)));
+        assert_eq!(parse_wine_version("wine-11.7"), Some((11, 7)));
+        assert_eq!(parse_wine_version("wine-10.0-20260425 (CachyOS)"), Some((10, 0)));
+        assert_eq!(parse_wine_version("not a version"), None);
+    }
+
+    #[test]
+    fn wayland_is_flagged_broken_from_11_14_on() {
+        // 11.14 is where winewayland.drv stopped mapping the launcher's windows
+        assert!(wayland_launcher_is_broken(Some("wine-11.14")));
+        assert!(wayland_launcher_is_broken(Some("wine-11.15.r0.g2df1ee28039 ( TkG Plain )")));
+        assert!(wayland_launcher_is_broken(Some("wine-12.0")));
+        assert!(!wayland_launcher_is_broken(Some("wine-11.13-1")));
+        assert!(!wayland_launcher_is_broken(Some("wine-11.7")));
+        // Unknown version: no claim, no warning
+        assert!(!wayland_launcher_is_broken(None));
+        assert!(!wayland_launcher_is_broken(Some("mystery build")));
+    }
+
+    #[test]
+    fn wanted_driver_follows_the_wayland_switch() {
+        assert_eq!(wanted_graphics_driver(true), "wayland,x11");
+        assert_eq!(wanted_graphics_driver(false), "x11");
+    }
+
+    #[test]
+    fn graphics_driver_is_read_from_the_prefix_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Shaped like a real user.reg: escaped backslashes, values unindented,
+        // and a same-named value in a later section that must not win.
+        let reg = concat!(
+            "WINE REGISTRY Version 2\n",
+            "\n",
+            "[Software\\\\Wine\\\\Drivers] 1787382956\n",
+            "#time=1dd32061343d62a\n",
+            "\"Graphics\"=\"x11\"\n",
+            "\n",
+            "[Software\\\\Wine\\\\Explorer] 1787382956\n",
+            "\"Graphics\"=\"should-not-match\"\n"
+        );
+        std::fs::write(tmp.path().join("user.reg"), reg).unwrap();
+        assert_eq!(
+            current_graphics_driver(&tmp.path().to_string_lossy()).as_deref(),
+            Some("x11")
+        );
+    }
+
+    #[test]
+    fn missing_registry_means_unknown_driver() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(current_graphics_driver(&tmp.path().to_string_lossy()).is_none());
+    }
+
+    #[test]
+    fn missing_wineserver_falls_back_to_not_alive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("does-not-exist");
+        assert!(!wineserver_session_alive(&missing, &tmp.path().to_string_lossy()));
+    }
 }

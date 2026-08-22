@@ -51,7 +51,7 @@ pub async fn repair_installation(app: AppHandle) -> Result<String, String> {
         Some(working_runner.as_str())
     };
     if let Some(name) = runner_name {
-        let runner_dir = Path::new(&install_path).join("runners").join(name);
+        let runner_dir = crate::runners::runner_dir(&install_path, name);
         if let Some(wine) = resolve_wine_bin(&runner_dir) {
             let wineserver = wine.with_file_name("wineserver");
             if wineserver.exists() {

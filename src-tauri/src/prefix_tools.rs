@@ -43,7 +43,7 @@ fn get_wine_paths(
 ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), String> {
     let expanded = expand_tilde(base_path);
     let prefix = Path::new(&expanded);
-    let runner_dir = prefix.join("runners").join(runner_name);
+    let runner_dir = crate::runners::runner_dir(&expanded, runner_name);
     let wine = resolve_wine_bin(&runner_dir)
         .ok_or_else(|| format!("Wine binary not found in {}", runner_dir.display()))?;
     let runner_bin = wine.parent()
@@ -359,6 +359,7 @@ struct WinetricksEnv {
     wine: std::path::PathBuf,
     wineserver: std::path::PathBuf,
     script: std::path::PathBuf,
+    cache: std::path::PathBuf,
 }
 
 impl WinetricksEnv {
@@ -390,10 +391,20 @@ impl WinetricksEnv {
 
         let script = crate::util::download_winetricks(&tmp_dir).await?;
 
+        // Ephemeral verb cache, wiped on every run. Winetricks otherwise reuses
+        // ~/.cache/winetricks, where a stale entry keeps serving an outdated
+        // PowerShell and produces the "SHA256 mismatch" / "no valid cabinets
+        // found" failures documented in the LUG knowledge base.
+        let cache = tmp_dir.join("cache");
+        let _ = std::fs::remove_dir_all(&cache);
+        std::fs
+            ::create_dir_all(&cache)
+            .map_err(|e| format!("Failed to create winetricks cache dir: {}", e))?;
+
         // Suppress Wine's 64-bit prefix warnings during winetricks runs
         let _ = std::fs::write(prefix.join("no_win64_warnings"), "");
 
-        Ok(Self { prefix, wine, wineserver, script })
+        Ok(Self { prefix, wine, wineserver, script, cache })
     }
 
     /// Builds a winetricks command with the full Wine environment applied.
@@ -404,7 +415,11 @@ impl WinetricksEnv {
             .env("WINE", self.wine.to_string_lossy().as_ref())
             .env("WINESERVER", self.wineserver.to_string_lossy().as_ref())
             .env("WINEDLLOVERRIDES", "winemenubuilder.exe=d;winedbg.exe=d")
-            .env("WINEDEBUG", "-all");
+            .env("WINEDEBUG", "-all")
+            .env("W_CACHE", self.cache.to_string_lossy().as_ref())
+            // Winetricks prefers wget, which is missing inside our AppImage and
+            // on immutable distros. curl is a hard dependency of this app.
+            .env("WINETRICKS_DOWNLOADER", "curl");
         clean_appimage_env(&mut cmd);
         cmd
     }

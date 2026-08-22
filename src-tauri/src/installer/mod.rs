@@ -57,6 +57,14 @@ pub(crate) static INSTALL_CANCEL: AtomicBool = AtomicBool::new(false);
 /// clean up the associated wineserver.
 pub(crate) static GAME_PID: Mutex<Option<(u32, String)>> = Mutex::new(None);
 
+/// Directory of the runner the last launch used.
+///
+/// Runners provided by the system live outside `<install_path>/runners/`, so the
+/// wineserver cleanup cannot find them by walking that directory. Remembering
+/// the one actually used keeps the cleanup complete without shutting down a
+/// wineserver for every runner the system happens to ship.
+pub(crate) static LAST_RUNNER_DIR: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
 /// Progress message during installation.
 /// Sent as an event to the frontend so the UI can display the current status.
 #[derive(Serialize, Deserialize, Clone)]
@@ -196,7 +204,8 @@ fn is_valid_connector_name(s: &str) -> bool {
 /// Configures all environment variables for Wine execution.
 ///
 /// Sets performance flags (ESync, FSync, DXVK Async), display settings
-/// (Wayland, HDR, FSR), overlay options (MangoHUD, DXVK HUD), and shader caches.
+/// (Wayland, HDR, FSR), overlay options (MangoHUD, DXVK HUD), and shader caches,
+/// and strips variables inherited from the desktop session that break the game.
 /// Custom environment variables can override the built-in ones.
 ///
 /// Returns the list of all set variables so they can be displayed in the log.
@@ -230,6 +239,11 @@ pub(crate) fn configure_wine_env(
         vars.push(("XDG_RUNTIME_DIR".into(), runtime_dir));
     }
 
+    // SDL_VIDEODRIVER: a session-wide SDL_VIDEODRIVER=wayland makes Star Citizen
+    // abort with "Failed to initialize dependencies". The LUG launch script
+    // unsets it too; we inherit it from the desktop session, so drop it here.
+    vars.push(("SDL_VIDEODRIVER".into(), "(removed)".to_string()));
+
     // WINEDEBUG: In debug mode enable detailed Wine output,
     // otherwise suppress all messages for better performance
     let winedebug = match log_level {
@@ -254,11 +268,16 @@ pub(crate) fn configure_wine_env(
     // Display settings - Wayland support
     if perf.wayland {
         vars.push(("PROTON_ENABLE_WAYLAND".into(), "1".into())); // For Proton runners
-        // For pure Wine runners: remove DISPLAY entirely so the X11 driver initialization
-        // fails and the Wayland driver takes over.
-        // DISPLAY="" is not enough - getenv("DISPLAY") still returns a
-        // non-NULL pointer and Wine tries X11 anyway.
-        vars.push(("DISPLAY".into(), "(removed)".to_string())); // Only logged, not set
+        // With the X11 fallback on, rendering goes through XWayland on purpose
+        // (see PerformanceSettings::x11_fallback) and DISPLAY has to stay -
+        // without it winex11.drv cannot initialize at all.
+        if !perf.x11_fallback {
+            // For pure Wine runners: remove DISPLAY entirely so the X11 driver initialization
+            // fails and the Wayland driver takes over.
+            // DISPLAY="" is not enough - getenv("DISPLAY") still returns a
+            // non-NULL pointer and Wine tries X11 anyway.
+            vars.push(("DISPLAY".into(), "(removed)".to_string())); // Only logged, not set
+        }
     }
     // Enable HDR (High Dynamic Range) support for Proton and DXVK
     if perf.hdr {
@@ -302,8 +321,17 @@ pub(crate) fn configure_wine_env(
         vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE".into(), "on".into()));
         vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE".into(), "on".into()));
         vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_FG_OVERRIDE".into(), "on".into()));
-        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION".into(), "RENDER_PRESET_K".into()));
-        vars.push(("DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE_RENDER_PRESET_SELECTION".into(), "RENDER_PRESET_K".into()));
+        // render_preset_latest instead of pinning a generation (we used to send
+        // RENDER_PRESET_K): the LUG wiki switched to it so new DLSS releases are
+        // picked up without another app update.
+        vars.push((
+            "DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION".into(),
+            "render_preset_latest".into(),
+        ));
+        vars.push((
+            "DXVK_NVAPI_DRS_NGX_DLSS_RR_OVERRIDE_RENDER_PRESET_SELECTION".into(),
+            "render_preset_latest".into(),
+        ));
     }
 
     // --- NVIDIA: Smooth Motion ---
@@ -352,6 +380,74 @@ pub(crate) fn configure_wine_env(
         }
     }
 
+    // --- Troubleshooting: force an English locale ---
+    // EAC fails with code 60099 ("Failed to load the embedded resources") under
+    // some system locales.
+    if perf.force_locale {
+        vars.push(("LC_ALL".into(), "en_US.utf8".into()));
+    }
+
+    // --- Troubleshooting: keyboard input method ---
+    // IBus swallows AltGr and the non-US keys it produces (umlauts, accents).
+    // Routing input through XIM restores them.
+    if perf.input_method_xim {
+        vars.push(("XMODIFIERS".into(), "@im=none".into()));
+        vars.push(("GTK_IM_MODULE".into(), "xim".into()));
+        vars.push(("QT_IM_MODULE".into(), "xim".into()));
+    }
+    if let Some(ref lang) = perf.wine_lang {
+        if !lang.is_empty() {
+            vars.push(("LANG".into(), lang.clone()));
+        }
+    }
+
+    // --- Troubleshooting: NVIDIA threaded optimizations ---
+    // Gamescope does not work on NVIDIA with them enabled.
+    if perf.gl_threaded_off {
+        vars.push(("__GL_THREADED_OPTIMIZATIONS".into(), "0".into()));
+    }
+
+    // --- Troubleshooting: gamescope WSI bypass (black game window) ---
+    if perf.gamescope.enabled && perf.gamescope.wsi_force_bypass {
+        vars.push(("GAMESCOPE_WSI_FORCE_BYPASS".into(), "1".into()));
+    }
+
+    // --- Troubleshooting: cap the VRAM the game may allocate ---
+    // Cards that run out of VRAM stutter badly. Reporting less than is
+    // physically there makes the game budget more conservatively.
+    if let Some(limit_mb) = perf.vram_limit_mb {
+        if limit_mb > 0 {
+            if perf.vram_report_limit {
+                // Vulkan renderer: report a smaller heap through the Mesa layer
+                vars.push((
+                    "VK_LOADER_LAYERS_ENABLE".into(),
+                    "VK_LAYER_MESA_vram_report_limit".into(),
+                ));
+                vars.push(("VK_VRAM_REPORT_LIMIT_HEAP_SIZE".into(), limit_mb.to_string()));
+                // The layer needs to know which device to apply to. Without the
+                // ids we still set the heap size - the layer then applies to
+                // every device, which on a single-GPU machine is the same thing.
+                match crate::system_check::primary_gpu_pci_ids() {
+                    Some((vendor, device)) =>
+                        vars.push((
+                            "VK_VRAM_REPORT_LIMIT_DEVICE_ID".into(),
+                            format!("{}:{}", vendor, device),
+                        )),
+                    None =>
+                        log::warn!(
+                            "VRAM limit: could not read the GPU's PCI ids, applying the Mesa layer to all devices"
+                        ),
+                }
+            } else {
+                // DXVK renderer: cap the DXGI device memory instead
+                vars.push((
+                    "DXVK_CONFIG".into(),
+                    format!("dxgi.maxDeviceMemory = {};cachedDynamicResources = a;", limit_mb),
+                ));
+            }
+        }
+    }
+
     // Shader cache settings: Store compiled shaders on disk
     // so they don't need to be recompiled on the next launch.
     // Large cache size (10 GB) and no automatic cleanup because
@@ -385,7 +481,7 @@ pub(crate) fn configure_wine_env(
     // Determine DISPLAY value before applying environment variables
     // For X11 mode: use current DISPLAY from environment (or fallback to :0)
     // For Wayland mode: remove DISPLAY so Wine uses Wayland driver
-    let display_value = if perf.wayland {
+    let display_value = if perf.wayland && !perf.x11_fallback {
         None // Remove DISPLAY for Wayland
     } else {
         Some(std::env::var("DISPLAY").unwrap_or_else(|_| ":0".to_string()))
@@ -400,10 +496,12 @@ pub(crate) fn configure_wine_env(
         vars.push(("DISPLAY".into(), "(removed)".to_string()));
     }
 
-    // Apply all collected environment variables to the command
+    // Apply all collected environment variables to the command.
+    // "(removed)" is a log-only placeholder for variables we deliberately strip
+    // from the child environment instead of setting.
     for (key, val) in &vars {
-        // Skip the "(removed)" DISPLAY placeholder - we handle DISPLAY separately
-        if key == "DISPLAY" && val == "(removed)" {
+        if val == "(removed)" {
+            cmd.env_remove(key);
             continue;
         }
         cmd.env(key, val);
@@ -421,7 +519,8 @@ pub(crate) fn configure_wine_env(
 
 #[cfg(test)]
 mod tests {
-    use super::is_valid_connector_name;
+    use super::{ configure_wine_env, is_valid_connector_name };
+    use std::process::Command;
 
     #[test]
     fn valid_connector_names() {
@@ -442,5 +541,37 @@ mod tests {
         for name in ["", "Foo Bar", "Monitor1", "1234", "DP1"] {
             assert!(!is_valid_connector_name(name), "expected {name:?} to be rejected");
         }
+    }
+
+    /// The DISPLAY value `configure_wine_env` logged for the given settings.
+    fn display_entry(wayland: bool, x11_fallback: bool) -> Option<String> {
+        let mut perf = crate::config::AppConfig::default().launch_working_state.performance;
+        perf.wayland = wayland;
+        perf.x11_fallback = x11_fallback;
+        let mut cmd = Command::new("true");
+        configure_wine_env(&mut cmd, "/tmp/prefix", &perf, "info")
+            .into_iter()
+            .find(|(key, _)| key == "DISPLAY")
+            .map(|(_, value)| value)
+    }
+
+    #[test]
+    fn wayland_without_fallback_drops_display() {
+        // Only then does Wine fall through to its Wayland driver
+        assert_eq!(display_entry(true, false).as_deref(), Some("(removed)"));
+    }
+
+    #[test]
+    fn x11_fallback_keeps_display() {
+        // winex11.drv cannot initialize without DISPLAY, so it has to survive
+        let value = display_entry(true, true).expect("DISPLAY should be logged");
+        assert_ne!(value, "(removed)");
+        assert!(!value.is_empty());
+    }
+
+    #[test]
+    fn x11_mode_keeps_display() {
+        let value = display_entry(false, false).expect("DISPLAY should be logged");
+        assert_ne!(value, "(removed)");
     }
 }

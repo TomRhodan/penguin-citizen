@@ -49,6 +49,7 @@ function getCheckItems() {
     { id: 'mapcount', name: t('installation:check.mapcount.name'), icon: '', tooltip: t('installation:check.mapcount.tooltip') },
     { id: 'filelimit', name: t('installation:check.filelimit.name'), icon: '', tooltip: t('installation:check.filelimit.tooltip') },
     { id: 'vulkan', name: t('installation:check.vulkan.name'), icon: '', tooltip: t('installation:check.vulkan.tooltip') },
+    { id: 'joystick', name: t('installation:check.joystick.name'), icon: '', tooltip: t('installation:check.joystick.tooltip') },
     { id: 'diskspace', name: t('installation:check.diskspace.name'), icon: '', tooltip: t('installation:check.diskspace.tooltip') },
   ];
 }
@@ -435,7 +436,7 @@ async function runChecks(body) {
 /**
  * Updates a single check item in the DOM with the result.
  * Sets icon (checkmark/warning/cross), status text, and adds a
- * "Fix" button for fixable failures.
+ * "Fix" button for anything fixable that did not pass.
  *
  * @param {Object} check - Check result with id, status, detail, and fixable fields
  */
@@ -459,8 +460,10 @@ function updateCheckItem(check) {
 
   el.querySelector('.check-detail').textContent = check.detail;
 
-  // Add a fix button for fixable failures
-  if (check.fixable && check.status === 'fail') {
+  // Add a fix button for anything fixable. Warnings get one too: the joystick
+  // udev rules are only a warning (a machine without a HOTAS does not need
+  // them) but are still worth one click to install.
+  if (check.fixable && check.status !== 'pass') {
     const existing = el.querySelector('.btn-fix');
     if (!existing) {
       const fixBtn = document.createElement('button');
@@ -488,6 +491,7 @@ async function applyFix(checkId, btn) {
   const commandMap = {
     mapcount: 'fix_mapcount',
     filelimit: 'fix_filelimit',
+    joystick: 'fix_joystick_rules',
   };
 
   const command = commandMap[checkId];
@@ -497,6 +501,7 @@ async function applyFix(checkId, btn) {
   const descriptions = {
     mapcount: t('installation:fix.mapcount.desc'),
     filelimit: t('installation:fix.filelimit.desc'),
+    joystick: t('installation:fix.joystick.desc'),
   };
 
   const confirmed = await confirm(

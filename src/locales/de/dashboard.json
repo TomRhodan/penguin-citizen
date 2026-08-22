@@ -3,6 +3,7 @@
   "subtitle": "Neuigkeiten, Status & Community auf einen Blick",
 
   "section.news": "RSI-Neuigkeiten",
+  "section.lugNews": "Linux-Neuigkeiten (LUG)",
   "section.serverStatus": "Serverstatus",
   "section.community": "Community",
 
@@ -40,6 +41,7 @@
   "button.period30d": "30T",
 
   "error.couldNotLoadNews": "Neuigkeiten konnten nicht geladen werden",
+  "error.couldNotLoadLugNews": "LUG-Neuigkeiten konnten nicht geladen werden",
   "error.couldNotLoadServerStatus": "Serverstatus konnte nicht geladen werden",
   "error.couldNotLoadCommunityStats": "Community-Statistiken konnten nicht geladen werden",
 

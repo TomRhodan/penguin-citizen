@@ -117,6 +117,10 @@ export function renderDashboard(container) {
         <div id="dash-news-content">${renderNewsSkeleton()}</div>
       </div>
       <div class="dash-right-col">
+        <div class="dash-panel" id="dash-lug-news-panel">
+          <div class="dash-panel-title"><span class="dash-panel-title-icon">&#9881;</span> ${t('dashboard:section.lugNews')}</div>
+          <div id="dash-lug-news-content">${renderNewsSkeleton()}</div>
+        </div>
         <div class="dash-panel" id="dash-status-panel">
           <div class="dash-panel-title"><span class="dash-panel-title-icon">&#9673;</span> ${t('dashboard:section.serverStatus')}</div>
           <div id="dash-server-content">${renderServerSkeleton()}</div>
@@ -220,11 +224,14 @@ function renderStatsSkeleton() {
 async function loadAll() {
   const localPromise = loadLocalStatus();
   const newsPromise = loadNews();
+  const lugNewsPromise = loadLugNews();
   const serverPromise = loadServerStatus();
   const statsPromise = loadCommunityStats();
   const shaderPromise = loadShaderCacheStatus();
 
-  await Promise.allSettled([localPromise, newsPromise, serverPromise, statsPromise, shaderPromise]);
+  await Promise.allSettled([
+    localPromise, newsPromise, lugNewsPromise, serverPromise, statsPromise, shaderPromise,
+  ]);
 }
 
 /**
@@ -250,6 +257,12 @@ function renderFromCache() {
   if (newsCache) {
     const el = document.getElementById('dash-news-content');
     if (el) renderNewsItems(el, newsCache.items);
+  }
+
+  const lugNewsCache = DashboardCache.get('lug_news');
+  if (lugNewsCache) {
+    const el = document.getElementById('dash-lug-news-content');
+    if (el) renderNewsItems(el, lugNewsCache.items);
   }
 
   // Community stats (numbers only first, then sparklines if history cached too)
@@ -891,6 +904,34 @@ async function loadNews() {
   } catch {
     if (!DashboardCache.get('news')) {
       el.innerHTML = renderError(t('dashboard:error.couldNotLoadNews'), () => loadNews());
+    }
+  }
+}
+
+/**
+ * Loads the LUG wiki news and renders them into their own panel.
+ *
+ * Separate from the RSI feed on purpose: this is where the Linux-side
+ * workarounds for the current patch show up, and they are what a user on this
+ * dashboard can actually act on.
+ */
+async function loadLugNews() {
+  const el = document.getElementById('dash-lug-news-content');
+  if (!el) return;
+
+  try {
+    const result = await invoke('fetch_lug_news');
+    if (result.error && result.items.length === 0) {
+      if (!DashboardCache.get('lug_news')) {
+        el.innerHTML = renderError(t('dashboard:error.couldNotLoadLugNews'), () => loadLugNews());
+      }
+      return;
+    }
+    renderNewsItems(el, result.items);
+    DashboardCache.set('lug_news', { items: result.items });
+  } catch {
+    if (!DashboardCache.get('lug_news')) {
+      el.innerHTML = renderError(t('dashboard:error.couldNotLoadLugNews'), () => loadLugNews());
     }
   }
 }

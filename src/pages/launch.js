@@ -35,7 +35,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, buildRunnerOrigins, runnerOptionLabel } from '../utils.js';
 import { t } from '../i18n.js';
 import {
   confirm as dialogConfirm,
@@ -64,6 +64,7 @@ let unlistenLaunchLog = null;
 let unlistenLaunchStarted = null;
 /** @type {Function|null} Unlisten function for the "game exited" event */
 let unlistenLaunchExited = null;
+let unlistenLaunchWarning = null;
 /** @type {string} Detected GPU vendor: 'nvidia', 'amd', 'intel', or 'unknown' */
 let detectedGpuVendor = 'unknown';
 /** @type {string} Detected GPU name for display */
@@ -72,6 +73,8 @@ let detectedGpuName = '';
 let vulkanDevices = [];
 /** @type {string[]} Installed Wine runners under <install_path>/runners — populated by loadAndCheck. */
 let installedRunners = [];
+/** Map of runner name -> origin label, for runners the system provides. */
+let runnerOrigins = {};
 /** @type {boolean} Whether gamescope is installed on the system */
 let gamescopeInstalled = false;
 /** @type {boolean} Whether gamemoderun is installed on the system */
@@ -118,9 +121,25 @@ function getLaunchOptions() {
       { key: 'in_process_gpu', label: t('launch:option.inProcessGpu'), tooltip: t('launch:tooltip.inProcessGpu') },
       { key: 'vulkan_mailbox', label: t('launch:option.vulkanMailbox'), tooltip: t('launch:tooltip.vulkanMailbox') },
       { key: 'enable_hdr_wsi', label: t('launch:option.enableHdrWsi'), tooltip: t('launch:tooltip.enableHdrWsi') },
+      { key: 'force_locale', label: t('launch:option.forceLocale'), tooltip: t('launch:tooltip.forceLocale') },
+      { key: 'input_method_xim', label: t('launch:option.inputMethodXim'), tooltip: t('launch:tooltip.inputMethodXim') },
+      { key: 'gl_threaded_off', label: t('launch:option.glThreadedOff'), tooltip: t('launch:tooltip.glThreadedOff') },
     ]},
   ];
 }
+
+/**
+ * VRAM cap presets from the LUG wiki's Nvidia troubleshooting table. Reporting
+ * less VRAM than the card has makes the game budget more conservatively, which
+ * is what fixes the stutter on memory-starved cards.
+ */
+const VRAM_LIMIT_STEPS = [
+  { gb: 12, mb: 9216 },
+  { gb: 10, mb: 8192 },
+  { gb: 8, mb: 6144 },
+  { gb: 6, mb: 4096 },
+  { gb: 4, mb: 2048 },
+];
 
 /**
  * Card definitions for the 3x3 grid layout.
@@ -169,6 +188,10 @@ const BUILTIN_ENV_VARS = new Set([
   'radv_zero_vram', 'RADV_PERFTEST',
   'DXVK_FILTER_DEVICE_NAME', 'MESA_VK_WSI_PRESENT_MODE',
   'ENABLE_HDR_WSI', 'WINE_CPU_TOPOLOGY',
+  'LC_ALL', 'LANG', 'XMODIFIERS', 'GTK_IM_MODULE', 'QT_IM_MODULE',
+  '__GL_THREADED_OPTIMIZATIONS', 'GAMESCOPE_WSI_FORCE_BYPASS',
+  'DXVK_CONFIG', 'VK_LOADER_LAYERS_ENABLE',
+  'VK_VRAM_REPORT_LIMIT_HEAP_SIZE', 'VK_VRAM_REPORT_LIMIT_DEVICE_ID',
 ]);
 
 // --- Auto-Launch-Flag ---
@@ -272,6 +295,7 @@ async function loadAndCheck(container) {
         basePath: config.install_path || '',
       });
       installedRunners = (result?.runners || []).map((r) => r.name);
+      runnerOrigins = buildRunnerOrigins(result?.runners);
     } catch (_e) {
       installedRunners = [];
     }
@@ -418,13 +442,14 @@ function renderProfileHeader() {
     );
   }
   for (const name of installedRunners) {
+    const label = runnerOptionLabel(name, runnerOrigins);
     if (name === currentRunner) {
       runnerOptions.push(
-        `<option value="${escapeHtml(name)}" selected>${escapeHtml(name)}</option>`
+        `<option value="${escapeHtml(name)}" selected>${escapeHtml(label)}</option>`
       );
     } else {
       runnerOptions.push(
-        `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+        `<option value="${escapeHtml(name)}">${escapeHtml(label)}</option>`
       );
     }
   }
@@ -781,6 +806,31 @@ function renderOptionCards(disabled) {
 }
 
 /**
+ * Option combinations the LUG wiki documents as actively harmful.
+ *
+ * Each entry names the options that must all be on for the warning to apply,
+ * and the card that owns the conflict - the warning is rendered there because
+ * that is where the user just toggled something.
+ */
+const OPTION_CONFLICTS = [
+  { card: 'nvidia', keys: ['nvidia_smooth_motion', 'nvidia_dlss'], message: 'launch:conflict.dlssSmoothMotion' },
+  { card: 'nvidia', keys: ['nvidia_smooth_motion', 'mangohud'], message: 'launch:conflict.mangohudSmoothMotion' },
+  { card: 'nvidia', keys: ['nvidia_smooth_motion', 'wayland'], message: 'launch:conflict.waylandSmoothMotion' },
+];
+
+/**
+ * Returns the active conflict messages for a card.
+ * @param {string} cardKey
+ * @param {Object} perf - Current performance settings
+ * @returns {string[]}
+ */
+function activeConflicts(cardKey, perf) {
+  return OPTION_CONFLICTS
+    .filter(c => c.card === cardKey && c.keys.every(k => perf[k]))
+    .map(c => t(c.message));
+}
+
+/**
  * Renders a single card (collapsed or expanded).
  * @param {Object} card - Card definition
  * @param {boolean} disabled - Whether inputs should be disabled
@@ -825,6 +875,9 @@ function renderCardBadges(card) {
       if (perf[opt.key]) {
         badges.push(`<span class="launch-card-badge">${escapeHtml(opt.label)}</span>`);
       }
+    }
+    if (activeConflicts(card.key, perf).length > 0) {
+      badges.push(`<span class="launch-card-badge launch-card-badge-warn">${t('launch:badge.conflict')}</span>`);
     }
   } else if (card.special === 'wayland') {
     if (perf.wayland) {
@@ -890,7 +943,9 @@ function renderCardBody(card, disabled) {
           <span>${opt.label}</span>
         </label>
       `;
-    }).join('');
+    }).join('') + activeConflicts(card.key, perf)
+      .map(msg => `<div class="launch-conflict-warning">${escapeHtml(msg)}</div>`)
+      .join('');
   }
 
   if (card.special === 'wayland') {
@@ -933,6 +988,13 @@ function renderWaylandCardBody(disabled, perf) {
         ${!fractional && perf.wayland ? 'checked' : ''}
         ${disabled || fractional ? 'disabled' : ''} />
       <span>${t('launch:label.enableWayland')}</span>
+    </label>
+    <label class="toggle-option launch-x11-fallback ${!fractional && perf.wayland ? '' : 'disabled'}"
+      data-tooltip="${t('launch:tooltip.x11Fallback')}">
+      <input type="checkbox" data-key="x11_fallback"
+        ${perf.x11_fallback ? 'checked' : ''}
+        ${disabled || fractional || !perf.wayland ? 'disabled' : ''} />
+      <span>${t('launch:label.x11Fallback')}</span>
     </label>
     ${renderMonitorSelect(disabled, perf)}
     ${fractional ? `<div class="launch-scaling-warning">${t('launch:desc.fractionalScalingWarning')}</div>` : ''}
@@ -986,6 +1048,12 @@ function renderGamescopeCardBody(disabled, perf) {
           ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
         <span>${t('launch:option.gamescopeKeyboard')}</span>
       </label>
+      <label class="toggle-option" data-tooltip="${t('launch:tooltip.gamescopeWsiBypass')}">
+        <input type="checkbox" id="gamescope-wsi-bypass"
+          ${perf.gamescope?.wsi_force_bypass ? 'checked' : ''}
+          ${disabled || !perf.gamescope?.enabled ? 'disabled' : ''} />
+        <span>${t('launch:option.gamescopeWsiBypass')}</span>
+      </label>
     </div>
     ${!gamescopeInstalled ? `<div class="launch-tool-not-installed">${t('launch:label.gamescopeNotInstalled')}</div>` : ''}
   `;
@@ -1010,6 +1078,32 @@ function renderGpuCpuCardBody(disabled, perf) {
         value="${escapeHtml(perf.wine_cpu_topology || '')}"
         placeholder="${t('launch:label.cpuTopologyPlaceholder')}"
         ${disabled ? 'disabled' : ''} />
+    </div>
+    <div class="launch-card-field">
+      <label class="launch-card-field-label">${t('launch:label.vramLimit')}</label>
+      <select class="input" id="launch-vram-limit" ${disabled ? 'disabled' : ''}>
+        <option value="">${t('launch:label.vramLimitOff')}</option>
+        ${VRAM_LIMIT_STEPS.map(step => `
+          <option value="${step.mb}" ${perf.vram_limit_mb === step.mb ? 'selected' : ''}>
+            ${escapeHtml(t('launch:label.vramLimitStep', { vram: step.gb, limit: step.mb }))}
+          </option>
+        `).join('')}
+      </select>
+      <label class="toggle-option" data-tooltip="${t('launch:tooltip.vramReportLimit')}">
+        <input type="checkbox" id="launch-vram-report-limit"
+          ${perf.vram_report_limit ? 'checked' : ''}
+          ${disabled || !perf.vram_limit_mb ? 'disabled' : ''} />
+        <span>${t('launch:option.vramReportLimit')}</span>
+      </label>
+      <span class="launch-card-hint">${t('launch:label.vramLimitHint')}</span>
+    </div>
+    <div class="launch-card-field">
+      <label class="launch-card-field-label">${t('launch:label.wineLang')}</label>
+      <input type="text" class="input" id="launch-wine-lang"
+        value="${escapeHtml(perf.wine_lang || '')}"
+        placeholder="${t('launch:label.wineLangPlaceholder')}"
+        ${disabled ? 'disabled' : ''} />
+      <span class="launch-card-hint">${t('launch:label.wineLangHint')}</span>
     </div>
   `;
 }
@@ -1227,6 +1321,13 @@ function bindEvents(container) {
         launchConfig.launch_working_state.performance[cb.dataset.key] = cb.checked;
         saveConfigNow();
       }
+      // The XWayland fallback only means anything while Wayland is on
+      if (cb.dataset.key === 'wayland') {
+        const fallback = container.querySelector('input[data-key="x11_fallback"]');
+        if (fallback) fallback.disabled = !cb.checked;
+        const wrap = container.querySelector('.launch-x11-fallback');
+        if (wrap) wrap.classList.toggle('disabled', !cb.checked);
+      }
     });
   });
 
@@ -1278,13 +1379,49 @@ function bindEvents(container) {
     });
   }
 
+  // VRAM cap dropdown. Toggling it off also clears the report-layer choice so
+  // the two never disagree.
+  const vramLimit = document.getElementById('launch-vram-limit');
+  if (vramLimit) {
+    vramLimit.addEventListener('change', () => {
+      if (!launchConfig) return;
+      const perfState = launchConfig.launch_working_state.performance;
+      const val = parseInt(vramLimit.value, 10);
+      perfState.vram_limit_mb = isNaN(val) ? null : val;
+      if (!perfState.vram_limit_mb) perfState.vram_report_limit = false;
+      saveConfigNow();
+      renderPage(container);
+    });
+  }
+
+  const vramReport = document.getElementById('launch-vram-report-limit');
+  if (vramReport) {
+    vramReport.addEventListener('change', () => {
+      if (launchConfig) {
+        launchConfig.launch_working_state.performance.vram_report_limit = vramReport.checked;
+        saveConfigNow();
+      }
+    });
+  }
+
+  // LANG override for the game process
+  const wineLang = document.getElementById('launch-wine-lang');
+  if (wineLang) {
+    wineLang.addEventListener('input', () => {
+      if (launchConfig) {
+        launchConfig.launch_working_state.performance.wine_lang = wineLang.value.trim() || null;
+        debouncedSaveConfig();
+      }
+    });
+  }
+
   // Gamescope enable toggle
   const gsEnabled = document.getElementById('gamescope-enabled');
   if (gsEnabled) {
     gsEnabled.addEventListener('change', () => {
       if (launchConfig) {
         if (!launchConfig.launch_working_state.performance.gamescope) {
-          launchConfig.launch_working_state.performance.gamescope = { enabled: false, hdr: false, force_grab_cursor: false, keyboard_grab: false };
+          launchConfig.launch_working_state.performance.gamescope = { enabled: false, hdr: false, force_grab_cursor: false, keyboard_grab: false, wsi_force_bypass: false };
         }
         launchConfig.launch_working_state.performance.gamescope.enabled = gsEnabled.checked;
         saveConfigNow();
@@ -1337,6 +1474,15 @@ function bindEvents(container) {
     gsKeyboard.addEventListener('change', () => {
       if (launchConfig?.launch_working_state?.performance?.gamescope) {
         launchConfig.launch_working_state.performance.gamescope.keyboard_grab = gsKeyboard.checked;
+        saveConfigNow();
+      }
+    });
+  }
+  const gsWsiBypass = document.getElementById('gamescope-wsi-bypass');
+  if (gsWsiBypass) {
+    gsWsiBypass.addEventListener('change', () => {
+      if (launchConfig?.launch_working_state?.performance?.gamescope) {
+        launchConfig.launch_working_state.performance.gamescope.wsi_force_bypass = gsWsiBypass.checked;
         saveConfigNow();
       }
     });
@@ -1487,6 +1633,12 @@ async function onLaunch(container) {
       renderPage(container);
       cleanupLaunch();
     });
+
+    // Backend warnings that would otherwise only sit in the launch console —
+    // e.g. "this runner never shows the launcher window under Wayland".
+    unlistenLaunchWarning = await listen('launch-warning', (event) => {
+      showNotification(String(event.payload), 'warning');
+    });
   } catch (e) {
     console.error('Failed to register launch event listeners:', e);
   }
@@ -1553,6 +1705,7 @@ export function cleanupLaunch() {
   if (unlistenLaunchLog) { unlistenLaunchLog(); unlistenLaunchLog = null; }
   if (unlistenLaunchStarted) { unlistenLaunchStarted(); unlistenLaunchStarted = null; }
   if (unlistenLaunchExited) { unlistenLaunchExited(); unlistenLaunchExited = null; }
+  if (unlistenLaunchWarning) { unlistenLaunchWarning(); unlistenLaunchWarning = null; }
 }
 
 // --- Monitor Refresh ---

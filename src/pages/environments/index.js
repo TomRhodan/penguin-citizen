@@ -51,7 +51,7 @@ import {
   renderStorageTab, deleteScVersion, showImportVersionDialog,
   showDataP4kCopyDropdown, showDataP4kCopyProgressModal,
   createScVersion, linkDataP4k, updateProfileFromSc,
-  moveDataP4k, confirmReplaceDataP4k,
+  moveDataP4k, confirmReplaceDataP4k, createP4kPlaceholders,
 } from './storage.js';
 import {
   loadUserCfgSettings, detectAttributeConflicts,
@@ -520,6 +520,11 @@ function attachProfilesEventListeners() {
   document.getElementById('btn-delete-version')?.addEventListener('click', async (e) => {
     const version = e.target.closest('button').dataset.version;
     await deleteScVersion(version, callbacks);
+  });
+
+  document.getElementById('btn-p4k-placeholders')?.addEventListener('click', async (e) => {
+    const version = e.target.closest('button').dataset.version;
+    await createP4kPlaceholders(version);
   });
 
   // Share Data.p4k section (Storage tab)

@@ -309,7 +309,7 @@ pub fn start_input_capture(
     // Spawn Wine DirectInput helper in parallel if wine environment is configured.
     // Failures are logged but never surface as errors to the user (graceful fallback).
     if let (Some(ref ip), Some(ref runner)) = (&install_path, &selected_runner) {
-        let runner_dir = std::path::PathBuf::from(format!("{}/runners/{}", ip, runner));
+        let runner_dir = crate::runners::runner_dir(ip, runner);
         let wine_bin_path = resolve_wine_bin(&runner_dir);
         let wine_prefix = ip.clone();
         let capturing_wine = IS_CAPTURING.clone();

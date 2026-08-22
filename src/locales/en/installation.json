@@ -16,15 +16,17 @@
   "section.perfOptions": "Performance Options",
 
   "check.memory.name": "Memory",
-  "check.memory.tooltip": "Star Citizen requires at least 16 GB RAM",
+  "check.memory.tooltip": "Star Citizen requires at least 16 GiB RAM; 48 GiB of RAM + swap plus a matching zram size is recommended",
   "check.avx.name": "AVX Support",
   "check.avx.tooltip": "Advanced Vector Extensions - required by CryEngine",
   "check.mapcount.name": "vm.max_map_count",
-  "check.mapcount.tooltip": "Kernel parameter for memory-mapped files - Wine needs a high value",
+  "check.mapcount.tooltip": "Kernel parameter for memory-mapped files - Star Citizen needs at least 1,048,576",
   "check.filelimit.name": "File Descriptor Limit",
   "check.filelimit.tooltip": "Maximum number of open file descriptors per process",
   "check.vulkan.name": "Vulkan Support",
   "check.vulkan.tooltip": "Vulkan graphics API - required for DXVK translation",
+  "check.joystick.name": "Joystick Permissions",
+  "check.joystick.tooltip": "udev rules for hidraw access - without them Star Citizen cannot see HOTAS devices",
   "check.diskspace.name": "Disk Space",
   "check.diskspace.tooltip": "At least 100 GB free space recommended",
 
@@ -64,8 +66,9 @@
   "summary.passedWithWarnings": "Checks passed with warnings - Star Citizen should work, but performance may be affected.",
   "summary.failed": "{{count}} check(s) failed - please resolve before continuing.",
 
-  "fix.mapcount.desc": "This will set vm.max_map_count=16777216 system-wide (requires root via pkexec).",
+  "fix.mapcount.desc": "This will set vm.max_map_count=1048576 system-wide (requires root via pkexec).",
   "fix.filelimit.desc": "This will increase the system file descriptor limit (requires root via pkexec).",
+  "fix.joystick.desc": "This creates udev rules in /etc/udev/rules.d/ so Wine can read HOTAS devices through hidraw (requires root via pkexec). Unplug and replug your devices afterwards.",
   "fix.default.desc": "This will modify system settings (requires root).",
   "fix.confirmTitle": "Apply System Fix?",
 

@@ -37,7 +37,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { escapeHtml } from '../utils.js';
 import { t, getCurrentLanguage } from '../i18n.js';
-import { prompt as customPrompt, showNotification } from '../utils/dialogs.js';
+import { prompt as customPrompt, showNotification, confirm } from '../utils/dialogs.js';
 import { logError } from '../utils/error-handler.js';
 
 /**
@@ -106,6 +106,12 @@ let fetchErrors = [];
 let availableSources = ['LUG'];
 /** @type {string} Currently selected source tab */
 let selectedSource = 'LUG';
+
+/**
+ * glibc verdict per runner source, from `check_runner_glibc`.
+ * @type {{system_glibc: string|null, sources: Array<{source: string, min_glibc: string, supported: boolean}>}|null}
+ */
+let glibcStatus = null;
 /** @type {boolean} Locks further installations during a runner installation */
 let isInstallingRunner = false;
 /** @type {Function|null} Unlisten function for runner download progress events */
@@ -144,6 +150,9 @@ let toolsRunnerName = '';
 let runnerDetails = {};
 /** @type {string[]} Winetricks verbs already installed in the prefix */
 let installedVerbs = [];
+
+/** @type {Array<{id: string, path: string, exists: boolean, size_bytes: number, modified: number|null}>} */
+let scLogs = [];
 /**
  * The prefix tool operation currently running, or the last one that finished.
  * Drives the console panel: what is running, since when, and how it ended.
@@ -226,6 +235,17 @@ export function renderRunners(container) {
  * @param {HTMLElement} container - The container element
  */
 function loadData(container) {
+  // The glibc verdict is independent of the rest and only decorates the
+  // download list, so it patches itself in whenever it arrives.
+  invoke('check_runner_glibc')
+    .then(status => {
+      if (activeContainer !== container) return;
+      glibcStatus = status;
+      patchSection('download-runners-slot', renderDownloadRunnersContent());
+      bindDownloadRunnerEvents(container);
+    })
+    .catch(err => logError(err, 'runners:check_runner_glibc'));
+
   // Load config and both caches in parallel
   Promise.all([
     invoke('load_config').catch(err => { logError(err, 'runners:load_config'); return null; }),
@@ -509,6 +529,13 @@ function fireDataFetches(container, forceRefresh = false) {
     refreshPrefixTools(container);
   });
 
+  // Troubleshooting logs. Optional - a prefix without them is normal.
+  invoke('list_sc_logs', { basePath: config.install_path }).then(result => {
+    if (activeContainer !== container) return;
+    scLogs = result || [];
+    refreshPrefixTools(container);
+  }).catch(err => logError(err, 'runners:list_sc_logs'));
+
   // DPI is read per runner, so it needs an active runner
   if (config.launch_working_state.runner_name) {
     invoke('get_dpi', { basePath: config.install_path, runnerName: config.launch_working_state.runner_name }).then(result => {
@@ -613,6 +640,10 @@ function renderPageSkeleton(container) {
       <div class="card-header-row">
         <h3 data-tooltip="${t('runners:tooltip.installedRunners')}" data-tooltip-pos="right">${t('runners:section.installedRunners')}</h3>
         <div class="card-header-actions">
+          <label class="runner-system-toggle" data-tooltip="${t('runners:tooltip.showSystemRunners')}" data-tooltip-pos="left">
+            <input type="checkbox" id="chk-show-system-runners" ${config.show_system_runners === false ? '' : 'checked'}>
+            <span>${t('runners:label.showSystemRunners')}</span>
+          </label>
           <button class="btn-sm" id="btn-refresh-installed" data-tooltip="${t('runners:tooltip.refreshInstalled')}" data-tooltip-pos="left">${t('runners:button.refresh')}</button>
         </div>
       </div>
@@ -738,6 +769,22 @@ function renderRunnerUsageBadges(runnerName) {
 }
 
 /**
+ * Returns the badge marking a runner that the system provides (CachyOS
+ * packages, Steam compatibility tools) instead of one we installed. Such
+ * runners are usable but read-only — the package manager owns them.
+ *
+ * @param {{system?: boolean, origin?: string}} runner - Entry from scan_runners
+ * @returns {string} HTML string, empty for runners installed by this app
+ */
+function renderSystemRunnerBadge(runner) {
+  if (!runner?.system) return '';
+  const label = runner.origin || t('runners:badge.systemRunner');
+  return `<span class="badge badge-neutral installed-runner-badge" data-tooltip="${escapeHtml(
+    t('runners:tooltip.systemRunner')
+  )}">${escapeHtml(label)}</span>`;
+}
+
+/**
  * Renders the detail line below a runner name: size on disk, install date,
  * wine version and origin. Returns an empty string until `get_runner_details`
  * has delivered the data, and silently omits values that are unavailable
@@ -804,6 +851,7 @@ function renderInstalledRunnersContent() {
         <div class="active-runner-name"${runnerPathTooltip(activeRunner.name)}>
           <span class="installed-runner-indicator active"></span>
           ${escapeHtml(activeRunner.name)}
+          ${renderSystemRunnerBadge(activeRunner)}
           ${renderRunnerUsageBadges(activeRunner.name)}
         </div>
         ${renderRunnerDetailLine(activeRunner.name)}
@@ -840,13 +888,14 @@ function renderInstalledRunnersContent() {
               <div class="installed-runner-title">
                 <span class="installed-runner-indicator"></span>
                 <span class="installed-runner-name"${runnerPathTooltip(r.name)}>${escapeHtml(r.name)}</span>
+                ${renderSystemRunnerBadge(r)}
                 ${renderRunnerUsageBadges(r.name)}
               </div>
               ${renderRunnerDetailLine(r.name)}
             </div>
             <div class="installed-runner-actions">
               <button class="btn-sm btn-select-runner" data-name="${escapeHtml(r.name)}" ${isActivatingRunner ? 'disabled' : ''}>${t('runners:button.select')}</button>
-              <button class="btn-sm btn-danger-sm btn-delete-runner" data-name="${escapeHtml(r.name)}" ${isActivatingRunner ? 'disabled' : ''}>${t('runners:button.delete')}</button>
+              ${r.system ? '' : `<button class="btn-sm btn-danger-sm btn-delete-runner" data-name="${escapeHtml(r.name)}" ${isActivatingRunner ? 'disabled' : ''}>${t('runners:button.delete')}</button>`}
             </div>
           </div>
         `).join('')}
@@ -855,6 +904,17 @@ function renderInstalledRunnersContent() {
   }
 
   return activeHtml + activatingHtml + listHtml;
+}
+
+/**
+ * Looks up the glibc verdict for a runner source.
+ *
+ * @param {string} source - Source name as shown in the tabs
+ * @returns {{source: string, min_glibc: string, supported: boolean}|null}
+ */
+function glibcVerdictFor(source) {
+  if (!glibcStatus || !glibcStatus.sources) return null;
+  return glibcStatus.sources.find(s => s.source.toLowerCase() === String(source).toLowerCase()) || null;
 }
 
 /**
@@ -867,6 +927,20 @@ function renderInstalledRunnersContent() {
 function renderDownloadRunnersContent() {
   // Only show runners from the currently selected source
   const filtered = availableRunners.filter(r => r.source === selectedSource);
+
+  // Runners are dynamically linked against glibc. One banner for the whole
+  // source rather than a badge per runner - the requirement is the same for
+  // every build the source publishes.
+  const glibc = glibcVerdictFor(selectedSource);
+  const glibcHtml = glibc && !glibc.supported
+    ? `<div class="runner-glibc-warning">${escapeHtml(
+        t('runners:warning.glibcTooOld', {
+          source: selectedSource,
+          required: glibc.min_glibc,
+          system: glibcStatus?.system_glibc || '?',
+        })
+      )}</div>`
+    : '';
 
   // Display error messages from the last fetch
   const errorsHtml = fetchErrors.length > 0
@@ -901,7 +975,7 @@ function renderDownloadRunnersContent() {
     `;
   }
 
-  return errorsHtml + listHtml;
+  return glibcHtml + errorsHtml + listHtml;
 }
 
 /**
@@ -1062,7 +1136,58 @@ function renderPrefixToolsContent() {
       </div>
     </div>
 
+    <div class="prefix-tool-divider"></div>
+
+    <!-- Logs: the files worth looking at when a launch fails. Paths are
+         resolved by the backend; the EAC one is only known after the game
+         has run once. -->
+    <div class="prefix-tool-row">
+      <div class="prefix-tool-info">
+        <span class="prefix-tool-name">${t('runners:label.logs')}</span>
+        <span class="prefix-tool-hint">${t('runners:desc.logs')}</span>
+      </div>
+    </div>
+    ${renderLogList()}
+
     ${renderPrefixToolConsole()}
+  `;
+}
+
+/**
+ * Renders the list of troubleshooting log files.
+ *
+ * Files that do not exist yet stay in the list but are dimmed and have no
+ * button - knowing that a log was never written is itself a diagnosis.
+ *
+ * @returns {string} HTML string
+ */
+function renderLogList() {
+  if (scLogs.length === 0) {
+    return `<div class="prefix-tool-logs"><span class="prefix-tool-hint">${t('runners:desc.logsNone')}</span></div>`;
+  }
+
+  return `
+    <div class="prefix-tool-logs">
+      ${scLogs.map(log => {
+        const [kind, channel] = log.id.split(':');
+        const label = channel
+          ? t(`runners:log.${kind}`, { channel })
+          : t(`runners:log.${kind}`);
+        return `
+          <div class="prefix-tool-log-row${log.exists ? '' : ' missing'}">
+            <div class="prefix-tool-log-info">
+              <span class="prefix-tool-log-name">${escapeHtml(label)}</span>
+              <span class="prefix-tool-log-path" data-tooltip="${escapeHtml(log.path)}">${escapeHtml(log.path)}</span>
+            </div>
+            ${log.exists
+              ? `<span class="prefix-tool-log-meta">${formatSize(log.size_bytes)}${log.modified ? ' · ' + formatDate(log.modified * 1000) : ''}</span>
+                 <button class="btn-sm btn-install btn-open-log" data-path="${escapeHtml(log.path)}">${t('runners:button.openLog')}</button>`
+              : `<span class="prefix-tool-log-meta">${t('runners:label.logMissing')}</span>`
+            }
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
 
@@ -1169,6 +1294,27 @@ function bindSkeletonEvents(container) {
       }
       refreshInstalledBtn.disabled = true;
       refreshInstalledBtn.textContent = '...';
+      fireDataFetches(container, false);
+    });
+  }
+
+  // Show/hide runners the system provides
+  const systemRunnersToggle = document.getElementById('chk-show-system-runners');
+  if (systemRunnersToggle) {
+    systemRunnersToggle.addEventListener('change', async () => {
+      config.show_system_runners = systemRunnersToggle.checked;
+      systemRunnersToggle.disabled = true;
+      try {
+        await invoke('save_config', { config });
+      } catch (err) {
+        logError(err, 'runners:save_config');
+      }
+      systemRunnersToggle.disabled = false;
+      loadingFlags.installed = true;
+      const installedSlot = document.getElementById('installed-runners-slot');
+      if (installedSlot) {
+        installedSlot.innerHTML = `<div class="runners-loading-state"><div class="runners-loading-spinner"></div><span>${t('runners:status.scanningRunners')}</span></div>`;
+      }
       fireDataFetches(container, false);
     });
   }
@@ -1290,6 +1436,17 @@ function bindDxvkEvents(container) {
  */
 function bindPrefixToolEvents(container) {
   const slot = document.getElementById('prefix-tools-slot');
+
+  // Log rows: hand the file to the desktop's default handler
+  slot?.querySelectorAll('.btn-open-log').forEach(btn => {
+    btn.addEventListener('click', () => {
+      invoke('open_browser', { url: btn.dataset.path })
+        .catch(err => {
+          logError(err, 'runners:open_log');
+          showNotification(t('runners:notification.openLogFailed'), 'error');
+        });
+    });
+  });
 
   // Runner selector: pure UI state, deliberately not persisted to the config
   const runnerSelect = document.getElementById('tools-runner-select');
@@ -1532,6 +1689,23 @@ async function deleteRunner(name, container) {
  */
 async function installRunner(runner, container) {
   if (isInstallingRunner) return;
+
+  // A runner built against a newer glibc fails at launch with an opaque
+  // "could not load ntdll.so" error, so say it plainly before downloading.
+  // Not a hard block: the verdict is per source, and the user may know better.
+  const glibc = glibcVerdictFor(runner.source);
+  if (glibc && !glibc.supported) {
+    const proceed = await confirm(
+      t('runners:warning.glibcTooOld', {
+        source: runner.source,
+        required: glibc.min_glibc,
+        system: glibcStatus?.system_glibc || '?',
+      }),
+      { title: t('runners:warning.glibcTitle'), kind: 'warning' }
+    );
+    if (!proceed) return;
+  }
+
   isInstallingRunner = true;
 
   const { url: downloadUrl, file: fileName, name: displayName } = runner;
@@ -2030,13 +2204,14 @@ function formatCacheTime(timestamp) {
 }
 
 /**
- * Formats an RFC 3339 timestamp as a short date in the current UI language.
+ * Formats a timestamp as a short date in the current UI language.
  *
- * @param {string} isoString - RFC 3339 timestamp (e.g. "2026-03-20T10:00:00Z")
+ * @param {string|number} timestamp - RFC 3339 string (e.g. "2026-03-20T10:00:00Z")
+ *   or milliseconds since the epoch
  * @returns {string} Localized short date, or an empty string if unparseable
  */
-function formatDate(isoString) {
-  const date = new Date(isoString);
+function formatDate(timestamp) {
+  const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleDateString(getCurrentLanguage(), { dateStyle: 'medium' });
 }

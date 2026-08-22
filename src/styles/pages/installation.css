@@ -337,13 +337,15 @@
   font-size: var(--font-sm);
 }
 
+/* The memory check returns several lines: the measured values first, then any
+   tuning recommendation. pre-line keeps those breaks; the flex column above
+   already constrains the width. */
 .check-detail {
   font-size: 0.786rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .check-item[data-status="fail"] .check-detail {
@@ -769,6 +771,20 @@
   background: rgba(234, 179, 8, 0.06);
   border-radius: var(--radius-sm);
   border: 1px solid rgba(234, 179, 8, 0.2);
+}
+
+/* glibc incompatibility notice above the download list. Shares the fetch-error
+   look because it carries the same weight: the list below is still usable, but
+   installing from it will probably not work. */
+.runner-glibc-warning {
+  font-size: 0.786rem;
+  color: var(--warning);
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: rgba(234, 179, 8, 0.06);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  line-height: 1.4;
 }
 
 /* Performance Groups */

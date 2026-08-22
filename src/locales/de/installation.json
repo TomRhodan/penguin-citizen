@@ -16,15 +16,17 @@
   "section.perfOptions": "Leistungsoptionen",
 
   "check.memory.name": "Arbeitsspeicher",
-  "check.memory.tooltip": "Star Citizen erfordert mindestens 16 GB RAM",
+  "check.memory.tooltip": "Star Citizen erfordert mindestens 16 GiB RAM; empfohlen sind 48 GiB aus RAM + Swap plus passend dimensioniertes zram",
   "check.avx.name": "AVX-Unterstuetzung",
   "check.avx.tooltip": "Advanced Vector Extensions - von CryEngine benoetigt",
   "check.mapcount.name": "vm.max_map_count",
-  "check.mapcount.tooltip": "Kernel-Parameter fuer speicherabgebildete Dateien - Wine benoetigt einen hohen Wert",
+  "check.mapcount.tooltip": "Kernel-Parameter fuer speicherabgebildete Dateien - Star Citizen benoetigt mindestens 1.048.576",
   "check.filelimit.name": "Dateideskriptor-Limit",
   "check.filelimit.tooltip": "Maximale Anzahl offener Dateideskriptoren pro Prozess",
   "check.vulkan.name": "Vulkan-Unterstuetzung",
   "check.vulkan.tooltip": "Vulkan-Grafik-API - fuer die DXVK-Uebersetzung erforderlich",
+  "check.joystick.name": "Joystick-Berechtigungen",
+  "check.joystick.tooltip": "udev-Regeln fuer hidraw-Zugriff - ohne sie erkennt Star Citizen HOTAS-Geraete nicht",
   "check.diskspace.name": "Speicherplatz",
   "check.diskspace.tooltip": "Mindestens 100 GB freier Speicherplatz empfohlen",
 
@@ -64,8 +66,9 @@
   "summary.passedWithWarnings": "Pruefungen mit Warnungen bestanden - Star Citizen sollte funktionieren, die Leistung koennte jedoch beeintraechtigt sein.",
   "summary.failed": "{{count}} Pruefung(en) fehlgeschlagen - bitte vor dem Fortfahren beheben.",
 
-  "fix.mapcount.desc": "Dies setzt vm.max_map_count=16777216 systemweit (erfordert Root-Rechte via pkexec).",
+  "fix.mapcount.desc": "Dies setzt vm.max_map_count=1048576 systemweit (erfordert Root-Rechte via pkexec).",
   "fix.filelimit.desc": "Dies erhoeht das systemweite Dateideskriptor-Limit (erfordert Root-Rechte via pkexec).",
+  "fix.joystick.desc": "Dies legt udev-Regeln unter /etc/udev/rules.d/ an, damit Wine HOTAS-Geraete ueber hidraw lesen darf (erfordert Root-Rechte via pkexec). Danach Geraete einmal ab- und wieder anstecken.",
   "fix.default.desc": "Dies aendert Systemeinstellungen (erfordert Root-Rechte).",
   "fix.confirmTitle": "Systemfix anwenden?",
 

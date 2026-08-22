@@ -38,7 +38,7 @@ use std::time::Duration;
 ///
 /// Three levels: Pass (passed), Warn (warning), Fail (failed).
 /// Displayed with colors in the frontend (green/yellow/red).
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckStatus {
     Pass,
@@ -81,46 +81,191 @@ pub struct FixResult {
 
 // --- Individual checks ---
 
-/// Checks the memory (RAM + Swap) against the requirements.
-///
-/// Star Citizen requires at least 16 GiB RAM (otherwise Fail).
-/// For optimal performance, a total of 40 GiB (RAM + Swap) is recommended (otherwise Warn).
-/// The values are read from /proc/meminfo.
-fn check_memory() -> CheckResult {
-    let mut ram_kb: u64 = 0;
-    let mut swap_kb: u64 = 0;
+/// Minimum physical RAM in GiB. Below this Star Citizen crashes no matter how
+/// much swap is configured.
+const MEMORY_REQUIRED_GIB: u64 = 16;
 
+/// Recommended combined RAM + swap in GiB, matching lug-helper's
+/// `memory_combined_required`.
+const MEMORY_COMBINED_REQUIRED_GIB: u64 = 48;
+
+/// At or above this much physical RAM the system passes without any swap
+/// requirement. 62 rather than 64 to absorb the gap between installed RAM and
+/// what the kernel reports as available.
+const MEMORY_PLENTY_GIB: u64 = 62;
+
+/// Tolerance in GiB applied to threshold comparisons, mirroring lug-helper.
+/// Absorbs the rounding between the kernel's KiB values and whole GiB.
+const MEMORY_TOLERANCE_GIB: u64 = 2;
+
+/// Memory configuration as reported by the kernel, in whole GiB.
+///
+/// zram is tracked separately from ordinary swap: it lives in RAM and is listed
+/// in `/proc/swaps`, so counting it as swap - which `SwapTotal` in
+/// `/proc/meminfo` does - reports backing store that does not exist.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct MemoryFacts {
+    ram_gib: u64,
+    swap_gib: u64,
+    zram_gib: u64,
+    zswap_enabled: bool,
+}
+
+/// Converts KiB to whole GiB, rounding to nearest.
+fn kib_to_gib(kib: u64) -> u64 {
+    (kib + 512 * 1024) / (1024 * 1024)
+}
+
+/// Reads RAM, swap, zram and zswap state from /proc and /sys.
+fn read_memory_facts() -> MemoryFacts {
+    let mut ram_kib: u64 = 0;
     if let Ok(contents) = fs::read_to_string("/proc/meminfo") {
         for line in contents.lines() {
             if line.starts_with("MemTotal:") {
-                ram_kb = parse_meminfo_value(line);
-            } else if line.starts_with("SwapTotal:") {
-                swap_kb = parse_meminfo_value(line);
+                ram_kib = parse_meminfo_value(line);
+                break;
             }
         }
     }
 
-    // Convert from kilobytes to gibibytes (1 GiB = 1,048,576 KB)
-    let ram_gib = (ram_kb as f64) / 1_048_576.0;
-    let swap_gib = (swap_kb as f64) / 1_048_576.0;
-    let combined_gib = ram_gib + swap_gib;
+    // /proc/swaps lists one device per line after a header:
+    //   Filename        Type        Size    Used    Priority
+    //   /dev/zram0      partition   8388604 0       100
+    // Sizes are in KiB. zram devices are told apart by their filename.
+    let mut swap_kib: u64 = 0;
+    let mut zram_kib: u64 = 0;
+    if let Ok(contents) = fs::read_to_string("/proc/swaps") {
+        for line in contents.lines().skip(1) {
+            let mut fields = line.split_whitespace();
+            let (Some(name), Some(_kind), Some(size)) = (
+                fields.next(),
+                fields.next(),
+                fields.next(),
+            ) else {
+                continue;
+            };
+            let Ok(size) = size.parse::<u64>() else {
+                continue;
+            };
+            if name.contains("zram") {
+                zram_kib += size;
+            } else {
+                swap_kib += size;
+            }
+        }
+    }
 
-    let status = if ram_gib < 16.0 {
-        // Less than 16 GiB RAM -- Star Citizen will not run stably
-        CheckStatus::Fail
-    } else if combined_gib < 40.0 {
-        // RAM sufficient, but RAM+Swap combined under 40 GiB -- warning
-        CheckStatus::Warn
+    // zswap compresses pages on their way out to swap. It is a different
+    // mechanism than zram and the two get in each other's way when both run.
+    let zswap_enabled = fs
+        ::read_to_string("/sys/module/zswap/parameters/enabled")
+        .map(|s| matches!(s.trim(), "Y" | "y" | "1"))
+        .unwrap_or(false);
+
+    MemoryFacts {
+        ram_gib: kib_to_gib(ram_kib),
+        swap_gib: kib_to_gib(swap_kib),
+        zram_gib: kib_to_gib(zram_kib),
+        zswap_enabled,
+    }
+}
+
+/// The zram size recommended for a given amount of RAM, following the LUG
+/// Performance-Tuning guide: `ram` on small systems, `ram / 2` once the machine
+/// is close to the combined target, `ram / 4` at 64 GiB and above.
+fn recommended_zram_gib(ram_gib: u64) -> u64 {
+    if ram_gib >= MEMORY_PLENTY_GIB {
+        ram_gib / 4
+    } else if ram_gib >= MEMORY_COMBINED_REQUIRED_GIB - MEMORY_TOLERANCE_GIB {
+        ram_gib / 2
     } else {
-        CheckStatus::Pass
-    };
+        ram_gib
+    }
+}
 
-    let detail = format!(
-        "{:.0} GiB RAM + {:.0} GiB Swap = {:.0} GiB total",
-        ram_gib,
-        swap_gib,
-        combined_gib
-    );
+/// Turns memory facts into a check status and a human-readable detail text.
+///
+/// Kept free of I/O so the branch tree can be unit tested.
+///
+/// Only insufficient physical RAM fails - it is the one condition that stops
+/// the game from running at all, and `all_passed` gates the install wizard.
+/// A swap shortfall or a zram/zswap conflict warns; a missing zram
+/// configuration is a note that leaves the status untouched, matching how
+/// lug-helper reports it.
+fn evaluate_memory(f: &MemoryFacts) -> (CheckStatus, String) {
+    let mut lines: Vec<String> = vec![
+        format!("{} GiB RAM, {} GiB zram, {} GiB swap", f.ram_gib, f.zram_gib, f.swap_gib)
+    ];
+
+    // Not enough physical RAM: nothing else can compensate for it.
+    if f.ram_gib < MEMORY_REQUIRED_GIB - MEMORY_TOLERANCE_GIB {
+        lines.push(
+            format!("At least {} GiB RAM is required to avoid crashes.", MEMORY_REQUIRED_GIB)
+        );
+        return (CheckStatus::Fail, lines.join("\n"));
+    }
+
+    let mut warn = false;
+
+    // zram and zswap both active: they work against each other.
+    if f.zram_gib > 0 && f.zswap_enabled {
+        lines.push(
+            "zram and zswap are both enabled - disable zswap to get the full benefit of zram.".into()
+        );
+        warn = true;
+    }
+
+    let zram_recommended = recommended_zram_gib(f.ram_gib);
+    let zram_ok = f.zram_gib + MEMORY_TOLERANCE_GIB >= zram_recommended;
+
+    // Plenty of physical RAM: swap is no longer load-bearing, so only the
+    // soft zram recommendation remains.
+    if f.ram_gib >= MEMORY_PLENTY_GIB {
+        if !zram_ok {
+            lines.push(
+                format!("{} GiB zram is recommended to improve performance.", zram_recommended)
+            );
+        }
+        return (if warn { CheckStatus::Warn } else { CheckStatus::Pass }, lines.join("\n"));
+    }
+
+    let swap_recommended = MEMORY_COMBINED_REQUIRED_GIB.saturating_sub(f.ram_gib);
+    if swap_recommended > 0 && f.swap_gib < swap_recommended {
+        lines.push(
+            format!(
+                "At least {} GiB swap is recommended to avoid out-of-memory crashes.",
+                swap_recommended
+            )
+        );
+        warn = true;
+    }
+
+    if !zram_ok {
+        if f.zram_gib == 0 && f.zswap_enabled {
+            lines.push(
+                format!(
+                    "Switching from zswap to {} GiB zram is recommended to improve performance.",
+                    zram_recommended
+                )
+            );
+        } else {
+            lines.push(
+                format!("{} GiB zram is recommended to improve performance.", zram_recommended)
+            );
+        }
+    }
+
+    (if warn { CheckStatus::Warn } else { CheckStatus::Pass }, lines.join("\n"))
+}
+
+/// Checks RAM, swap and zram against the LUG recommendations.
+///
+/// Star Citizen needs at least 16 GiB of physical RAM; below that the check
+/// fails. Beyond that the recommendation is a combined 48 GiB of RAM + swap
+/// plus a zram configuration sized to the machine - see `evaluate_memory`.
+fn check_memory() -> CheckResult {
+    let facts = read_memory_facts();
+    let (status, detail) = evaluate_memory(&facts);
 
     CheckResult {
         id: "memory".into(),
@@ -171,13 +316,22 @@ fn check_avx() -> CheckResult {
     }
 }
 
+/// Minimum `vm.max_map_count` Star Citizen needs. See `check_mapcount` for why
+/// this is 1,048,576 and not the 16,777,216 that older guides recommend.
+const MAPCOUNT_REQUIRED: u64 = 1_048_576;
+
 /// Checks the system limit vm.max_map_count.
 ///
-/// Star Citizen requires at least 16,777,216 memory mappings.
+/// Star Citizen needs at least 1,048,576 memory mappings. The value matches
+/// what the LUG wiki lists as a prerequisite and what Fedora, Arch and Ubuntu
+/// 24.04+ already ship by default. It replaces the 16,777,216 this app used to
+/// demand: the game peaks at roughly 52,000 mappings, and a limit that high
+/// lets a runaway process exhaust kernel memory (lug-helper issue #121).
+///
 /// The current value is read from /proc/sys/vm/max_map_count.
 /// If the value is too low, it can be automatically fixed via `fix_mapcount()`.
 fn check_mapcount() -> CheckResult {
-    let required: u64 = 16_777_216;
+    let required: u64 = MAPCOUNT_REQUIRED;
 
     let current = fs
         ::read_to_string("/proc/sys/vm/max_map_count")
@@ -278,6 +432,120 @@ fn check_vulkan() -> CheckResult {
     }
 }
 
+/// Parses the glibc version out of `ldd --version` output.
+///
+/// The version is the last field of the first line, in every packaging variant
+/// seen in the wild:
+///   `ldd (GNU libc) 2.41`
+///   `ldd (Ubuntu GLIBC 2.39-0ubuntu8.3) 2.39`
+fn parse_glibc_version(stdout: &str) -> Option<String> {
+    let last = stdout.lines().next()?.split_whitespace().last()?;
+    // Guard against unexpected formats - the version has to start with a digit.
+    last.chars().next().filter(char::is_ascii_digit)?;
+    Some(last.to_string())
+}
+
+/// Returns the system's glibc version, or `None` if `ldd` is unavailable or
+/// prints something unexpected.
+///
+/// Wine runners are dynamically linked against glibc; running one built for a
+/// newer glibc fails with `could not load ntdll.so ... GLIBC_x.xx not found`,
+/// which looks like a broken runner rather than a system mismatch.
+pub fn system_glibc() -> Option<String> {
+    let output = Command::new("ldd").arg("--version").env("LC_ALL", "C").output().ok()?;
+    parse_glibc_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Path of the udev rules file that grants raw HID access to HOTAS devices.
+const JOYSTICK_RULES_PATH: &str = "/etc/udev/rules.d/40-starcitizen-joystick-uaccess.rules";
+
+/// USB vendor IDs of HOTAS manufacturers, with the label written into the rule file.
+///
+/// lug-helper covers the first three; the rest come from the workaround in its
+/// issue #137, which found Logitech/Saitek and WinWing sticks equally affected.
+const JOYSTICK_VENDORS: &[(&str, &str)] = &[
+    ("231d", "VKB"),
+    ("3344", "Virpil"),
+    ("044f", "Thrustmaster"),
+    ("06a3", "Saitek"),
+    ("046d", "Logitech"),
+    ("4098", "WinWing"),
+];
+
+/// Builds the contents of the joystick udev rules file.
+///
+/// One line per vendor instead of lug-helper's `"231d|3344|044f"` alternation:
+/// easier to read and independent of the systemd version that started
+/// supporting alternation inside `ATTRS{}`.
+///
+/// The vendor name goes on its own comment line above each rule. udev has no
+/// inline comments - a trailing `# VKB` makes it reject the whole rule, which
+/// is how a file can look correct and do nothing (lug-helper issue #137).
+fn joystick_rules_content() -> String {
+    let mut out = String::from(
+        "# Created by Penguin Citizen\n\
+         # Tag HOTAS devices with uaccess so Wine can read them through hidraw\n"
+    );
+    for (vendor_id, label) in JOYSTICK_VENDORS {
+        out.push_str(
+            &format!(
+                "\n# {}\nKERNEL==\"hidraw*\", ATTRS{{idVendor}}==\"{}\", MODE=\"0660\", TAG+=\"uaccess\"\n",
+                label,
+                vendor_id
+            )
+        );
+    }
+    out
+}
+
+/// Returns true if the given rules file body contains a usable hidraw rule.
+///
+/// The file existing is not enough: lug-helper v4.13 shipped a bug that wrote
+/// only the comment header, leaving users with a file that looked correct and
+/// did nothing (its issue #137).
+fn has_hidraw_rule(contents: &str) -> bool {
+    contents.lines().any(|line| {
+        let line = line.trim_start();
+        !line.starts_with('#') && line.contains("hidraw")
+    })
+}
+
+/// Checks whether the joystick hidraw udev rules are installed.
+///
+/// Star Citizen reads HOTAS devices through `hidraw`, which a normal user
+/// cannot open unless udev tags the device with `uaccess`. Without the rules
+/// the sticks are simply invisible in-game (lug-helper issues #119, #124, #137).
+///
+/// Reports Warn rather than Fail: a system without a HOTAS does not need the
+/// rules, and a missing rule must not block the install wizard.
+fn check_joystick_rules() -> CheckResult {
+    let contents = fs::read_to_string(JOYSTICK_RULES_PATH).unwrap_or_default();
+
+    let (status, detail) = if has_hidraw_rule(&contents) {
+        (CheckStatus::Pass, format!("udev rules installed at {}", JOYSTICK_RULES_PATH))
+    } else if contents.trim().is_empty() {
+        (
+            CheckStatus::Warn,
+            "No hidraw udev rules found. Joysticks (VKB, Virpil, Thrustmaster, ...) may not be detected in-game.".into(),
+        )
+    } else {
+        (
+            CheckStatus::Warn,
+            format!("{} exists but contains no hidraw rule.", JOYSTICK_RULES_PATH),
+        )
+    };
+
+    let fixable = status == CheckStatus::Warn;
+
+    CheckResult {
+        id: "joystick".into(),
+        name: "Joystick Permissions".into(),
+        status,
+        detail,
+        fixable,
+    }
+}
+
 /// Checks the available disk space at the installation path.
 ///
 /// Star Citizen requires at least 100 GB of free space.
@@ -359,7 +627,7 @@ fn get_free_space_gb(path: &str) -> u64 {
 
 /// Formats a number with thousands separators (comma).
 ///
-/// Example: 16777216 -> "16,777,216"
+/// Example: 1048576 -> "1,048,576"
 fn format_number(n: u64) -> String {
     let s = n.to_string();
     let mut result = String::new();
@@ -812,8 +1080,8 @@ fn strip_ansi(s: &str) -> String {
 
 /// Runs all system checks and returns the overall result.
 ///
-/// The checks include: memory, AVX, max_map_count,
-/// file descriptor limit, Vulkan, and disk space.
+/// The checks include: memory, AVX, max_map_count, file descriptor limit,
+/// Vulkan, joystick udev rules, and disk space.
 /// Executed in a blocking thread since some checks
 /// require filesystem access.
 #[tauri::command]
@@ -826,6 +1094,7 @@ pub async fn run_system_check(install_path: String) -> Result<SystemCheckResult,
                 check_mapcount(),
                 check_filelimit(),
                 check_vulkan(),
+                check_joystick_rules(),
                 check_disk_space(&install_path)
             ];
 
@@ -842,62 +1111,69 @@ pub async fn run_system_check(install_path: String) -> Result<SystemCheckResult,
         .map_err(|e| format!("Task failed: {}", e))
 }
 
+/// Runs a root shell command through pkexec and turns the outcome into a
+/// `FixResult`.
+///
+/// Shared by every automatic fix: they all write one config file as root and
+/// reload the corresponding subsystem, and they all have to tell an
+/// authentication cancel apart from a real failure.
+///
+/// `manual_hint` is what the user is told when pkexec is not installed - it
+/// should contain the equivalent commands to run by hand.
+fn run_pkexec_fix(script: &str, manual_hint: &str, success_message: &str) -> FixResult {
+    // pkexec is the graphical sudo alternative; without it there is no way to
+    // ask for a password from a GUI app.
+    if !Path::new("/usr/bin/pkexec").exists() {
+        return FixResult {
+            success: false,
+            message: manual_hint.into(),
+        };
+    }
+
+    match Command::new("pkexec").arg("sh").arg("-c").arg(script).output() {
+        Ok(output) if output.status.success() =>
+            FixResult {
+                success: true,
+                message: success_message.into(),
+            },
+        Ok(output) => {
+            let code = output.status.code().unwrap_or(-1);
+            // Exit code 126/127: user dismissed the authentication dialog
+            if code == 126 || code == 127 {
+                FixResult {
+                    success: false,
+                    message: "Authentication cancelled".into(),
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                FixResult {
+                    success: false,
+                    message: format!("Failed (exit {}): {}", code, stderr.trim()),
+                }
+            }
+        }
+        Err(e) =>
+            FixResult {
+                success: false,
+                message: format!("Failed to execute pkexec: {}", e),
+            },
+    }
+}
+
 /// Fixes a too-low vm.max_map_count by creating a sysctl configuration file.
 ///
-/// Creates `/etc/sysctl.d/99-starcitizen-max_map_count.conf` with the value 16,777,216
+/// Creates `/etc/sysctl.d/99-starcitizen-max_map_count.conf` with the value 1,048,576
 /// and applies the setting immediately. The change persists across reboots.
 /// Uses pkexec for the graphical password prompt (root privileges required).
 #[tauri::command]
 pub async fn fix_mapcount() -> Result<FixResult, String> {
     tokio::task
         ::spawn_blocking(move || {
-            // Check if pkexec (graphical sudo alternative) is available
-            if !Path::new("/usr/bin/pkexec").exists() {
-                return FixResult {
-                    success: false,
-                    message: "pkexec not found. Manually run: sudo sysctl -w vm.max_map_count=16777216 && echo 'vm.max_map_count = 16777216' | sudo tee /etc/sysctl.d/99-starcitizen-max_map_count.conf".into(),
-                };
-            }
-
-            // Create sysctl configuration file and reload settings
-            let result = Command::new("pkexec")
-                .arg("sh")
-                .arg("-c")
-                .arg(
-                    "printf 'vm.max_map_count = 16777216\\n' > /etc/sysctl.d/99-starcitizen-max_map_count.conf && sysctl --quiet --system"
-                )
-                .output();
-
-            match result {
-                Ok(output) => {
-                    if output.status.success() {
-                        FixResult {
-                            success: true,
-                            message: "vm.max_map_count set to 16,777,216 (persistent)".into(),
-                        }
-                    } else {
-                        let code = output.status.code().unwrap_or(-1);
-                        // Exit code 126/127: User cancelled authentication
-                        if code == 126 || code == 127 {
-                            FixResult {
-                                success: false,
-                                message: "Authentication cancelled".into(),
-                            }
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                            FixResult {
-                                success: false,
-                                message: format!("Failed (exit {}): {}", code, stderr.trim()),
-                            }
-                        }
-                    }
-                }
-                Err(e) =>
-                    FixResult {
-                        success: false,
-                        message: format!("Failed to execute pkexec: {}", e),
-                    },
-            }
+            run_pkexec_fix(
+                "printf 'vm.max_map_count = 1048576\\n' > /etc/sysctl.d/99-starcitizen-max_map_count.conf && sysctl --quiet --system",
+                "pkexec not found. Manually run: sudo sysctl -w vm.max_map_count=1048576 && echo 'vm.max_map_count = 1048576' | sudo tee /etc/sysctl.d/99-starcitizen-max_map_count.conf",
+                "vm.max_map_count set to 1,048,576 (persistent)"
+            )
         }).await
         .map_err(|e| format!("Task failed: {}", e))
 }
@@ -912,52 +1188,46 @@ pub async fn fix_mapcount() -> Result<FixResult, String> {
 pub async fn fix_filelimit() -> Result<FixResult, String> {
     tokio::task
         ::spawn_blocking(move || {
-            if !Path::new("/usr/bin/pkexec").exists() {
-                return FixResult {
-                    success: false,
-                    message: "pkexec not found. Manually create /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf with:\n[Manager]\nDefaultLimitNOFILE=524288".into(),
-                };
-            }
+            run_pkexec_fix(
+                "mkdir -p /etc/systemd/system.conf.d && printf '[Manager]\\nDefaultLimitNOFILE=524288\\n' > /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf && systemctl daemon-reexec",
+                "pkexec not found. Manually create /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf with:\n[Manager]\nDefaultLimitNOFILE=524288",
+                "File descriptor limit set to 524,288 (persistent, effective after re-login)"
+            )
+        }).await
+        .map_err(|e| format!("Task failed: {}", e))
+}
 
-            // Create systemd configuration directory, write file, and reload daemon
-            let result = Command::new("pkexec")
-                .arg("sh")
-                .arg("-c")
-                .arg(
-                    "mkdir -p /etc/systemd/system.conf.d && printf '[Manager]\\nDefaultLimitNOFILE=524288\\n' > /etc/systemd/system.conf.d/99-starcitizen-filelimit.conf && systemctl daemon-reexec"
-                )
-                .output();
+/// Installs the joystick hidraw udev rules and reloads udev.
+///
+/// Writes the vendor list from `JOYSTICK_VENDORS` to `JOYSTICK_RULES_PATH`,
+/// then reloads the rules and re-triggers matching devices so the change takes
+/// effect without a reboot. Devices that are already plugged in still need to
+/// be reconnected for the ACL to be applied - the returned message says so.
+/// Uses pkexec for the graphical password prompt (root privileges required).
+#[tauri::command]
+pub async fn fix_joystick_rules() -> Result<FixResult, String> {
+    tokio::task
+        ::spawn_blocking(move || {
+            // The rules are written through a quoted heredoc so nothing in the
+            // body is expanded by the root shell.
+            let script = format!(
+                "mkdir -p /etc/udev/rules.d && cat > {path} <<'PENGUIN_CITIZEN_EOF'\n\
+                 {body}\
+                 PENGUIN_CITIZEN_EOF\n\
+                 udevadm control --reload-rules && udevadm trigger --subsystem-match=hidraw",
+                path = JOYSTICK_RULES_PATH,
+                body = joystick_rules_content()
+            );
 
-            match result {
-                Ok(output) => {
-                    if output.status.success() {
-                        FixResult {
-                            success: true,
-                            message: "File descriptor limit set to 524,288 (persistent, effective after re-login)".into(),
-                        }
-                    } else {
-                        let code = output.status.code().unwrap_or(-1);
-                        // Exit code 126/127: User cancelled authentication
-                        if code == 126 || code == 127 {
-                            FixResult {
-                                success: false,
-                                message: "Authentication cancelled".into(),
-                            }
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                            FixResult {
-                                success: false,
-                                message: format!("Failed (exit {}): {}", code, stderr.trim()),
-                            }
-                        }
-                    }
-                }
-                Err(e) =>
-                    FixResult {
-                        success: false,
-                        message: format!("Failed to execute pkexec: {}", e),
-                    },
-            }
+            run_pkexec_fix(
+                &script,
+                &format!(
+                    "pkexec not found. Manually create {} with:\n\n{}",
+                    JOYSTICK_RULES_PATH,
+                    joystick_rules_content()
+                ),
+                "Joystick udev rules installed. Unplug and replug your devices for the change to take effect."
+            )
         }).await
         .map_err(|e| format!("Task failed: {}", e))
 }
@@ -977,6 +1247,33 @@ pub struct GpuInfo {
     pub vendor: String,
     /// Human-readable GPU name (e.g. "NVIDIA GeForce RTX 4070")
     pub name: String,
+}
+
+/// Reads the PCI vendor and device id of the first discrete-capable GPU,
+/// formatted as sysfs reports them (e.g. `("0x10de", "0x2704")`).
+///
+/// The Mesa VRAM report layer needs both to know which device to limit.
+/// Returns `None` when sysfs has no usable entry, in which case the caller
+/// applies the limit without a device filter.
+pub fn primary_gpu_pci_ids() -> Option<(String, String)> {
+    let entries = std::fs::read_dir("/sys/class/drm").ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Skip connectors ("card0-DP-1") and non-card entries
+        if !name.starts_with("card") || name.contains('-') {
+            continue;
+        }
+        let device_dir = entry.path().join("device");
+        let vendor = std::fs::read_to_string(device_dir.join("vendor")).ok()?;
+        let device = std::fs::read_to_string(device_dir.join("device")).ok()?;
+        let vendor = vendor.trim();
+        // Only the three GPU vendors we know how to interpret
+        if !matches!(vendor, "0x10de" | "0x1002" | "0x8086") {
+            continue;
+        }
+        return Some((vendor.to_string(), device.trim().to_string()));
+    }
+    None
 }
 
 /// Detects the primary GPU vendor by reading /sys/class/drm/.
@@ -1097,4 +1394,188 @@ pub async fn check_gamemode_installed() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn facts(ram: u64, swap: u64, zram: u64, zswap: bool) -> MemoryFacts {
+        MemoryFacts { ram_gib: ram, swap_gib: swap, zram_gib: zram, zswap_enabled: zswap }
+    }
+
+    // --- memory ---
+
+    #[test]
+    fn memory_fails_below_minimum_ram() {
+        // 8 GiB cannot be rescued by any amount of swap
+        let (status, detail) = evaluate_memory(&facts(8, 64, 8, false));
+        assert_eq!(status, CheckStatus::Fail);
+        assert!(detail.contains("16 GiB RAM is required"), "{detail}");
+    }
+
+    #[test]
+    fn memory_tolerates_two_gib_of_rounding() {
+        // 15 GiB reported for a 16 GiB machine still passes the minimum
+        let (status, _) = evaluate_memory(&facts(15, 34, 15, false));
+        assert_eq!(status, CheckStatus::Pass);
+    }
+
+    #[test]
+    fn memory_passes_with_plenty_of_ram_and_no_swap() {
+        // 64 GiB: swap is no longer load-bearing, zram sized ram/4
+        let (status, detail) = evaluate_memory(&facts(64, 0, 16, false));
+        assert_eq!(status, CheckStatus::Pass);
+        assert!(!detail.contains("recommended"), "{detail}");
+    }
+
+    #[test]
+    fn memory_notes_missing_zram_but_still_passes_with_plenty_of_ram() {
+        let (status, detail) = evaluate_memory(&facts(64, 0, 0, false));
+        assert_eq!(status, CheckStatus::Pass);
+        assert!(detail.contains("16 GiB zram is recommended"), "{detail}");
+    }
+
+    #[test]
+    fn memory_warns_when_zram_and_zswap_are_both_enabled() {
+        let (status, detail) = evaluate_memory(&facts(64, 0, 16, true));
+        assert_eq!(status, CheckStatus::Warn);
+        assert!(detail.contains("disable zswap"), "{detail}");
+    }
+
+    #[test]
+    fn memory_passes_with_sufficient_zram_and_swap() {
+        // 32 GiB RAM: 16 GiB swap reaches the 48 GiB combined target, and the
+        // wiki recommends zram = ram below 48 GiB
+        let (status, detail) = evaluate_memory(&facts(32, 16, 32, false));
+        assert_eq!(status, CheckStatus::Pass);
+        assert!(!detail.contains("recommended"), "{detail}");
+    }
+
+    #[test]
+    fn memory_warns_on_insufficient_swap() {
+        let (status, detail) = evaluate_memory(&facts(32, 4, 16, false));
+        assert_eq!(status, CheckStatus::Warn);
+        assert!(detail.contains("16 GiB swap is recommended"), "{detail}");
+    }
+
+    #[test]
+    fn memory_notes_missing_zram_without_warning() {
+        // Swap alone reaches the target, so this is a pass with a tuning note
+        let (status, detail) = evaluate_memory(&facts(32, 16, 0, false));
+        assert_eq!(status, CheckStatus::Pass);
+        assert!(detail.contains("32 GiB zram is recommended"), "{detail}");
+    }
+
+    #[test]
+    fn memory_suggests_replacing_zswap_with_zram() {
+        let (status, detail) = evaluate_memory(&facts(32, 16, 0, true));
+        assert_eq!(status, CheckStatus::Pass);
+        assert!(detail.contains("Switching from zswap"), "{detail}");
+    }
+
+    #[test]
+    fn memory_detail_lists_ram_zram_and_swap_separately() {
+        let (_, detail) = evaluate_memory(&facts(32, 16, 8, false));
+        assert!(detail.starts_with("32 GiB RAM, 8 GiB zram, 16 GiB swap"), "{detail}");
+    }
+
+    #[test]
+    fn zram_recommendation_scales_with_ram() {
+        assert_eq!(recommended_zram_gib(16), 16); // small: ram
+        assert_eq!(recommended_zram_gib(32), 32); // still below the combined target
+        assert_eq!(recommended_zram_gib(48), 24); // at the target: ram/2
+        assert_eq!(recommended_zram_gib(64), 16); // plenty: ram/4
+    }
+
+    #[test]
+    fn kib_rounds_to_nearest_gib() {
+        assert_eq!(kib_to_gib(0), 0);
+        assert_eq!(kib_to_gib(16 * 1024 * 1024), 16);
+        // 15.7 GiB, what the kernel reports for a 16 GiB machine
+        assert_eq!(kib_to_gib(16_384_000), 16);
+    }
+
+    // --- glibc ---
+
+    #[test]
+    fn glibc_version_parses_common_ldd_formats() {
+        assert_eq!(
+            parse_glibc_version("ldd (GNU libc) 2.41\nCopyright ...\n").as_deref(),
+            Some("2.41")
+        );
+        assert_eq!(
+            parse_glibc_version("ldd (Ubuntu GLIBC 2.39-0ubuntu8.3) 2.39\n").as_deref(),
+            Some("2.39")
+        );
+    }
+
+    #[test]
+    fn glibc_version_rejects_unexpected_output() {
+        assert_eq!(parse_glibc_version(""), None);
+        assert_eq!(parse_glibc_version("musl libc (x86_64)\n"), None);
+    }
+
+    // --- joystick udev rules ---
+
+    #[test]
+    fn hidraw_rule_detection_ignores_comments() {
+        // The exact file lug-helper v4.13 produced: header only, no rule
+        assert!(
+            !has_hidraw_rule(
+                "# Set the uaccess tag for raw HID access for VKB/Virpil/Thrustmaster devices in Wine\n"
+            )
+        );
+        assert!(!has_hidraw_rule(""));
+        assert!(
+            has_hidraw_rule(
+                "# comment\nKERNEL==\"hidraw*\", ATTRS{idVendor}==\"3344\", TAG+=\"uaccess\"\n"
+            )
+        );
+    }
+
+    /// The generated file has to satisfy udev itself, not just our own parser.
+    /// This is the check that caught an inline `# VKB` comment behind each rule
+    /// making udev discard all of them - a file that looks right and does
+    /// nothing, exactly the failure mode of lug-helper issue #137.
+    #[test]
+    fn generated_rules_pass_udevadm_verify() {
+        let Ok(dir) = std::env::var("CARGO_TARGET_TMPDIR").map(std::path::PathBuf::from).or_else(
+            |_| Ok::<_, std::env::VarError>(std::env::temp_dir())
+        ) else {
+            return;
+        };
+        let path = dir.join("40-penguin-citizen-joystick-test.rules");
+        if std::fs::write(&path, joystick_rules_content()).is_err() {
+            return;
+        }
+
+        let output = match Command::new("udevadm").arg("verify").arg(&path).output() {
+            Ok(o) => o,
+            // No udevadm on this machine (containers, non-systemd): nothing to check
+            Err(_) => {
+                let _ = std::fs::remove_file(&path);
+                return;
+            }
+        };
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            output.status.success(),
+            "udevadm rejected the generated rules:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn generated_rules_cover_every_vendor_and_parse_back() {
+        let content = joystick_rules_content();
+        assert!(has_hidraw_rule(&content));
+        for (vendor_id, _) in JOYSTICK_VENDORS {
+            assert!(content.contains(vendor_id), "missing vendor {vendor_id} in:\n{content}");
+        }
+        // One rule line per vendor, plus the two comment header lines
+        assert_eq!(content.lines().filter(|l| l.starts_with("KERNEL==")).count(), JOYSTICK_VENDORS.len());
+    }
 }

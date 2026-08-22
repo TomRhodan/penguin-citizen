@@ -76,7 +76,7 @@
 
           <h3>Systemcheck-Fehler</h3>
           <ul>
-            <li><strong>Inotify Mapcount zu niedrig</strong> - Setze <code>vm.max_map_count=16777216</code> in <code>/etc/sysctl.d/</code> und fuehre <code>sudo sysctl --system</code> aus. Siehe das <a href="https://wiki.starcitizen-lug.org/" target="_blank" rel="noopener">LUG Wiki</a> fuer distributionsspezifische Anleitungen.</li>
+            <li><strong>Inotify Mapcount zu niedrig</strong> - Setze <code>vm.max_map_count=1048576</code> in <code>/etc/sysctl.d/</code> und fuehre <code>sudo sysctl --system</code> aus. Siehe das <a href="https://wiki.starcitizen-lug.org/" target="_blank" rel="noopener">LUG Wiki</a> fuer distributionsspezifische Anleitungen.</li>
             <li><strong>Dateideskriptor-Limit zu niedrig</strong> - Fuege <code>* soft nofile 524288</code> und <code>* hard nofile 524288</code> zu <code>/etc/security/limits.conf</code> hinzu und starte deine Sitzung neu.</li>
             <li><strong>Keine Vulkan-Unterstuetzung</strong> - Installiere den passenden Vulkan-Treiber fuer deine GPU (mesa-vulkan-drivers fuer AMD/Intel, nvidia-vulkan-icd fuer NVIDIA).</li>
           </ul>

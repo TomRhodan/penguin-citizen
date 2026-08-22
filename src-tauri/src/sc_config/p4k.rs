@@ -105,6 +105,70 @@ pub async fn get_data_p4k_size(gp: String, version: String) -> Result<u64, Strin
     Ok(metadata.len())
 }
 
+/// What `create_p4k_placeholders` actually did.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct P4kPlaceholderResult {
+    /// Whether an empty Data.p4k.part was created (false = it was already there)
+    pub created_part: bool,
+    /// Whether an empty Data.p4k was created (false = a real download is present)
+    pub created_p4k: bool,
+}
+
+/// Creates the empty placeholder files that unstick the RSI Launcher when it
+/// hangs while calculating disk space.
+///
+/// The launcher then reports error 3004/3005/5006/5008 and its log shows
+/// "Phase compute_size timed out". Pre-creating `Data.p4k.part` - and, on a
+/// first install, `Data.p4k` - lets it get past that phase. Workaround from
+/// the LUG knowledge base (news item of 2026-04-25, still active).
+///
+/// An existing `Data.p4k` is never touched: it holds the full ~100 GB download.
+#[tauri::command]
+pub async fn create_p4k_placeholders(
+    gp: String,
+    version: String
+) -> Result<P4kPlaceholderResult, String> {
+    tokio::task
+        ::spawn_blocking(move || {
+            let dir = sc_base_dir(&expand_tilde(&gp), &version)?;
+            if !dir.is_dir() {
+                return Err(format!("Version directory not found: {}", dir.display()));
+            }
+
+            let part = dir.join("Data.p4k.part");
+            let created_part = if part.exists() {
+                false
+            } else {
+                fs::write(&part, b"").map_err(|e|
+                    format!("Failed to create {}: {}", part.display(), e)
+                )?;
+                true
+            };
+
+            // Only for a first install - an existing Data.p4k is the real game
+            // data and must never be truncated.
+            let p4k = dir.join("Data.p4k");
+            let created_p4k = if fs::symlink_metadata(&p4k).is_ok() {
+                false
+            } else {
+                fs::write(&p4k, b"").map_err(|e|
+                    format!("Failed to create {}: {}", p4k.display(), e)
+                )?;
+                true
+            };
+
+            log::info!(
+                "P4K placeholders in {}: part created={}, p4k created={}",
+                dir.display(),
+                created_part,
+                created_p4k
+            );
+
+            Ok(P4kPlaceholderResult { created_part, created_p4k })
+        }).await
+        .map_err(|e| format!("Task failed: {}", e))?
+}
+
 /// Copies Data.p4k from a source version to a target version with progress reporting.
 /// Sends "data-p4k-progress" events to the frontend (percent, copied bytes, speed).
 /// At the end, a "data-p4k-copy-complete" event is sent.
@@ -487,6 +551,54 @@ mod tests {
         move_data_p4k_inner(&src, &dst, false).unwrap();
 
         assert!(dst.exists());
+    }
+
+    #[test]
+    fn placeholders_never_truncate_an_existing_download() {
+        let dir = tempdir().unwrap();
+        let live = dir.path().join("drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE");
+        std::fs::create_dir_all(&live).unwrap();
+        std::fs::write(live.join("Data.p4k"), b"the real 100GB download").unwrap();
+
+        let gp = dir.path().to_string_lossy().into_owned();
+        let result = tokio::runtime::Runtime
+            ::new()
+            .unwrap()
+            .block_on(create_p4k_placeholders(gp, "LIVE".into()))
+            .unwrap();
+
+        assert!(result.created_part, "the .part placeholder is what unsticks the launcher");
+        assert!(!result.created_p4k, "an existing Data.p4k must be left alone");
+        assert_eq!(std::fs::read(live.join("Data.p4k")).unwrap(), b"the real 100GB download");
+    }
+
+    #[test]
+    fn placeholders_create_both_files_on_a_first_install() {
+        let dir = tempdir().unwrap();
+        let live = dir.path().join("drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE");
+        std::fs::create_dir_all(&live).unwrap();
+
+        let gp = dir.path().to_string_lossy().into_owned();
+        let result = tokio::runtime::Runtime
+            ::new()
+            .unwrap()
+            .block_on(create_p4k_placeholders(gp, "LIVE".into()))
+            .unwrap();
+
+        assert!(result.created_part);
+        assert!(result.created_p4k);
+        assert_eq!(std::fs::metadata(live.join("Data.p4k")).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn placeholders_fail_when_the_version_does_not_exist() {
+        let dir = tempdir().unwrap();
+        let gp = dir.path().to_string_lossy().into_owned();
+        let result = tokio::runtime::Runtime
+            ::new()
+            .unwrap()
+            .block_on(create_p4k_placeholders(gp, "PTU".into()));
+        assert!(result.is_err());
     }
 
     #[cfg(unix)]

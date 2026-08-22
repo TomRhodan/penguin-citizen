@@ -32,6 +32,7 @@ import {
   prompt as dialogPrompt,
   showNotification,
 } from '../utils/dialogs.js';
+import { buildRunnerOrigins, runnerOptionLabel } from '../utils.js';
 
 const t = (key, opts) => i18next.t(key, opts);
 
@@ -49,6 +50,8 @@ let cachedConfig = null;
  * @type {string[]}
  */
 let installedRunners = [];
+/** Map of runner name -> origin label, for runners the system provides. */
+let runnerOrigins = {};
 
 /**
  * Reference to the active container for re-rendering after mutations.
@@ -108,8 +111,10 @@ async function load() {
       basePath: cachedConfig.install_path || '',
     });
     installedRunners = (result?.runners || []).map((r) => r.name);
+    runnerOrigins = buildRunnerOrigins(result?.runners);
   } catch (_e) {
     installedRunners = [];
+    runnerOrigins = {};
   }
 }
 
@@ -166,7 +171,7 @@ function paint() {
               (name) =>
                 `<option value="${escapeHtml(name)}"${
                   name === fallback ? ' selected' : ''
-                }>${escapeHtml(name)}</option>`
+                }>${escapeHtml(runnerOptionLabel(name, runnerOrigins))}</option>`
             )
             .join('')}
         </select>

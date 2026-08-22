@@ -1190,6 +1190,42 @@
   color: white;
 }
 
+.settings-notification.notification-warning {
+  background: rgba(234, 179, 8, 0.95);
+  color: #1a1a1a;
+}
+
+/* Dismissable notifications: click anywhere to close, with an explicit x */
+.settings-notification.notification-dismissable {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  max-width: min(640px, 90vw);
+  text-align: left;
+}
+
+.settings-notification .notification-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.settings-notification .notification-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.settings-notification .notification-close:hover {
+  opacity: 1;
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;
@@ -3303,6 +3339,27 @@
 }
 
 /* Keep profile-info-card for localization tab */
+/* Launcher repair action in the Storage tab. Neutral card, not the red danger
+   styling below it: this one is safe to press. */
+.storage-repair-card {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+
+.storage-repair-card h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+}
+
+.storage-repair-card p {
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary, var(--text-muted));
+}
+
 .profile-info-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

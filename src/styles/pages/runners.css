@@ -31,6 +31,25 @@
   flex-wrap: wrap;
 }
 
+/* Toggle for listing runners the system provides, next to the refresh button */
+.runner-system-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.runner-system-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  margin: 0;
+}
+
 .card-header-info {
   font-size: 0.786rem;
   color: var(--text-muted);
@@ -602,6 +621,61 @@
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+}
+
+/* Troubleshooting log list */
+.prefix-tool-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+.prefix-tool-log-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+/* A log that was never written is still worth showing - it says the step it
+   belongs to never ran. Dimmed so it does not compete with the real ones. */
+.prefix-tool-log-row.missing {
+  background: transparent;
+  opacity: 0.55;
+}
+
+.prefix-tool-log-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.prefix-tool-log-name {
+  font-size: 0.786rem;
+  color: var(--text-primary);
+}
+
+.prefix-tool-log-path {
+  font-size: 0.714rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.prefix-tool-log-meta {
+  font-size: 0.714rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
 }
 
 /* DPI Presets */

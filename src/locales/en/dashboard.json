@@ -3,6 +3,7 @@
   "subtitle": "News, Status & Community at a glance",
 
   "section.news": "RSI News",
+  "section.lugNews": "Linux News (LUG)",
   "section.serverStatus": "Server Status",
   "section.community": "Community",
 
@@ -40,6 +41,7 @@
   "button.period30d": "30d",
 
   "error.couldNotLoadNews": "Could not load news",
+  "error.couldNotLoadLugNews": "Could not load LUG news",
   "error.couldNotLoadServerStatus": "Could not load server status",
   "error.couldNotLoadCommunityStats": "Could not load community stats",
 

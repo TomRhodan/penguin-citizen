@@ -102,17 +102,28 @@ fn resolve_predefined_entity(name: &str) -> Option<&'static str> {
     }
 }
 
-/// Internal implementation of the news fetch.
+/// Internal implementation of the RSI news fetch.
 ///
-/// Loads the Atom feed from leonick.se (a community mirror of RSI news)
-/// and manually parses the XML structure with quick_xml. A maximum of 5
-/// entries are extracted to keep the dashboard display compact.
+/// Loads the Atom feed from leonick.se, a community mirror of RSI news.
 async fn fetch_rsi_news_inner() -> Result<
     Vec<RsiNewsItem>,
     Box<dyn std::error::Error + Send + Sync>
 > {
-    // Fetch Atom feed from the community mirror
-    let body = reqwest::get("https://leonick.se/feeds/rsi/atom").await?.text().await?;
+    fetch_atom_feed("https://leonick.se/feeds/rsi/atom", 5).await
+}
+
+/// Fetches an Atom feed and parses its entries.
+///
+/// Written against the two feeds the dashboard shows - the RSI news mirror and
+/// the LUG wiki - which share the same element layout: `entry` with `title`,
+/// `link href`, `published`/`updated`, `summary` and `category term`.
+///
+/// Stops after `max_items` entries; the feeds are ordered newest first.
+async fn fetch_atom_feed(
+    url: &str,
+    max_items: usize
+) -> Result<Vec<RsiNewsItem>, Box<dyn std::error::Error + Send + Sync>> {
+    let body = http_client().get(url).send().await?.text().await?;
 
     let mut reader = Reader::from_str(&body);
     // Safety: trim whitespace and disable DTD processing (XXE protection)
@@ -169,8 +180,10 @@ async fn fetch_rsi_news_inner() -> Result<
                             current_link = String::from_utf8_lossy(&attr.value).to_string();
                         }
                     }
-                } else if name == "category" {
-                    // Extract category from the term attribute
+                } else if name == "category" && current_category.is_empty() {
+                    // Extract category from the term attribute. Entries can
+                    // carry several (the LUG feed tags posts "game-news" plus
+                    // "active"); the first one is the descriptive one.
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"term" {
                             current_category = String::from_utf8_lossy(&attr.value).to_string();
@@ -252,8 +265,7 @@ async fn fetch_rsi_news_inner() -> Result<
                         published: current_published.trim().to_string(),
                         relative_time: relative,
                     });
-                    // Maximum 5 entries for the dashboard
-                    if items.len() >= 5 {
+                    if items.len() >= max_items {
                         break;
                     }
                 }
@@ -274,6 +286,24 @@ async fn fetch_rsi_news_inner() -> Result<
     }
 
     Ok(items)
+}
+
+/// Tauri command: fetches the LUG wiki's news feed.
+///
+/// This is where the Linux-specific workarounds land - which runner to switch
+/// to for the current patch, which in-game setting to avoid this week. The RSI
+/// feed never carries any of that.
+#[tauri::command]
+pub async fn fetch_lug_news() -> RsiNewsResult {
+    // Three items: the feed rarely holds more that are still current.
+    match fetch_atom_feed("https://wiki.starcitizen-lug.org/feed.xml", 3).await {
+        Ok(items) => RsiNewsResult { items, error: None },
+        Err(e) =>
+            RsiNewsResult {
+                items: vec![],
+                error: Some(e.to_string()),
+            },
+    }
 }
 
 /// Converts a date string into a relative time label (e.g. "3h ago", "2d ago").

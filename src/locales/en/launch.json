@@ -1,12 +1,10 @@
 {
   "title": "Launch",
   "subtitle": "Start Star Citizen",
-
   "section.launchOptions": "Launch Options",
   "section.logOutput": "Log Output",
   "section.wayland": "Wayland",
   "section.customEnvVars": "Custom Environment Variables",
-
   "button.launch": "LAUNCH",
   "button.launching": "LAUNCHING...",
   "button.checking": "CHECKING...",
@@ -14,21 +12,19 @@
   "button.gotoInstall": "Go to Installation",
   "button.retry": "Retry",
   "button.addVariable": "+ Add Variable",
-
   "status.running": "RSI Launcher is running - press Stop to close",
   "status.runningShort": "Running",
   "status.ready": "Ready",
   "status.checking": "Checking installation...",
   "status.waitingForLaunch": "Waiting for launch...",
-
   "label.runner": "Runner",
   "label.prefix": "Prefix",
   "label.none": "None",
   "label.enableWayland": "Enable Wayland",
+  "label.x11Fallback": "Render via XWayland",
   "label.waylandMonitor": "Wayland Monitor",
   "label.monitorDetectionFailed": "Detection failed",
   "label.infoCardTitle": "Active Configuration",
-
   "tooltip.esync": "Eventfd-based synchronization - reduces CPU overhead in Wine",
   "tooltip.fsync": "Futex-based synchronization - faster than ESync on supported kernels",
   "tooltip.dxvkAsync": "Asynchronous shader compilation - reduces stutter",
@@ -37,16 +33,15 @@
   "tooltip.mangohud": "On-screen performance overlay (FPS, CPU, GPU, RAM)",
   "tooltip.dxvkHud": "DXVK-specific overlay showing draw calls and compiler activity",
   "tooltip.wayland": "Enable Wayland protocol support in Wine",
+  "tooltip.x11Fallback": "Keeps all Wayland settings but lets Wine draw its windows through XWayland. Needed with Wine 11.14 and newer, where the RSI Launcher window stays invisible in Wayland mode.",
   "tooltip.waylandFractional": "Fractional scaling detected - Wayland mode is not compatible with fractional scaling. Set all monitors to integer scaling (100%, 200%) to use this option.",
   "tooltip.waylandMonitor": "Force game to a specific Wayland output. Requires a GE-Proton or Mactan runner with WAYLANDDRV_PRIMARY_MONITOR support.",
   "tooltip.monitorRefresh": "Re-detect monitors",
   "tooltip.envVarConflict": "This variable overrides a built-in setting",
   "tooltip.removeVariable": "Remove variable",
-
   "option.group.performance": "Performance",
   "option.group.display": "Display",
   "option.group.overlays": "Overlays",
-
   "option.esync": "ESync",
   "option.fsync": "FSync",
   "option.dxvkAsync": "DXVK Async",
@@ -54,7 +49,6 @@
   "option.fsr": "FSR",
   "option.mangohud": "MangoHUD",
   "option.dxvkHud": "DXVK HUD",
-
   "badge.experimental": "Experimental",
   "badge.override": "override",
   "badge.active": "active",
@@ -62,36 +56,28 @@
   "badge.noneActive": "none active",
   "badge.activeCount": "active",
   "badge.fractionalBlocked": "fractional scaling",
-
+  "badge.conflict": "conflicting options",
   "desc.waylandWarning": "These settings are completely experimental and may have no effect depending on your runner.",
   "desc.customEnvHint": "Add custom environment variables for Wine/Proton launches. These override built-in variables with the same name.",
   "desc.fractionalScalingWarning": "Fractional scaling active - Wayland mode disabled",
-
   "placeholder.envKey": "KEY",
   "placeholder.envValue": "value",
   "placeholder.monitorInput": "e.g. DP-1, HDMI-A-1, eDP-1",
-
   "error.notInstalled": "Star Citizen is not installed",
   "error.noConfig": "No configuration found",
   "error.generic": "An error occurred",
-
   "notification.localizationChecking": "Checking for translation updates...",
   "notification.localizationUpdating": "Updating {{langName}} translation for {{version}}...",
   "notification.localizationUpdated_one": "{{count}} translation updated.",
   "notification.localizationUpdated_other": "{{count}} translations updated.",
   "notification.localizationUpToDate": "Translations are up to date.",
-
   "monitor.primary": "primary",
-
   "option.group.nvidia": "NVIDIA",
   "option.group.amd": "AMD",
   "option.group.troubleshooting": "Troubleshooting",
   "option.group.gpuSelection": "GPU Selection",
-
   "section.gamescope": "Gamescope",
-
   "card.gpuCpu": "GPU & CPU",
-
   "option.gamemode": "GameMode",
   "option.nvidiaDlss": "DLSS 4.0",
   "option.nvidiaSmoothMotion": "Smooth Motion",
@@ -101,11 +87,15 @@
   "option.inProcessGpu": "--in-process-gpu",
   "option.vulkanMailbox": "Vulkan Mailbox Mode",
   "option.enableHdrWsi": "HDR WSI Layer",
+  "option.forceLocale": "Force English locale",
+  "option.inputMethodXim": "Keyboard via XIM",
+  "option.glThreadedOff": "Disable threaded optimizations",
+  "option.vramReportLimit": "Apply through the Vulkan layer",
   "option.gamescopeEnable": "Enable Gamescope",
   "option.gamescopeHdr": "HDR",
   "option.gamescopeGrabCursor": "Force Grab Cursor",
   "option.gamescopeKeyboard": "Keyboard Grab",
-
+  "option.gamescopeWsiBypass": "Force WSI bypass",
   "tooltip.gamemode": "Feral GameMode - optimizes CPU governor and scheduler for gaming",
   "tooltip.nvidiaDlss": "DLSS 4.0 with Super Resolution, Ray Reconstruction and Frame Generation",
   "tooltip.nvidiaSmoothMotion": "Reduced latency rendering on compatible NVIDIA cards",
@@ -115,11 +105,15 @@
   "tooltip.inProcessGpu": "Fixes black or white RSI Launcher window (--in-process-gpu flag)",
   "tooltip.vulkanMailbox": "Resolves Vulkan assertion failures and swapchain crashes (MESA_VK_WSI_PRESENT_MODE=mailbox)",
   "tooltip.enableHdrWsi": "HDR layer required for NVIDIA without a color manager (ENABLE_HDR_WSI=1)",
+  "tooltip.forceLocale": "Sets LC_ALL=en_US.utf8. Fixes Easy Anti-Cheat error 60099 (\"Failed to load the embedded resources\") on non-English system locales",
+  "tooltip.inputMethodXim": "Routes keyboard input through XIM instead of IBus (XMODIFIERS, GTK_IM_MODULE, QT_IM_MODULE). Fixes dead AltGr and non-US keys such as umlauts and accents",
+  "tooltip.glThreadedOff": "Sets __GL_THREADED_OPTIMIZATIONS=0. Needed for Gamescope on NVIDIA",
+  "tooltip.vramReportLimit": "Applies the cap through the Mesa VRAM report layer instead of DXVK. Use this when the game runs on Vulkan rather than DX11",
   "tooltip.gamescopeEnable": "Launch inside the Gamescope compositor for HDR, resolution scaling and cursor capture",
   "tooltip.gamescopeHdr": "Enable HDR pass-through in Gamescope (--hdr-enabled)",
   "tooltip.gamescopeGrabCursor": "Force cursor grab to prevent escape (--force-grab-cursor)",
   "tooltip.gamescopeKeyboard": "Capture keyboard input in Gamescope (-g)",
-
+  "tooltip.gamescopeWsiBypass": "Sets GAMESCOPE_WSI_FORCE_BYPASS=1. Fixes a black game window under Gamescope",
   "label.gpuDetected": "Detected: {{name}}",
   "label.noGpuDetected": "No {{vendor}} GPU detected",
   "label.gpuAutomatic": "Automatic (default)",
@@ -130,11 +124,19 @@
   "label.gamescopeHeight": "Height",
   "label.cpuTopology": "CPU Topology",
   "label.cpuTopologyPlaceholder": "e.g. 16:0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",
-
+  "label.vramLimit": "VRAM cap",
+  "label.vramLimitOff": "No cap (default)",
+  "label.vramLimitStep": "{{vram}} GB card -> report {{limit}} MB",
+  "label.vramLimitHint": "Reports less VRAM than the card has so the game budgets more conservatively. Helps against stutter from VRAM exhaustion.",
+  "label.wineLang": "LANG override",
+  "label.wineLangPlaceholder": "e.g. de_DE",
+  "label.wineLangHint": "Only needed when non-US keyboard keys stay dead after enabling XIM.",
+  "conflict.dlssSmoothMotion": "DLSS and Smooth Motion together cause poor framerates, freezes and severe artifacts. Enable only one of them.",
+  "conflict.mangohudSmoothMotion": "MangoHUD and other FPS overlays can crash the game when Smooth Motion is active.",
+  "conflict.waylandSmoothMotion": "Smooth Motion under Wine Wayland is known to cause framerate issues, random freezes and a broken F interaction menu.",
   "badge.new": "NEW",
   "badge.installed": "Installed",
   "badge.notInstalled": "Not installed",
-
   "shader.missingTitle": "Shader cache missing",
-  "shader.missingMessage": "The next launch will take significantly longer (up to 10 min) while shaders are compiled. Wait 2\u20133 minutes at the login menu for optimal performance."
+  "shader.missingMessage": "The next launch will take significantly longer (up to 10 min) while shaders are compiled. Wait 2–3 minutes at the login menu for optimal performance."
 }

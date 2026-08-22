@@ -426,27 +426,60 @@ export function showDiff(title, lines) {
 }
 
 /**
- * Shows a temporary notification at the bottom of the screen.
- * The notification is automatically hidden and removed after 3 seconds.
+ * How long a notification stays on screen, by type. Problems get 30 seconds:
+ * they usually carry an instruction, and three seconds is not enough to read
+ * one even when you know it is coming.
+ */
+const NOTIFICATION_DURATIONS = {
+  error: 30000,
+  warning: 30000,
+  info: 4000,
+  success: 4000,
+};
+
+/**
+ * Shows a notification at the bottom of the screen. It disappears on its own
+ * after a type-dependent time, and can always be dismissed by clicking it.
  *
  * @param {string} message - The message to display
- * @param {string} type - The notification type ('info', 'success', 'error')
+ * @param {string} type - 'info', 'success', 'warning' or 'error'
+ * @param {number} [durationMs] - Overrides the duration for this notification
  */
-export function showNotification(message, type = 'info') {
+export function showNotification(message, type = 'info', durationMs) {
   // Remove existing notification to avoid overlap
   const existing = document.querySelector('.settings-notification');
   if (existing) existing.remove();
+
+  const isProblem = type === 'error' || type === 'warning';
+  const duration = durationMs ?? NOTIFICATION_DURATIONS[type] ?? 4000;
+
   const notification = document.createElement('div');
-  notification.className = `settings-notification notification-${type}`;
-  notification.setAttribute('role', type === 'error' ? 'alert' : 'status');
-  notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-  notification.textContent = message;
+  notification.className = `settings-notification notification-${type} notification-dismissable`;
+  notification.setAttribute('role', isProblem ? 'alert' : 'status');
+  notification.setAttribute('aria-live', isProblem ? 'assertive' : 'polite');
+
+  const text = document.createElement('span');
+  text.className = 'notification-text';
+  text.textContent = message;
+  notification.appendChild(text);
+
+  const close = document.createElement('button');
+  close.className = 'notification-close';
+  close.type = 'button';
+  close.textContent = '\u00d7';
+  close.setAttribute('aria-label', 'Close');
+  notification.appendChild(close);
+
+  let hideTimer = null;
+  const dismiss = () => {
+    if (hideTimer) clearTimeout(hideTimer);
+    notification.classList.remove('show');
+    setTimeout(() => notification.remove(), 300);
+  };
+  notification.addEventListener('click', dismiss);
+
   document.body.appendChild(notification);
   // Short delay for CSS transition (fade-in animation)
   setTimeout(() => notification.classList.add('show'), 10);
-  // Fade out after 3 seconds and remove DOM element
-  setTimeout(() => {
-    notification.classList.remove('show');
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
+  hideTimer = setTimeout(dismiss, duration);
 }

@@ -106,6 +106,32 @@ fn filter_kron4ek(name: &str) -> bool {
     !lower.contains("x86") && !lower.contains("wow64")
 }
 
+/// Architecture tokens that may appear in a runner archive name, paired with
+/// the `std::env::consts::ARCH` value they are usable on.
+const ARCH_TOKENS: &[(&str, &str)] = &[
+    ("aarch64", "aarch64"),
+    ("arm64", "aarch64"),
+    ("armv7", "arm"),
+    ("riscv64", "riscv64"),
+    ("ppc64", "powerpc64"),
+];
+
+/// Rejects runner archives built for another CPU architecture.
+///
+/// Applied to the assets of every source, not just filtered ones:
+/// proton-cachyos publishes arm64 builds next to the x86_64 ones. An arm64
+/// runner downloads and extracts fine but keeps its wine under
+/// `files/bin-arm64/`, so it would install and then be invisible everywhere.
+///
+/// Names without a known architecture token are accepted - the LUG, RawFox and
+/// GE naming schemes carry no arch at all.
+fn is_supported_arch(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    !ARCH_TOKENS.iter().any(|(token, arch)| {
+        lower.contains(token) && std::env::consts::ARCH != *arch
+    })
+}
+
 // --- Data structures ---
 
 /// Information about an available runner from a GitHub source.
@@ -296,6 +322,43 @@ const WINE_BIN_PATHS: &[&[&str]] = &[
     &["dist", "bin", "wine"],   // Older Proton builds
 ];
 
+/// Resolves the directory a runner name refers to.
+///
+/// Runners live in `<install_path>/runners/<name>` when Penguin Citizen
+/// installed them, but a name may also refer to a runner the system provides
+/// (see [`crate::system_runners`]). The local copy wins on a name clash - it is
+/// the one the user installed deliberately.
+///
+/// When neither exists the local path is returned, so callers keep producing
+/// error messages that point at the expected location.
+pub(crate) fn runner_dir(install_path: &str, runner_name: &str) -> PathBuf {
+    runner_dir_with(install_path, runner_name, |name| {
+        crate::system_runners::find(name).map(|system| system.path)
+    })
+}
+
+/// [`runner_dir`] with an injectable system lookup, so the precedence rules can
+/// be tested without touching the real system directories.
+fn runner_dir_with(
+    install_path: &str,
+    runner_name: &str,
+    lookup: impl Fn(&str) -> Option<PathBuf>
+) -> PathBuf {
+    let local = Path::new(&expand_tilde(install_path)).join("runners").join(runner_name);
+    if resolve_wine_bin(&local).is_some() {
+        return local;
+    }
+    lookup(runner_name).unwrap_or(local)
+}
+
+/// Whether `runner_name` is provided by the system rather than installed by us.
+///
+/// A local runner of the same name takes precedence, mirroring [`runner_dir`].
+pub(crate) fn is_system_runner(install_path: &str, runner_name: &str) -> bool {
+    let local = Path::new(&expand_tilde(install_path)).join("runners").join(runner_name);
+    resolve_wine_bin(&local).is_none() && crate::system_runners::find(runner_name).is_some()
+}
+
 /// Resolves the wine binary path for a runner directory by checking
 /// known layouts in priority order.
 pub(crate) fn resolve_wine_bin(runner_dir: &Path) -> Option<PathBuf> {
@@ -314,6 +377,73 @@ pub(crate) fn resolve_wine_bin(runner_dir: &Path) -> Option<PathBuf> {
 use crate::util::{expand_tilde, http_client};
 
 // --- Tauri commands ---
+
+// --- glibc compatibility ---
+
+/// Minimum glibc version the runners of each source are built against.
+///
+/// Mirrors the table lug-helper checks before a runner download. Sources not
+/// listed here - custom ones a user added - are not checked.
+const SOURCE_MIN_GLIBC: &[(&str, &str)] = &[
+    ("LUG", "2.39"),
+    ("LUG Experimental", "2.39"),
+    ("RawFox", "2.38"),
+    ("Kron4ek", "2.27"),
+];
+
+/// Whether `system` satisfies `required`. Unknown system glibc counts as
+/// satisfied - we do not want to gray out every runner because `ldd` is missing.
+fn glibc_satisfies(system: Option<&str>, required: &str) -> bool {
+    match system {
+        Some(system) => compare_natural(system, required) != std::cmp::Ordering::Less,
+        None => true,
+    }
+}
+
+/// glibc verdict for one runner source.
+#[derive(Serialize, Deserialize)]
+pub struct SourceGlibc {
+    /// Source name as configured, e.g. "LUG Experimental"
+    pub source: String,
+    /// Minimum glibc the runners of this source need
+    pub min_glibc: String,
+    /// Whether this system's glibc is new enough
+    pub supported: bool,
+}
+
+/// glibc compatibility of the known runner sources.
+#[derive(Serialize, Deserialize)]
+pub struct GlibcStatus {
+    /// The system's glibc version, `None` if it could not be determined.
+    pub system_glibc: Option<String>,
+    /// One verdict per known source. Custom sources a user added are absent.
+    pub sources: Vec<SourceGlibc>,
+}
+
+/// Reports which runner sources this system's glibc is too old for.
+///
+/// Returned as a per-source verdict rather than a flag on every runner: the
+/// runner list is served from `cache.json` between refreshes, and a cached
+/// verdict would survive a system upgrade that made the runner usable.
+#[tauri::command]
+pub async fn check_runner_glibc() -> GlibcStatus {
+    tokio::task
+        ::spawn_blocking(|| {
+            let system_glibc = crate::system_check::system_glibc();
+
+            let sources = SOURCE_MIN_GLIBC.iter()
+                .map(|(name, required)| SourceGlibc {
+                    source: (*name).to_string(),
+                    min_glibc: (*required).to_string(),
+                    supported: glibc_satisfies(system_glibc.as_deref(), required),
+                })
+                .collect();
+
+            GlibcStatus { system_glibc, sources }
+        }).await
+        .unwrap_or(GlibcStatus { system_glibc: None, sources: Vec::new() })
+}
+
 
 /// Fetches all available runners from the configured GitHub sources.
 ///
@@ -370,14 +500,22 @@ pub async fn fetch_available_runners(base_path: String) -> FetchRunnersResult {
                                 if !is_archive(&asset.name) {
                                     continue;
                                 }
+                                // Skip builds for other CPU architectures
+                                if !is_supported_arch(&asset.name) {
+                                    continue;
+                                }
                                 // Apply source-specific filters (e.g. exclude 32-bit)
                                 if !filter_fn(&asset.name) {
                                     continue;
                                 }
 
                                 let display_name = strip_archive_ext(&asset.name);
-                                // Check if the directory already exists = installed
-                                let installed = runners_dir.join(&display_name).is_dir();
+                                // Installed = the directory exists *and* holds a usable wine.
+                                // A bare directory check would mark an unusable extraction
+                                // (wrong layout) as installed while every other list skips it.
+                                let installed = resolve_wine_bin(
+                                    &runners_dir.join(&display_name)
+                                ).is_some();
 
                                 all_runners.push(AvailableRunner {
                                     name: display_name,
@@ -671,6 +809,29 @@ pub async fn install_runner(
     // Clean up temporary directory
     let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
 
+    // Verify the result is actually a runner we can use. Archives built for
+    // another architecture (proton-cachyos ships arm64 builds) extract fine but
+    // keep their wine under an unknown path - without this check the install
+    // reports success and the runner is then invisible in every list.
+    if resolve_wine_bin(&final_path).is_none() {
+        log::warn!(
+            "Discarding {}: no wine binary in a known layout",
+            final_path.display()
+        );
+        let _ = tokio::fs::remove_dir_all(&final_path).await;
+        let msg = format!(
+            "No wine binary found in {} - this archive is not a usable Wine/Proton runner (built for another architecture?)",
+            runner_name
+        );
+        emit_progress("error", downloaded, total_bytes, &msg);
+        return InstallRunnerResult {
+            success: false,
+            runner_name: runner_name.clone(),
+            install_path: String::new(),
+            message: msg,
+        };
+    }
+
     // Record provenance so the runners page can show where this build came
     // from. Best-effort: a missing marker only means the source is unknown.
     write_runner_marker(&final_path, source.as_deref(), version.as_deref());
@@ -782,6 +943,10 @@ pub struct RunnerDetails {
     pub source: Option<String>,
     /// Release tag the runner was installed from, if known
     pub version: Option<String>,
+    /// `true` when the runner is provided by the system instead of installed
+    /// by Penguin Citizen. Such runners are never modified or deleted.
+    #[serde(default)]
+    pub system: bool,
 }
 
 /// Determines the layout label for a runner from the location of its wine binary.
@@ -830,15 +995,9 @@ pub async fn get_runner_details(base_path: String) -> Result<Vec<RunnerDetails>,
             let runners_dir = prefix.join("runners");
 
             let mut details = Vec::new();
-            if !runners_dir.is_dir() {
-                return details;
-            }
-
             let cached_sources = cached_sources_by_name();
 
-            let Ok(entries) = std::fs::read_dir(&runners_dir) else {
-                return details;
-            };
+            let entries = std::fs::read_dir(&runners_dir).ok().into_iter().flatten();
 
             for entry in entries.flatten() {
                 let runner_dir = entry.path();
@@ -847,6 +1006,10 @@ pub async fn get_runner_details(base_path: String) -> Result<Vec<RunnerDetails>,
                 }
                 // Same validity rule as scan_runners: must contain a wine binary
                 let Some(wine_bin) = resolve_wine_bin(&runner_dir) else {
+                    log::warn!(
+                        "Skipping {}: no wine binary in a known layout (bin/wine, files/bin/wine, dist/bin/wine)",
+                        runner_dir.display()
+                    );
                     continue;
                 };
 
@@ -887,10 +1050,48 @@ pub async fn get_runner_details(base_path: String) -> Result<Vec<RunnerDetails>,
                     source,
                     version: marker.and_then(|m| m.version),
                     name,
+                    system: false,
                 });
             }
 
             details.sort_by(|a, b| a.name.cmp(&b.name));
+
+            // Runners the system provides. Their size is not reported: the disk
+            // usage of a package-managed directory is not ours to account for,
+            // and walking a dozen Proton installations would slow this down for
+            // no gain.
+            if crate::config::show_system_runners() {
+                let mut system_details: Vec<RunnerDetails> = crate::system_runners
+                    ::scan()
+                    .into_iter()
+                    .filter(|system| !details.iter().any(|d| d.name == system.name))
+                    .filter_map(|system| {
+                        let wine_bin = resolve_wine_bin(&system.path)?;
+                        let installed_at = system.path
+                            .metadata()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .map(|t| {
+                                let dt: chrono::DateTime<chrono::Utc> = t.into();
+                                dt.to_rfc3339()
+                            });
+                        Some(RunnerDetails {
+                            layout: layout_label(&system.path, &wine_bin).to_string(),
+                            size_bytes: 0,
+                            wine_version: query_wine_version(&wine_bin, &prefix),
+                            install_path: system.path.to_string_lossy().into_owned(),
+                            installed_at,
+                            source: Some(system.origin.to_string()),
+                            version: None,
+                            name: system.name,
+                            system: true,
+                        })
+                    })
+                    .collect();
+                system_details.sort_by(|a, b| a.name.cmp(&b.name));
+                details.append(&mut system_details);
+            }
+
             details
         }).await
         .map_err(|e| format!("Failed to collect runner details: {}", e))
@@ -914,6 +1115,18 @@ pub fn cancel_runner_install() -> bool {
 #[tauri::command]
 pub async fn delete_runner(runner_name: String, base_path: String) -> Result<(), String> {
     let expanded = expand_tilde(&base_path);
+
+    // Runners the system provides are managed by the package manager. Refusing
+    // here is what keeps a root-owned or Steam directory from being removed.
+    if is_system_runner(&expanded, &runner_name) {
+        return Err(
+            format!(
+                "'{}' is provided by the system and managed by your package manager - it cannot be deleted here",
+                runner_name
+            )
+        );
+    }
+
     let runner_path = Path::new(&expanded).join("runners").join(&runner_name);
 
     if !runner_path.is_dir() {
@@ -939,6 +1152,101 @@ pub async fn delete_runner(runner_name: String, base_path: String) -> Result<(),
 mod tests {
     use super::*;
     use std::cmp::Ordering as Cmp;
+
+    /// Creates `dir/<wine_relative>` so the directory counts as a runner.
+    fn make_runner(dir: &Path, wine_relative: &str) {
+        let wine = dir.join(wine_relative);
+        std::fs::create_dir_all(wine.parent().unwrap()).unwrap();
+        std::fs::write(wine, "fake").unwrap();
+    }
+
+    #[test]
+    fn foreign_architecture_archives_are_rejected() {
+        // Only meaningful on the architecture this app actually ships for
+        assert_eq!(std::env::consts::ARCH, "x86_64");
+        assert!(!is_supported_arch("proton-cachyos-11.0-20260703-slr-arm64.tar.xz"));
+        assert!(!is_supported_arch("some-runner-aarch64.tar.xz"));
+        assert!(!is_supported_arch("some-runner-riscv64.tar.xz"));
+    }
+
+    #[test]
+    fn x86_64_and_arch_less_archives_are_accepted() {
+        assert!(is_supported_arch("proton-cachyos-11.0-20260703-slr-x86_64.tar.xz"));
+        assert!(is_supported_arch("proton-cachyos-11.0-20260703-slr-x86_64_v3.tar.xz"));
+        assert!(is_supported_arch("lug-wine-tkg-staging-git-11.15-1.tar.xz"));
+        assert!(is_supported_arch("GE-Proton10-34.tar.gz"));
+    }
+
+    #[test]
+    fn kron4ek_filter_still_drops_32_bit_builds() {
+        assert!(!filter_kron4ek("wine-9.0-staging-tkg-amd64-x86.tar.xz"));
+        assert!(!filter_kron4ek("wine-9.0-staging-tkg-wow64.tar.xz"));
+        assert!(filter_kron4ek("wine-9.0-staging-tkg-amd64.tar.xz"));
+    }
+
+    #[test]
+    fn arm64_proton_layout_is_not_a_usable_runner() {
+        let tmp = tempfile::tempdir().unwrap();
+        let arm = tmp.path().join("proton-cachyos-slr-arm64");
+        make_runner(&arm, "files/bin-arm64/wine");
+        assert!(resolve_wine_bin(&arm).is_none());
+
+        let x86 = tmp.path().join("proton-cachyos-slr-x86_64");
+        make_runner(&x86, "files/bin/wine");
+        assert!(resolve_wine_bin(&x86).is_some());
+    }
+
+    #[test]
+    fn local_runner_wins_over_a_system_runner_of_the_same_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path().join("install");
+        let local = install.join("runners").join("proton-cachyos-slr");
+        make_runner(&local, "files/bin/wine");
+        let system = tmp.path().join("system").join("proton-cachyos-slr");
+        make_runner(&system, "files/bin/wine");
+
+        let resolved = runner_dir_with(
+            &install.to_string_lossy(),
+            "proton-cachyos-slr",
+            |_| Some(system.clone())
+        );
+        assert_eq!(resolved, local);
+    }
+
+    #[test]
+    fn system_runner_is_used_when_nothing_is_installed_locally() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path().join("install");
+        let system = tmp.path().join("system").join("wine-cachyos");
+        make_runner(&system, "bin/wine");
+
+        let resolved = runner_dir_with(
+            &install.to_string_lossy(),
+            "wine-cachyos",
+            |_| Some(system.clone())
+        );
+        assert_eq!(resolved, system);
+    }
+
+    #[test]
+    fn unknown_runner_resolves_to_the_local_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path().join("install");
+
+        let resolved = runner_dir_with(&install.to_string_lossy(), "nope", |_| None);
+        assert_eq!(resolved, install.join("runners").join("nope"));
+    }
+
+    #[test]
+    fn glibc_comparison_handles_multi_digit_minors() {
+        assert!(glibc_satisfies(Some("2.41"), "2.39"));
+        assert!(glibc_satisfies(Some("2.39"), "2.39"));
+        assert!(!glibc_satisfies(Some("2.36"), "2.39"));
+        // 2.9 is older than 2.38 despite sorting later as a string
+        assert!(!glibc_satisfies(Some("2.9"), "2.38"));
+        // Unknown system glibc must not gray out every runner
+        assert!(glibc_satisfies(None, "2.39"));
+    }
 
     fn runner(name: &str, version: &str, published_at: Option<&str>) -> AvailableRunner {
         AvailableRunner {
