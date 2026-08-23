@@ -128,8 +128,11 @@
           <h3>Wayland</h3>
           <ul>
             <li><strong>Enable Wayland</strong> - Toggle to use Wayland instead of XWayland. Automatically disabled if fractional scaling is detected.</li>
+            <li><strong>Render via XWayland</strong> - Sub-option of Wayland: every Wayland setting stays in place, only the drawing of windows goes through XWayland. Selectable while Wayland is enabled.</li>
             <li><strong>Primary Monitor</strong> - Select which monitor to use for the game. Connected monitors are auto-detected with their resolutions. A refresh button allows re-detecting monitors.</li>
           </ul>
+          <p>Which graphics driver Wine uses lives in the prefix registry, not in an environment variable — the LUG wayland builds load <code>winewayland.drv</code> whether or not <code>DISPLAY</code> is set. The two switches therefore write that value into the prefix directly: Wayland on without the XWayland box gives <code>wayland,x11</code>, with the box (or Wayland off) gives <code>x11</code>. The launch console reports the chosen driver on its <code>Driver:</code> line.</p>
+          <p>The XWayland box is needed with <strong>Wine 11.14 and 11.15</strong>, where the RSI Launcher window never appears in Wayland mode — the launcher runs but stays invisible. The app warns at launch when it sees that combination. <strong>Wine 11.16</strong> and newer have it fixed; native Wayland is then the better choice, because under XWayland the mouse can react offset in the game (see <a href="troubleshooting.html">Troubleshooting</a>).</p>
 
           <div class="handbook-warning">
             Wayland support is experimental. If you experience issues, disable it to fall back to XWayland. Fractional scaling (e.g., 125%, 150%) is not compatible with native Wayland mode.

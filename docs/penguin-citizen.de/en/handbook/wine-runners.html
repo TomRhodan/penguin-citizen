@@ -74,6 +74,16 @@
           <p>The <strong>Select</strong> button sets a runner for the active profile. Note that the runner is now a <em>per-profile</em> setting — switching here puts the active profile into the dirty state until you commit the change via Update Profile on the Launch page or just keep launching with it.</p>
           <p>The <strong>Delete</strong> button removes a runner from your system. If the runner is referenced by one or more profiles, the confirmation dialog lists those profiles plus the fallback hint so you don't accidentally break a working setup.</p>
 
+          <h3>System runners</h3>
+          <p>Besides the runners Penguin Citizen installs itself, the list also picks up Wine and Proton builds that are already on the system — from the CachyOS packages <code>wine-cachyos-opt</code> and <code>proton-cachyos-slr</code>, or from whatever ProtonPlus and protonup-qt dropped into a Steam directory. The scanned locations are:</p>
+          <ul>
+            <li><code>/opt/wine-cachyos</code></li>
+            <li><code>/usr/share/steam/compatibilitytools.d/</code></li>
+            <li><code>~/.steam/root/compatibilitytools.d/</code> and the matching Steam directories in your home folder (including the Flatpak one)</li>
+          </ul>
+          <p>Such runners carry a badge naming their origin — <code>CachyOS</code>, <code>Steam</code> or <code>System</code> — and can be selected and used in launch profiles like any other. They have <strong>no Delete button</strong>: they belong to your package manager, and that is where their updates come from. A runner you installed yourself always wins over a system runner of the same name.</p>
+          <p>The <strong>System runners</strong> checkbox in the list header hides them again if you only want to see your own. A system runner already set in a profile keeps working — it just disappears from the selection.</p>
+
           <div class="handbook-tip">
             For day-to-day runner switching, use the runner dropdown directly on the <a href="launching.html">Launch page</a>'s profile bar — no roundtrip through this page needed. The Wine Runners page is for installing, deleting, and bulk-managing runners.
           </div>
@@ -87,7 +97,8 @@
             <li><strong>Kron4ek</strong> - General-purpose Wine builds (32-bit and WOW64 variants are filtered out, as Star Citizen does not need them).</li>
           </ul>
           <p>The <strong>+</strong> button adds any further GitHub Releases source; each source gets its own tab.</p>
-          <p>Each available runner shows its name, source, file size, and release date. The list is sorted <strong>newest first</strong>. Click <strong>Install</strong> to download and extract it. A progress bar shows the download status. Runners that are already installed are marked accordingly.</p>
+          <p>Each available runner shows its name, source, file size, and release date. The list is sorted <strong>newest first</strong>. Click <strong>Install</strong> to download and extract it. A progress bar shows the download status.</p>
+          <p>Builds for other CPU architectures are not offered. This mainly concerns proton-cachyos, which publishes arm64 archives next to the x86_64 ones: they install cleanly but keep their wine at a path no x86_64 system can execute. For the same reason an archive only counts as installed once the target directory really holds a usable wine binary — so <strong>Installed</strong> in this list and the installed-runners list always agree. If an archive turns out to carry no usable wine, the installation fails with a message and removes the directory again instead of reporting success.</p>
           <p>Use the <strong>Refresh</strong> button to re-fetch the latest runner lists from GitHub, and <strong>Get LUG Sources</strong> to re-import the LUG source list. Runner lists are cached for one hour to avoid excessive API calls.</p>
 
           <div class="handbook-tip">

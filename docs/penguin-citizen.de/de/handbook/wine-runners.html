@@ -74,6 +74,16 @@
           <p>Der <strong>Auswaehlen</strong>-Button setzt einen Runner fuer das aktive Profil. Der Runner ist jetzt eine <em>profil-spezifische</em> Einstellung — ein Wechsel hier markiert das aktive Profil als Dirty, bis du den neuen Stand via Update Profile auf der Startseite uebernimmst (oder einfach so weiter spielst).</p>
           <p>Der <strong>Loeschen</strong>-Button entfernt einen Runner von deinem System. Wenn der Runner von einem oder mehreren Profilen genutzt wird, listet der Bestaetigungsdialog diese Profile plus den Fallback-Hinweis auf, damit du nicht versehentlich ein funktionierendes Setup zerlegst.</p>
 
+          <h3>System-Runner</h3>
+          <p>Neben den Runnern, die Penguin Citizen selbst installiert, findet die Liste auch Wine- und Proton-Builds, die schon auf dem System liegen — etwa aus den CachyOS-Paketen <code>wine-cachyos-opt</code> und <code>proton-cachyos-slr</code> oder aus allem, was ProtonPlus und protonup-qt in ein Steam-Verzeichnis gelegt haben. Gescannt werden:</p>
+          <ul>
+            <li><code>/opt/wine-cachyos</code></li>
+            <li><code>/usr/share/steam/compatibilitytools.d/</code></li>
+            <li><code>~/.steam/root/compatibilitytools.d/</code> und die entsprechenden Steam-Verzeichnisse im Benutzerordner (auch die Flatpak-Variante)</li>
+          </ul>
+          <p>Solche Runner tragen ein Badge mit ihrer Herkunft — <code>CachyOS</code>, <code>Steam</code> oder <code>System</code> — und lassen sich normal auswaehlen und in Launch-Profilen verwenden. Sie haben <strong>keinen Loeschen-Button</strong>: sie gehoeren dem Paketmanager, und Updates kommen von dort. Ein gleichnamiger, selbst installierter Runner hat immer Vorrang.</p>
+          <p>Ueber das Kontrollfeld <strong>System-Runner</strong> in der Kopfzeile der Liste blendest du sie aus, wenn du nur deine eigenen Runner sehen willst. Ein bereits in einem Profil gesetzter System-Runner funktioniert dann weiter — er verschwindet nur aus der Auswahl.</p>
+
           <div class="handbook-tip">
             Fuer den taeglichen Runner-Wechsel nimm das Runner-Dropdown direkt in der Profil-Leiste der <a href="launching.html">Startseite</a> — kein Umweg ueber diese Seite noetig. Die Wine-Runner-Seite ist fuer Installation, Loeschen und Bulk-Verwaltung von Runnern.
           </div>
@@ -87,7 +97,8 @@
             <li><strong>Kron4ek</strong> - Allgemeine Wine Builds (32-Bit- und WOW64-Varianten werden herausgefiltert, da Star Citizen sie nicht braucht).</li>
           </ul>
           <p>Ueber den <strong>+</strong>-Button laesst sich jede weitere GitHub-Releases-Quelle ergaenzen; jede Quelle bekommt einen eigenen Tab.</p>
-          <p>Jeder verfuegbare Runner zeigt seinen Namen, die Quelle, die Dateigroesse und das Veroeffentlichungsdatum. Die Liste ist <strong>absteigend sortiert</strong> — der neueste Build steht oben. Klicke auf <strong>Installieren</strong>, um ihn herunterzuladen und zu entpacken. Ein Fortschrittsbalken zeigt den Download-Status. Bereits installierte Runner sind entsprechend markiert.</p>
+          <p>Jeder verfuegbare Runner zeigt seinen Namen, die Quelle, die Dateigroesse und das Veroeffentlichungsdatum. Die Liste ist <strong>absteigend sortiert</strong> — der neueste Build steht oben. Klicke auf <strong>Installieren</strong>, um ihn herunterzuladen und zu entpacken. Ein Fortschrittsbalken zeigt den Download-Status.</p>
+          <p>Builds fuer andere Prozessor-Architekturen werden nicht angeboten. Das betrifft vor allem proton-cachyos, das neben den x86_64-Archiven auch arm64-Varianten veroeffentlicht: die installieren sich sauber, legen ihr Wine aber unter einem Pfad ab, den kein x86_64-System ausfuehren kann. Aus demselben Grund gilt ein Archiv erst als installiert, wenn im Zielverzeichnis tatsaechlich ein nutzbares Wine-Binary liegt — <strong>Bereits installiert</strong> in dieser Liste und die Liste der installierten Runner sagen also immer dasselbe. Liefert ein Archiv kein nutzbares Wine, bricht die Installation mit einer Meldung ab und raeumt das Verzeichnis wieder weg, statt Erfolg zu melden.</p>
           <p>Verwende den <strong>Aktualisieren</strong>-Button, um die neuesten Runner-Listen von GitHub abzurufen, und <strong>LUG-Quellen laden</strong>, um die LUG-Quellenliste neu zu importieren. Runner-Listen werden eine Stunde lang zwischengespeichert, um uebermassige API-Aufrufe zu vermeiden.</p>
 
           <div class="handbook-tip">

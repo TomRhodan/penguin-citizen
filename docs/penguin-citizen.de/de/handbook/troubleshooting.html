@@ -100,6 +100,7 @@
             <li>Aktiviere <strong>In-Process GPU</strong> auf der <a href="launching.html">Startseite</a>, wenn der Launcher ein schwarzes oder weisses Fenster zeigt</li>
             <li>Probiere einen anderen Wine Runner</li>
           </ul>
+          <p>Ab Wine 11.14 beendet sich der Wine-Prozess, den die App startet, wenige Sekunden nach dem Start von selbst — der Launcher laeuft dann in der Wine-Sitzung weiter. Frueher meldete die App das faelschlich als „beendet", worauf die Oberflaeche zuruecksprang und ein zweiter Startversuch am noch laufenden Launcher scheiterte. Sie wartet jetzt, bis im Prefix wirklich kein Prozess mehr laeuft. Wenn die Startkonsole „der RSI Launcher laeuft noch, warte darauf" zeigt, ist das der normale Ablauf.</p>
 
           <h3>Gamescope-Probleme</h3>
           <ul>
@@ -122,6 +123,14 @@
             <li>Wayland-Unterstuetzung ist experimentell. Bei Problemen deaktiviere es auf der <a href="launching.html">Startseite</a>, um auf XWayland zurueckzufallen.</li>
             <li>Fraktionale Skalierung (125%, 150%) ist nicht mit dem nativen Wayland-Modus kompatibel.</li>
           </ul>
+
+          <p><strong>Launcher startet, aber kein Fenster erscheint (Wine 11.14 und 11.15).</strong> In diesen beiden Wine-Versionen legt der Wayland-Treiber die Fenster des RSI Launchers an, verliert aber deren Toplevel-Rolle wieder und bekommt vom Compositor nie eine Groesse zugewiesen — der Launcher laeuft nachweisbar (Prozesse sind da), bleibt aber unsichtbar. Zwei Auswege, in dieser Reihenfolge:</p>
+          <ul>
+            <li>Einen Runner mit <strong>Wine 11.16 oder neuer</strong> verwenden. Dort ist das behoben, und es ist der Weg ohne Nebenwirkungen.</li>
+            <li>Alternativ <strong>Ueber XWayland darstellen</strong> auf der <a href="launching.html">Startseite</a> aktivieren. Das Fenster erscheint dann, aber die Maus kann im Spiel versetzt reagieren (siehe naechster Punkt). Die App warnt beim Start, wenn Wayland mit einer der betroffenen Versionen kombiniert wird.</li>
+          </ul>
+
+          <p><strong>Maus reagiert im Spiel versetzt oder Elemente flackern nur.</strong> Das ist eine Eigenschaft von XWayland, kein Fehler der App: dort laesst sich der Zeiger nicht umsetzen, solange er sichtbar ist, weshalb das Spiel mit falschen Koordinaten rechnet. Besonders deutlich wird es bei mehreren Monitoren, wenn der Spiel-Monitor nicht am linken Rand der Desktop-Anordnung liegt. Der native Wayland-Weg hat dafuer inzwischen ein eigenes Protokoll (<code>wp_pointer_warp_v1</code>); es greift, wenn beide Seiten es mitbringen — <strong>Wine 11.9 oder neuer</strong> und <strong>KWin 6.4 oder neuer</strong> (bzw. Mutter 49+, wlroots 0.19+). Praktisch heisst das: XWayland-Haken aus, Wayland an, Runner ab 11.16. Wenn du bei XWayland bleiben musst, nennt die <a href="https://wiki.starcitizen-lug.org/Troubleshooting/mouse-keyboard-issues" target="_blank" rel="noopener">LUG-Wiki-Seite zu Maus und Tastatur</a> weitere Behelfe (Launcher-Overlay abschalten, <code>r_width</code>/<code>r_height</code> in der USER.cfg setzen, Gamescope mit <code>--force-grab-cursor</code>).</p>
 
           <h3>GitHub API-Rate-Limit</h3>
           <p>Wenn du Rate-Limit-Fehler beim Durchsuchen von Wine Runnern oder beim Pruefen auf Updates siehst, setze einen GitHub Personal Access Token in den <a href="settings.html">Einstellungen</a>. Das erhoeht das Limit von 60 auf 5.000 Anfragen pro Stunde.</p>

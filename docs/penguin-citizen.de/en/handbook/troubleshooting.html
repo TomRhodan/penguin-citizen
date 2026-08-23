@@ -100,6 +100,7 @@
             <li>Enable <strong>In-Process GPU</strong> on the <a href="launching.html">Launch page</a> if the launcher shows a black or white window</li>
             <li>Try a different Wine runner</li>
           </ul>
+          <p>From Wine 11.14 on, the wine process the app starts exits by itself a few seconds later — the launcher then keeps running inside the wine session. The app used to report that as "exited", which sent the interface back to its idle state and made a second attempt collide with the launcher that was still running. It now waits until no process is left in the prefix. When the launch console says the RSI Launcher is still running and it is waiting for it, that is the normal course of events.</p>
 
           <h3>Gamescope issues</h3>
           <ul>
@@ -122,6 +123,14 @@
             <li>Wayland support is experimental. If you experience problems, disable it on the <a href="launching.html">Launch page</a> to fall back to XWayland.</li>
             <li>Fractional scaling (125%, 150%) is not compatible with native Wayland mode.</li>
           </ul>
+
+          <p><strong>The launcher starts but no window appears (Wine 11.14 and 11.15).</strong> In those two Wine versions the Wayland driver creates the RSI Launcher's surfaces, loses their toplevel role again and never receives a size from the compositor — the launcher demonstrably runs (its processes are there) but stays invisible. Two ways out, in this order:</p>
+          <ul>
+            <li>Use a runner with <strong>Wine 11.16 or newer</strong>. It is fixed there, and it is the route without side effects.</li>
+            <li>Otherwise enable <strong>Render via XWayland</strong> on the <a href="launching.html">Launch page</a>. The window then appears, but the mouse can react offset in the game (see the next point). The app warns at launch when Wayland is combined with one of the affected versions.</li>
+          </ul>
+
+          <p><strong>The mouse reacts offset in the game, or elements only flicker.</strong> This is a property of XWayland rather than a bug in the app: the pointer cannot be warped there while it is visible, so the game works with the wrong coordinates. It shows up most clearly on multi-monitor setups where the game's monitor is not at the left edge of the desktop layout. Native Wayland has a dedicated protocol for this by now (<code>wp_pointer_warp_v1</code>); it takes effect when both sides support it — <strong>Wine 11.9 or newer</strong> and <strong>KWin 6.4 or newer</strong> (or Mutter 49+, wlroots 0.19+). In practice: XWayland box off, Wayland on, runner 11.16 or newer. If you have to stay on XWayland, the <a href="https://wiki.starcitizen-lug.org/Troubleshooting/mouse-keyboard-issues" target="_blank" rel="noopener">LUG wiki page on mouse and keyboard</a> lists further remedies (turn off the launcher overlay, set <code>r_width</code>/<code>r_height</code> in USER.cfg, gamescope with <code>--force-grab-cursor</code>).</p>
 
           <h3>GitHub API rate limit</h3>
           <p>If you see rate limit errors when browsing Wine runners or checking for updates, set a GitHub personal access token in <a href="settings.html">Settings</a>. This increases the limit from 60 to 5,000 requests per hour.</p>
