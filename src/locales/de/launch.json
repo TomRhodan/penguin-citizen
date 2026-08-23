@@ -33,7 +33,7 @@
   "tooltip.mangohud": "Bildschirm-Overlay fuer Leistungsdaten (FPS, CPU, GPU, RAM)",
   "tooltip.dxvkHud": "DXVK-spezifisches Overlay mit Draw Calls und Compiler-Aktivitaet",
   "tooltip.wayland": "Wayland-Protokollunterstuetzung in Wine aktivieren",
-  "tooltip.x11Fallback": "Behaelt alle Wayland-Einstellungen, laesst Wine die Fenster aber ueber XWayland zeichnen. Noetig bei Runnern ab Wine 11.14: dort bleibt das RSI-Launcher-Fenster im Wayland-Modus unsichtbar.",
+  "tooltip.x11Fallback": "Behaelt alle Wayland-Einstellungen, laesst Wine die Fenster aber ueber XWayland zeichnen. Noetig bei Wine 11.14 und 11.15: dort bleibt das RSI-Launcher-Fenster im Wayland-Modus unsichtbar. Ab Wine 11.16 ist das behoben - dann ist nativer Wayland-Betrieb die bessere Wahl, weil die Maus im Spiel unter XWayland versetzt reagieren kann.",
   "tooltip.waylandFractional": "Fraktionale Skalierung erkannt - Wayland-Modus ist nicht kompatibel mit fraktionaler Skalierung. Setze alle Monitore auf ganzzahlige Skalierung (100%, 200%), um diese Option zu nutzen.",
   "tooltip.waylandMonitor": "Spiel auf einen bestimmten Wayland-Ausgang erzwingen. Erfordert einen GE-Proton- oder Mactan-Runner mit WAYLANDDRV_PRIMARY_MONITOR-Unterstuetzung.",
   "tooltip.monitorRefresh": "Monitore neu erkennen",

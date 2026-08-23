@@ -71,13 +71,16 @@ fn parse_wine_version(version: &str) -> Option<(u32, u32)> {
 
 /// Wine versions whose Wayland driver never maps the RSI Launcher's windows.
 ///
-/// From 11.14 on, winewayland.drv creates the launcher's surfaces, clears their
-/// xdg role again and never receives a configure event - the launcher runs but
-/// stays invisible. 11.13 and older are fine.
+/// In 11.14 and 11.15, winewayland.drv creates the launcher's surfaces, clears
+/// their xdg role again and never receives a configure event - the launcher runs
+/// but stays invisible. 11.13 and older are fine, and 11.16 is verified fixed.
+///
+/// This is a closed range on purpose: a warning on suspicion for every future
+/// version would be worse than no warning at all.
 fn wayland_launcher_is_broken(version: Option<&str>) -> bool {
     match version.and_then(parse_wine_version) {
-        Some((major, minor)) => major > 11 || (major == 11 && minor >= 14),
-        None => false,
+        Some((11, minor)) => (14..=15).contains(&minor),
+        _ => false,
     }
 }
 
@@ -125,9 +128,10 @@ fn apply_graphics_driver(
 
     if wayland && wayland_launcher_is_broken(wine_version) {
         let msg = concat!(
-            "Wayland + this runner: from Wine 11.14 on the RSI Launcher window never appears - the ",
-            "launcher runs but stays invisible. Fix: tick \"Render via XWayland\" in the Wayland ",
-            "settings, or use a runner up to 11.13."
+            "Wayland + this runner: Wine 11.14 and 11.15 never show the RSI Launcher window - the ",
+            "launcher runs but stays invisible. Best fix: use a runner with Wine 11.16 or newer, ",
+            "where this is repaired. Alternative: tick \"Render via XWayland\" in the Wayland ",
+            "settings - the launcher shows up, but the mouse can react offset in the game."
         );
         log::warn!("{}", msg);
         let _ = app.emit("launch-log", msg);
@@ -787,11 +791,13 @@ mod tests {
     }
 
     #[test]
-    fn wayland_is_flagged_broken_from_11_14_on() {
-        // 11.14 is where winewayland.drv stopped mapping the launcher's windows
+    fn wayland_is_flagged_broken_only_for_11_14_and_11_15() {
+        // The two releases where winewayland.drv stopped mapping the windows
         assert!(wayland_launcher_is_broken(Some("wine-11.14")));
         assert!(wayland_launcher_is_broken(Some("wine-11.15.r0.g2df1ee28039 ( TkG Plain )")));
-        assert!(wayland_launcher_is_broken(Some("wine-12.0")));
+        // Fixed again in 11.16 - warning it would send users away from the cure
+        assert!(!wayland_launcher_is_broken(Some("wine-11.16")));
+        assert!(!wayland_launcher_is_broken(Some("wine-12.0")));
         assert!(!wayland_launcher_is_broken(Some("wine-11.13-1")));
         assert!(!wayland_launcher_is_broken(Some("wine-11.7")));
         // Unknown version: no claim, no warning
