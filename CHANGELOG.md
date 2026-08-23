@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.15] - 2026-08-22
+
+### Added
+- **Runners already present on the system are found and offered** — A Linux box often carries perfectly usable Wine builds that Penguin Citizen never installed: the CachyOS packages `wine-cachyos-opt` and `proton-cachyos-slr`, or whatever ProtonPlus and protonup-qt dropped into a Steam `compatibilitytools.d` directory. A new `system_runners` module scans `/opt/wine-cachyos`, the system-wide Steam compatibility tools and the per-user Steam directories (Flatpak included), deduplicating by canonical path so the `~/.steam/root` and `~/.local/share/Steam` views of the same folder appear once. They are listed with a `CachyOS`/`Steam`/`System` badge, are usable in launch profiles, and have no delete button — the package manager owns them. A `System runners` checkbox hides them again, and a locally installed runner of the same name always wins.
+- **`runners::runner_dir()` resolves a runner name to its directory** — Nine call sites built `<install_path>/runners/<name>` by hand, which made runners outside that directory impossible. The resolver checks the local copy first and falls back to a system runner, so launching, prefix tools, binding capture, the installer, repair and the profile validation all reach system runners without further changes. The wineserver cleanup after a session additionally remembers the runner the last launch used, so a system runner's wineserver is shut down too.
+- **`Render via XWayland` switch for the Wayland settings** — Which graphics driver Wine uses is a per-prefix registry setting, and the LUG wayland builds load `winewayland.drv` no matter what `DISPLAY` says — removing `DISPLAY`, which is all the Wayland toggle did, never switched anything for them. Both switches now write `HKCU\Software\Wine\Drivers` directly: Wayland on gives `wayland,x11`, the new sub-option (or Wayland off) gives `x11`. This is what makes the RSI Launcher window appear again on Wine 11.14 and 11.15, and the launch console reports the chosen driver.
+- **A warning when Wayland meets a runner that cannot show the launcher** — Wine 11.14 and 11.15 create the launcher's surfaces, clear their xdg role again and never receive a configure event: the launcher runs but stays invisible. Combining Wayland with such a runner now warns at launch, pointing at Wine 11.16 (where it is repaired) and at the XWayland switch as the alternative. The range is closed deliberately — warning about every future version would send users away from the fix.
+
+### Changed
+- **Errors and warnings stay on screen for 30 seconds and can be clicked away** — Every notification disappeared after three seconds, which is not enough to read one that carries an instruction, and there was no way to dismiss or re-read it. Problems now last 30 seconds, information four, all of them close on click or via an explicit ×, and long text wraps instead of staying on one line.
+- **A download only counts as installed when a usable Wine binary is there** — The available-runners list checked for the mere existence of the target directory, so an extraction that produced nothing usable was marked as installed while every other list skipped it.
+- **Runner archives for other CPU architectures are no longer offered** — proton-cachyos publishes arm64 builds next to the x86_64 ones. They download and extract without complaint but keep their wine under `files/bin-arm64`, which no x86_64 host can execute, so they installed and were then invisible everywhere. Architecture tokens in an asset name are now checked against the host; names without one are unaffected, which is every LUG, RawFox and GE build.
+
+### Fixed
+- **The launcher was reported as exited seconds after starting (Wine 11.14 and newer)** — The process Penguin Citizen spawns is only Wine's loader, and from 11.14 on it exits shortly after the RSI Launcher relaunches itself, while the launcher keeps running in the prefix. Reporting that as an exit reset the interface, dropped the tracked PID so Stop no longer worked, and made the next Start collide with the still-running launcher's single-instance lock — which looked exactly like "the runner starts and dies immediately". The session is now considered over only once no process is left in the prefix (`wineserver -w`).
+- **A runner install with no usable Wine binary reported success** — The install verified nothing after extraction, so an unusable archive left a multi-gigabyte directory behind and claimed to have worked. It now fails with an explicit message and removes the directory again.
+- **Runner directories skipped for lacking a Wine binary are logged** — `scan_runners` and `get_runner_details` dropped invalid directories silently, so a runner that had installed but was not listed anywhere left no trace in `debug.log` to explain why.
+
+### Build
+- **188 backend tests passing** (17 new: architecture filter, arm64 layout rejection, runner-directory resolution precedence, system-runner scanning including deduplication and origin labels, wine session detection, graphics-driver selection, wine version parsing and the affected-version range), `cargo clippy --tests --all-targets -- -D warnings` clean.
+
 ## [0.5.14] - 2026-08-08
 
 ### Added
