@@ -8,8 +8,29 @@ on:
 
 jobs:
   check:
-    name: Lint, Build & Test
-    runs-on: ubuntu-latest
+    name: Lint, Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # The 26.04 job is an early-warning signal, not a gate: a failure there
+    # must not block a release that is built on 24.04 anyway.
+    continue-on-error: ${{ matrix.experimental }}
+
+    strategy:
+      # Without this a failing 26.04 job would cancel the 24.04 one, which is
+      # the only one that says anything about the artifacts we ship.
+      fail-fast: false
+      matrix:
+        include:
+          # Mirrors release.yml. The shipped binary must keep working on
+          # Ubuntu 24.04 LTS, Debian 12/13 and Mint 22, so it is linked against
+          # that glibc (2.39) and nothing newer.
+          - os: ubuntu-24.04
+            experimental: false
+          # Ubuntu 26.04 brings glibc 2.43 and a much newer WebKit. Building
+          # the release there would raise the runtime requirement and lock out
+          # every one of those distributions, so it is deliberately NOT the
+          # release target - it runs here only to surface breakage early.
+          - os: ubuntu-26.04
+            experimental: true
 
     steps:
       - name: Checkout repository
@@ -40,11 +61,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          # matrix.os, not runner.os: the latter is "Linux" for both images, so
+          # the two jobs would overwrite each other's cache on every run.
+          key: ${{ matrix.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ matrix.os }}-cargo-
 
+      # Reads the lock file only, so the result is identical on both images.
       - name: Security audit
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           cargo install cargo-audit --quiet
           cargo audit --file src-tauri/Cargo.lock
