@@ -81,7 +81,11 @@ async function runCaptureSequence(btn) {
     { id: 'environments', file: 'localization.png', tab: 'localization' },
     { id: 'installation', file: 'installation.png' },
     { id: 'installation', file: 'system-check.png', action: () => document.getElementById('install-btn-check')?.click() },
-    { id: 'installation', file: 'installation-progress.png', action: () => document.getElementById('install-btn-main')?.click() },
+    // installation-progress.png is deliberately NOT captured here. Clicking
+    // #install-btn-main would have to start a real installation to show any
+    // progress; within the bot's fixed wait the view never leaves the system
+    // check, so the step kept re-capturing that screen and overwriting the
+    // committed progress shot with a duplicate of system-check.png.
     { id: 'settings', file: 'settings.png' },
     { id: 'about', file: 'about.png' },
     // Handbook-specific screenshots (tabs not covered above)

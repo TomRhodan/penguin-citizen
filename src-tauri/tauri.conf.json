@@ -1,6 +1,6 @@
 {
   "productName": "Penguin Citizen",
-  "version": "0.5.15",
+  "version": "0.5.16",
   "identifier": "com.penguincitizen.launcher",
   "bundle": {
     "active": true,

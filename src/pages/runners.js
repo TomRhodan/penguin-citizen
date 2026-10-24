@@ -1286,7 +1286,6 @@ function bindSkeletonEvents(container) {
   const refreshInstalledBtn = document.getElementById('btn-refresh-installed');
   if (refreshInstalledBtn) {
     refreshInstalledBtn.addEventListener('click', () => {
-      console.log('Refresh installed clicked');
       loadingFlags.installed = true;
       const installedSlot = document.getElementById('installed-runners-slot');
       if (installedSlot) {
@@ -1323,7 +1322,6 @@ function bindSkeletonEvents(container) {
   const refreshAvailableBtn = document.getElementById('btn-refresh-available');
   if (refreshAvailableBtn) {
     refreshAvailableBtn.addEventListener('click', () => {
-      console.log('Refresh clicked');
       loadingFlags.available = true;
       const downloadSlot = document.getElementById('download-runners-slot');
       if (downloadSlot) {
