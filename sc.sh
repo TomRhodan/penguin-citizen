@@ -18,13 +18,17 @@ mtime_of() { stat -c %Y "$1" 2>/dev/null || echo 0; }
 BIN_MTIME_BEFORE="$(mtime_of "$BIN")"
 
 echo ">> Penguin Citizen — Release-Build wird erstellt…"
-echo "   (AppImage-Bundling kann am Ende fehlschlagen — egal, wir brauchen nur das Binary.)"
 echo
-# tauri build kann im Bundling-Schritt scheitern (z. B. fehlendes linuxdeploy).
-# Das passiert NACH dem Linken, das Binary ist dann frisch und brauchbar —
-# deshalb ist der Exit-Code hier tolerant.
+# --no-bundle: hier wird nur das Binary gestartet, .deb und AppImage braucht
+# niemand. Sie zu bauen kostete rund 28 der 50 Sekunden pro Lauf und ist
+# doppelte Arbeit — die Pakete erzeugt ./build-packages.sh.
+#
+# Der Exit-Code bleibt trotzdem tolerant: faellt das Bundling eines Tages
+# wieder an (etwa weil jemand das Flag entfernt), scheitert es NACH dem Linken
+# und das Binary ist brauchbar. Die Pruefung darunter entscheidet anhand des
+# Zeitstempels, ob der Fehler vor oder nach dem Binary auftrat.
 BUILD_OK=1
-if ! npm run tauri build; then
+if ! npm run tauri build -- --no-bundle; then
     BUILD_OK=0
 fi
 
@@ -51,7 +55,7 @@ if [[ "$BUILD_OK" -eq 0 ]]; then
         exit 1
     fi
     echo ">> Warnung: Der Build meldete einen Fehler, das Binary ist aber neu —"
-    echo "   vermutlich nur der Bundling-Schritt. Weiter mit dem frischen Binary."
+    echo "   der Fehler kam nach dem Linken. Weiter mit dem frischen Binary."
 fi
 echo
 
