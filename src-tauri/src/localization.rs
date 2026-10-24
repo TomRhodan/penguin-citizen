@@ -94,10 +94,6 @@ pub struct LocalizationStatus {
     pub repo_url: Option<String>,
     /// Installed variant ("hybrid" or "full") - currently only meaningful for rjcncpt
     pub variant: Option<String>,
-    /// Whether blueprint injection was applied during the last install
-    pub blueprints_installed: Option<bool>,
-    /// Patch identifier from the BP data (e.g. "4.7.2-live.11674325")
-    pub blueprints_version: Option<String>,
 }
 
 /// Result of a localization installation.
@@ -111,10 +107,6 @@ pub struct LocalizationInstallResult {
     pub message: String,
     /// Size of the downloaded file in bytes
     pub bytes: u64,
-    /// Non-fatal warning to surface alongside success — currently used for
-    /// blueprint-injection hit-rate warnings. None means no warning.
-    #[serde(default)]
-    pub bp_warning: Option<String>,
 }
 
 /// Metadata of an installed localization (stored locally on disk).
@@ -141,12 +133,6 @@ struct LocalizationMeta {
     /// Variant - added retroactively via serde(default) for older installations
     #[serde(default)]
     variant: Option<String>,
-    /// Whether blueprint injection was applied during the last install
-    #[serde(default)]
-    blueprints_installed: Option<bool>,
-    /// Patch identifier from the BP data (e.g. "4.7.2-live.11674325")
-    #[serde(default)]
-    blueprints_version: Option<String>,
 }
 
 /// Progress message during localization installation.
@@ -814,8 +800,6 @@ pub async fn get_localization_status(
                 source_repo: meta.source_repo,
                 repo_url,
                 variant: meta.variant,
-                blueprints_installed: meta.blueprints_installed,
-                blueprints_version: meta.blueprints_version.clone(),
             });
         }
     }
@@ -843,8 +827,6 @@ pub async fn get_localization_status(
                 source_repo: None,
                 repo_url: None,
                 variant: None,
-                blueprints_installed: None,
-                blueprints_version: None,
             });
         }
     }
@@ -863,8 +845,6 @@ pub async fn get_localization_status(
         source_repo: None,
         repo_url: None,
         variant: None,
-        blueprints_installed: None,
-        blueprints_version: None,
     })
 }
 
@@ -889,7 +869,6 @@ pub async fn install_localization(
     language_name: String,
     source_label: String,
     variant: Option<String>,
-    inject_blueprints: bool,
 ) -> Result<LocalizationInstallResult, String> {
     let expanded = expand_tilde(&game_path);
 
@@ -924,88 +903,13 @@ pub async fn install_localization(
 
     let file_size = bytes.len() as u64;
 
-    // Convert downloaded bytes to UTF-8 text for potential BP injection
     let global_ini_text = String::from_utf8_lossy(&bytes).into_owned();
 
-    // Track non-fatal BP warning to surface in the install result
-    let mut bp_low_hit_rate_warning: Option<String> = None;
-
-    // Optionally inject blueprint data
-    let (final_ini_text, bp_patch_for_meta): (String, Option<String>) = if inject_blueprints {
-        // Emit progress event signaling the BP download phase
-        let _ = app.emit("localization-progress", LocalizationProgress {
-            phase: "download".into(),
-            percent: 60.0,
-            message: "Lade Blueprint-Daten…".into(),
-        });
-
-        let bp_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/Data/bp-contracts_short.json";
-        let version_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/version.json";
-
-        // Parallel download
-        let bp_client = http_client();
-        let (bp_resp, ver_resp) = tokio::join!(
-            bp_client.get(bp_url).send(),
-            bp_client.get(version_url).send(),
-        );
-
-        let bp_json = bp_resp
-            .map_err(|e| format!("Failed to fetch BP contracts: {}", e))?
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read BP contracts body: {}", e))?;
-
-        let version_json_text = ver_resp
-            .map_err(|e| format!("Failed to fetch BP version.json: {}", e))?
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read BP version body: {}", e))?;
-
-        // Extract bp_patch (best effort — soft-fail if missing)
-        let bp_patch = serde_json::from_str::<serde_json::Value>(&version_json_text)
-            .ok()
-            .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from));
-
-        let _ = app.emit("localization-progress", LocalizationProgress {
-            phase: "install".into(),
-            percent: 80.0,
-            message: "Wende Blueprint-Daten an…".into(),
-        });
-
-        // `inject_blueprints` as a local name shadows the fn; qualify with self::
-        let (merged, stats) = self::inject_blueprints_with_stats(&global_ini_text, &bp_json)?;
-
-        // Sanity-check: if fewer than half the *injectable* strings matched, the
-        // data probably doesn't fit this SC build. Surface a non-fatal warning in
-        // the install result — the install itself proceeds (user opted in). We
-        // compare against `injectable` (title/description strings the BP data
-        // actually carries), not `entries_total * 2`: many entries carry only
-        // loc-keys and no override text, so `entries_total * 2` would falsely
-        // trigger the warning on a perfect match.
-        let max_possible = stats.injectable;
-        bp_low_hit_rate_warning = if max_possible > 0 && stats.hits * 2 < max_possible {
-            log::warn!(
-                "Blueprint hit rate low: {}/{} (entries={}, misses={})",
-                stats.hits, max_possible, stats.entries_total, stats.misses
-            );
-            Some(format!(
-                "Blueprint-Daten passen nur teilweise zur installierten SC-Version ({} von {} möglichen Treffern). Mission-Markierungen sind eventuell unvollständig.",
-                stats.hits,
-                max_possible
-            ))
-        } else {
-            None
-        };
-
-        (merged, bp_patch)
-    } else {
-        let _ = app.emit("localization-progress", LocalizationProgress {
-            phase: "install".to_string(),
-            percent: 75.0,
-            message: "Installing translation file...".to_string(),
-        });
-        (global_ini_text, None)
-    };
+    let _ = app.emit("localization-progress", LocalizationProgress {
+        phase: "install".to_string(),
+        percent: 75.0,
+        message: "Installing translation file...".to_string(),
+    });
 
     // Create target directory and save translation file
     let loc_dir = sc_localization_dir(&expanded, &version, &language_code)?;
@@ -1018,7 +922,7 @@ pub async fn install_localization(
     // launcher / EAC from ever observing a half-written file. rename() on the
     // same filesystem (the install dir) is atomic on POSIX.
     let tmp_path = loc_dir.join("global.ini.tmp");
-    fs::write(&tmp_path, final_ini_text.as_bytes())
+    fs::write(&tmp_path, global_ini_text.as_bytes())
         .map_err(|e| format!("Failed to write global.ini.tmp: {}", e))?;
     if let Err(e) = fs::rename(&tmp_path, &ini_path) {
         let _ = fs::remove_file(&tmp_path);
@@ -1045,8 +949,6 @@ pub async fn install_localization(
         commit_date: commit_info.as_ref().map(|(_, date)| date.clone()),
         source_repo: Some(source_repo.clone()),
         variant: variant.clone(),
-        blueprints_installed: Some(inject_blueprints),
-        blueprints_version: bp_patch_for_meta,
     };
     save_meta(&version, &meta)?;
 
@@ -1060,7 +962,6 @@ pub async fn install_localization(
         success: true,
         message: format!("{} translation installed successfully", language_name),
         bytes: file_size,
-        bp_warning: bp_low_hit_rate_warning,
     })
 }
 
@@ -1134,454 +1035,6 @@ pub async fn fetch_remote_language_info(
     Ok(entries)
 }
 
-// ============================================================
-// Blueprint injection (experimental)
-// ============================================================
-
-/// Root of the bp-contracts_short.json file (as published by rjcncpt's launcher tooling).
-#[derive(Deserialize)]
-struct BpContractsRoot {
-    _meta: serde_json::Value,
-    entries: Vec<BpEntry>,
-}
-
-/// One blueprint entry — describes how to modify the mission's title and description.
-///
-/// `title`/`description` are optional: the upstream `bp-contracts_short.json` (pulled
-/// unpinned from `main`) mixes entries that carry an override marker/text with
-/// contract-metadata-only entries that have just the loc-keys and no override. A
-/// missing (or `null`) `title`/`description` means "nothing to inject for this entry"
-/// and must not abort the whole parse (#blueprint-title-parse). The loc-keys stay
-/// required — they are the join key against the INI and are present on every entry.
-#[derive(Deserialize)]
-#[allow(non_snake_case)] // field names match the JSON shape
-struct BpEntry {
-    titleLocKey: String,
-    #[serde(default)]
-    title: Option<String>,
-    descriptionLocKey: String,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-/// Statistics about a blueprint injection pass — exposed to the install flow so
-/// it can warn the user when the BP data is a poor match for the installed SC build.
-pub(crate) struct BpInjectStats {
-    /// Number of (title or description) strings actually found in the INI and modified.
-    pub hits: usize,
-    /// Number of (title or description) strings that were present in the BP data but
-    /// whose loc-key was absent in the INI (skipped).
-    pub misses: usize,
-    /// Number of injectable strings the BP data actually carries (entries that have a
-    /// `title` and/or `description`). This is the real maximum possible `hits`
-    /// (`injectable == hits + misses`) — many entries carry only loc-keys and no text.
-    pub injectable: usize,
-    /// Number of entries in the BP JSON (for logging/diagnostics only).
-    pub entries_total: usize,
-}
-
-/// Thin wrapper that drops the stats — kept as a stable signature for unit tests.
-#[cfg(test)]
-pub(crate) fn inject_blueprints(
-    global_ini_text: &str,
-    bp_contracts_json: &str,
-) -> Result<String, String> {
-    inject_blueprints_with_stats(global_ini_text, bp_contracts_json).map(|(text, _)| text)
-}
-
-/// Merges blueprint markers and description blocks from the rjcncpt JSON
-/// into a global.ini file. Pure filesystem-free logic.
-///
-/// For each entry whose `titleLocKey` matches a key in the INI, the entry's `title`
-/// string is **prepended** to the existing value. For each entry whose
-/// `descriptionLocKey` matches, the entry's `description` is **appended** to the
-/// existing value. Entries whose keys are absent in the INI are silently skipped
-/// (logged at debug level). Comments, blank lines, and original line order are
-/// preserved verbatim. Backslash-n sequences in JSON (`\\n` → literal `\n`) round-trip
-/// into the INI as the literal two-character sequence — Star Citizen's runtime
-/// parser handles the conversion to actual newlines.
-///
-/// Returns the merged text plus statistics about how well the BP data matched the
-/// INI's keyspace — the caller can decide to warn the user on low hit rates.
-pub(crate) fn inject_blueprints_with_stats(
-    global_ini_text: &str,
-    bp_contracts_json: &str,
-) -> Result<(String, BpInjectStats), String> {
-    let bp: BpContractsRoot = serde_json::from_str(bp_contracts_json)
-        .map_err(|e| format!("Failed to parse blueprint JSON: {}", e))?;
-
-    // Parse the INI as a Vec<Line> preserving everything verbatim except modified values.
-    enum Line {
-        KeyValue { key: String, separator: String, value: String },
-        Verbatim(String),
-    }
-
-    // Split into lines, preserving line endings absent — we'll re-join with '\n'.
-    let mut lines: Vec<Line> = global_ini_text
-        .split('\n')
-        .map(|raw| {
-            // Empty trailing line from trailing '\n' becomes Verbatim("")
-            // Comment lines start with ';' or '#' — keep verbatim
-            let trimmed_start = raw.trim_start();
-            if trimmed_start.is_empty() || trimmed_start.starts_with(';') || trimmed_start.starts_with('#') || trimmed_start.starts_with('[') {
-                return Line::Verbatim(raw.to_string());
-            }
-            // Find the first '=' — split into key and value preserving whitespace around it
-            if let Some(eq_pos) = raw.find('=') {
-                let key = raw[..eq_pos].to_string();
-                let value = raw[eq_pos + 1..].to_string();
-                Line::KeyValue {
-                    key,
-                    separator: "=".to_string(),
-                    value,
-                }
-            } else {
-                Line::Verbatim(raw.to_string())
-            }
-        })
-        .collect();
-
-    // Build key → index lookup. If the same key appears more than once, the first wins.
-    let mut key_to_idx = std::collections::HashMap::<String, usize>::new();
-    for (i, line) in lines.iter().enumerate() {
-        if let Line::KeyValue { key, .. } = line {
-            key_to_idx.entry(key.clone()).or_insert(i);
-        }
-    }
-
-    let mut hits = 0_usize;
-    let mut misses = 0_usize;
-    let mut injectable = 0_usize;
-    for entry in &bp.entries {
-        // Only entries that actually carry a title contribute a title injection;
-        // metadata-only entries (title == None) are silently skipped.
-        if let Some(title) = &entry.title {
-            injectable += 1;
-            if let Some(&idx) = key_to_idx.get(&entry.titleLocKey) {
-                if let Line::KeyValue { value, .. } = &mut lines[idx] {
-                    let new_value = format!("{}{}", title, value);
-                    *value = new_value;
-                    hits += 1;
-                }
-            } else {
-                misses += 1;
-                log::debug!("Blueprint titleLocKey not found in INI: {}", entry.titleLocKey);
-            }
-        }
-        if let Some(description) = &entry.description {
-            injectable += 1;
-            if let Some(&idx) = key_to_idx.get(&entry.descriptionLocKey) {
-                if let Line::KeyValue { value, .. } = &mut lines[idx] {
-                    let new_value = format!("{}{}", value, description);
-                    *value = new_value;
-                    hits += 1;
-                }
-            } else {
-                misses += 1;
-                log::debug!("Blueprint descriptionLocKey not found in INI: {}", entry.descriptionLocKey);
-            }
-        }
-    }
-    log::info!(
-        "Blueprint injection: {} hits, {} misses ({} injectable) across {} entries",
-        hits,
-        misses,
-        injectable,
-        bp.entries.len()
-    );
-
-    // Serialize back: each Line becomes its raw form, joined with '\n'.
-    let mut out = String::with_capacity(global_ini_text.len() + 4096);
-    for (i, line) in lines.iter().enumerate() {
-        match line {
-            Line::KeyValue { key, separator, value } => {
-                out.push_str(key);
-                out.push_str(separator);
-                out.push_str(value);
-            }
-            Line::Verbatim(raw) => {
-                out.push_str(raw);
-            }
-        }
-        // Append '\n' between lines (but not after the last "line", because the original
-        // had a trailing '\n' which produced an empty final element via .split('\n')).
-        if i + 1 < lines.len() {
-            out.push('\n');
-        }
-    }
-
-    let stats = BpInjectStats {
-        hits,
-        misses,
-        injectable,
-        entries_total: bp.entries.len(),
-    };
-    Ok((out, stats))
-}
-
-/// Result of the BP compatibility pre-check.
-/// Returned to the install modal so the user sees what SC patch the BP data targets.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct BpCompat {
-    /// Patch identifier from blueprints/version.json `version` field
-    /// (e.g. "4.7.2-live.11674325"). None if the file could not be fetched/parsed.
-    pub bp_patch: Option<String>,
-    /// Human-readable BP version label from bp-contracts_short.json `_meta.version`
-    /// (e.g. "Beta 22.04.2026"). None if missing.
-    pub bp_version: Option<String>,
-}
-
-/// Fetches the blueprint version metadata from upstream so the install modal can
-/// show the user which SC patch the data was generated for. Read-only; never writes.
-#[tauri::command]
-pub async fn check_blueprints_compat() -> Result<BpCompat, String> {
-    let client = http_client();
-    let bp_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/Data/bp-contracts_short.json";
-    let version_url = "https://raw.githubusercontent.com/rjcncpt/StarCitizen-Deutsch-INI/main/blueprints/version.json";
-
-    let (ver_resp, bp_resp) = tokio::join!(
-        client.get(version_url).send(),
-        client.get(bp_url).send(),
-    );
-
-    let bp_patch = match ver_resp {
-        Ok(r) => match r.text().await {
-            Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
-                .ok()
-                .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from)),
-            Err(_) => None,
-        },
-        Err(_) => None,
-    };
-
-    let bp_version = match bp_resp {
-        Ok(r) => match r.text().await {
-            Ok(text) => serde_json::from_str::<serde_json::Value>(&text)
-                .ok()
-                .and_then(|v| v.get("_meta").and_then(|m| m.get("version")).and_then(|x| x.as_str()).map(String::from)),
-            Err(_) => None,
-        },
-        Err(_) => None,
-    };
-
-    Ok(BpCompat { bp_patch, bp_version })
-}
-
-#[cfg(test)]
-mod blueprint_inject_tests {
-    use super::*;
-
-    /// Helper to build a small global.ini fixture
-    fn ini(lines: &[&str]) -> String {
-        lines.join("\n") + "\n"
-    }
-
-    #[test]
-    fn inject_appends_description_when_key_present() {
-        let global_ini = ini(&[
-            "headhunters_eliminateall_cfp_M_desc_001=Original description",
-            "other_key=other value",
-        ]);
-        let bp_json = r#"{
-            "_meta": {"version_patch": "4.7.2"},
-            "entries": [
-                {
-                    "titleLocKey": "missing_title_key",
-                    "title": " <EM4>[BP]</EM4>",
-                    "descriptionLocKey": "headhunters_eliminateall_cfp_M_desc_001",
-                    "description": "\\n---\\n<EM4>BP info</EM4>"
-                }
-            ]
-        }"#;
-        let result = inject_blueprints(&global_ini, bp_json).unwrap();
-        assert!(result.contains("headhunters_eliminateall_cfp_M_desc_001=Original description\\n---\\n<EM4>BP info</EM4>"));
-        assert!(result.contains("other_key=other value"));
-    }
-
-    #[test]
-    fn inject_prepends_title_when_key_present() {
-        let global_ini = ini(&[
-            "mission_title=Eliminate Targets",
-        ]);
-        let bp_json = r#"{
-            "_meta": {},
-            "entries": [
-                {
-                    "titleLocKey": "mission_title",
-                    "title": " <EM4>[BP]</EM4>",
-                    "descriptionLocKey": "absent",
-                    "description": ""
-                }
-            ]
-        }"#;
-        let result = inject_blueprints(&global_ini, bp_json).unwrap();
-        assert!(result.contains("mission_title= <EM4>[BP]</EM4>Eliminate Targets"));
-    }
-
-    #[test]
-    fn inject_skips_unknown_keys() {
-        let global_ini = ini(&[
-            "real_key=real value",
-        ]);
-        let bp_json = r#"{
-            "_meta": {},
-            "entries": [
-                {
-                    "titleLocKey": "phantom_title",
-                    "title": " <EM4>[BP]</EM4>",
-                    "descriptionLocKey": "phantom_desc",
-                    "description": "stuff"
-                }
-            ]
-        }"#;
-        let result = inject_blueprints(&global_ini, bp_json).unwrap();
-        // Real value untouched, no spurious lines added
-        assert_eq!(result.trim_end(), "real_key=real value");
-    }
-
-    #[test]
-    fn inject_preserves_original_line_order_and_comments() {
-        let global_ini = "; header comment\n\nfirst_key=first\nsecond_key=second\n; trailing comment\nthird_key=third\n";
-        let bp_json = r#"{
-            "_meta": {},
-            "entries": [
-                {
-                    "titleLocKey": "second_key",
-                    "title": "[BP] ",
-                    "descriptionLocKey": "absent",
-                    "description": ""
-                }
-            ]
-        }"#;
-        let result = inject_blueprints(global_ini, bp_json).unwrap();
-        // Comment lines and blank line must remain in place; relative order unchanged
-        let lines: Vec<&str> = result.lines().collect();
-        assert_eq!(lines[0], "; header comment");
-        assert_eq!(lines[1], "");
-        assert_eq!(lines[2], "first_key=first");
-        assert_eq!(lines[3], "second_key=[BP] second");
-        assert_eq!(lines[4], "; trailing comment");
-        assert_eq!(lines[5], "third_key=third");
-    }
-
-    #[test]
-    fn inject_preserves_backslash_n_literals() {
-        // The JSON source contains "\\n" which serde decodes to literal two chars: backslash + n.
-        // Those must NOT be interpreted as newlines during merge — they must round-trip into the INI value as the literal two chars.
-        let global_ini = ini(&["mission_desc=Base desc"]);
-        let bp_json = r#"{
-            "_meta": {},
-            "entries": [
-                {
-                    "titleLocKey": "absent_title",
-                    "title": "",
-                    "descriptionLocKey": "mission_desc",
-                    "description": "\\n--SEP--\\nMore"
-                }
-            ]
-        }"#;
-        let result = inject_blueprints(&global_ini, bp_json).unwrap();
-        // The output line must contain the literal sequence backslash+n (two chars), not an actual newline within the value
-        let target_line = result.lines().find(|l| l.starts_with("mission_desc=")).expect("line exists");
-        assert_eq!(target_line, r"mission_desc=Base desc\n--SEP--\nMore");
-    }
-
-    #[test]
-    fn inject_handles_empty_entries_array_as_noop() {
-        let global_ini = ini(&[
-            "alpha=1",
-            "beta=2",
-        ]);
-        let bp_json = r#"{"_meta":{},"entries":[]}"#;
-        let result = inject_blueprints(&global_ini, bp_json).unwrap();
-        // Should round-trip (modulo trailing newline normalization)
-        assert!(result.contains("alpha=1"));
-        assert!(result.contains("beta=2"));
-    }
-
-    #[test]
-    fn inject_tolerates_entries_without_title_or_description() {
-        // The Beta-2026 upstream mixes in contract-metadata-only entries that have
-        // just the loc-keys and no `title`/`description` (plus extra fields serde must
-        // ignore). These must NOT abort the parse — the exact bug from the field report.
-        let global_ini = ini(&[
-            "roughready_delivery_station_title_001=Deliver Cargo",
-            "roughready_delivery_station_desc_001=Take it there",
-        ]);
-        let bp_json = r##"{
-            "_meta": {"version": "Beta 16.07.2026"},
-            "entries": [
-                {
-                    "descriptionLocKey": "roughready_delivery_station_desc_001",
-                    "titleLocKey": "roughready_delivery_station_title_001",
-                    "contractInfo": "# Cooldown: 45 Minuten",
-                    "canBeShared": true,
-                    "illegal": false,
-                    "personalCooldownTime": 45,
-                    "prerequisites": { "location": [{"name": "Checkmate", "navIcon": "Station"}], "locality": [] }
-                }
-            ]
-        }"##;
-        let result = inject_blueprints(&global_ini, bp_json)
-            .expect("entries without title/description must not error");
-        // No override text → the matched values are left untouched.
-        assert!(result.contains("roughready_delivery_station_title_001=Deliver Cargo"));
-        assert!(result.contains("roughready_delivery_station_desc_001=Take it there"));
-    }
-
-    #[test]
-    fn inject_stats_count_only_injectable_fields() {
-        // A mixed dataset: one entry carries title+description, one is metadata-only.
-        // `injectable` must count only the strings actually present (2, not 4), so the
-        // low-hit-rate warning stays meaningful.
-        let global_ini = ini(&[
-            "mission_title=Eliminate Targets",
-            "mission_desc=Base desc",
-            "meta_only_title=Untouched",
-        ]);
-        let bp_json = r##"{
-            "_meta": {},
-            "entries": [
-                {
-                    "titleLocKey": "mission_title",
-                    "title": " <EM4>[BP]</EM4>",
-                    "descriptionLocKey": "mission_desc",
-                    "description": "\\n---\\ninfo"
-                },
-                {
-                    "titleLocKey": "meta_only_title",
-                    "descriptionLocKey": "meta_only_desc",
-                    "contractInfo": "# metadata only"
-                }
-            ]
-        }"##;
-        let (result, stats) = inject_blueprints_with_stats(&global_ini, bp_json).unwrap();
-        assert_eq!(stats.injectable, 2, "only the first entry's two fields are injectable");
-        assert_eq!(stats.hits, 2, "both injectable fields match an INI key");
-        assert_eq!(stats.misses, 0);
-        assert_eq!(stats.entries_total, 2);
-        assert!(result.contains("mission_title= <EM4>[BP]</EM4>Eliminate Targets"));
-        assert!(result.contains("meta_only_title=Untouched"));
-    }
-
-    #[test]
-    fn inject_treats_null_title_and_description_as_absent() {
-        // `#[serde(default)]` on Option also maps an explicit JSON null to None.
-        let global_ini = ini(&["k_title=Val", "k_desc=Desc"]);
-        let bp_json = r#"{
-            "_meta": {},
-            "entries": [
-                { "titleLocKey": "k_title", "title": null, "descriptionLocKey": "k_desc", "description": null }
-            ]
-        }"#;
-        let (result, stats) = inject_blueprints_with_stats(&global_ini, bp_json)
-            .expect("null title/description must parse");
-        assert_eq!(stats.injectable, 0);
-        assert_eq!(stats.hits, 0);
-        assert!(result.contains("k_title=Val"));
-        assert!(result.contains("k_desc=Desc"));
-    }
-}
 
 /// Completely removes an installed localization.
 ///

@@ -731,7 +731,6 @@ pub fn run() {
                 localization::install_localization,
                 localization::remove_localization,
                 localization::fetch_remote_language_info,
-                localization::check_blueprints_compat,
 
                 // Shader cache management (detection, deletion)
                 shader_cache::get_shader_cache_info,
