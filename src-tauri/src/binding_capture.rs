@@ -219,13 +219,27 @@ pub fn list_device_axes(device_map: Option<Vec<DeviceMapping>>) -> Result<Vec<Co
     // on every call. Gilrs::new() creates system-level watcher threads that
     // accumulate if called repeatedly (e.g. on every version switch).
     let mut gilrs_guard = SHARED_GILRS.lock().map_err(|e| format!("Gilrs lock: {}", e))?;
-    let gilrs = gilrs_guard.get_or_insert_with(|| {
-        Gilrs::new().unwrap_or_else(|e| {
-            log_capture(&format!("Failed to init Gilrs: {:?}", e));
-            // Return a default-ish Gilrs — this path should rarely happen
-            Gilrs::new().expect("Gilrs init failed twice")
-        })
-    });
+    // Report a missing gamepad subsystem instead of panicking. The previous
+    // version retried Gilrs::new() and `expect()`ed the second attempt, which
+    // took the whole app down on a host without udev - and because the panic
+    // happened while this mutex was held, it also poisoned SHARED_GILRS, so
+    // every later call failed on the lock.
+    if gilrs_guard.is_none() {
+        match Gilrs::new() {
+            Ok(g) => {
+                *gilrs_guard = Some(g);
+            }
+            Err(e) => {
+                log_capture(&format!("Failed to init Gilrs: {:?}", e));
+                return Err(
+                    format!("Gamepad subsystem unavailable: {:?}. Check that udev is running and that your user can read /dev/input.", e)
+                );
+            }
+        }
+    }
+    let Some(gilrs) = gilrs_guard.as_mut() else {
+        return Err("Gamepad subsystem unavailable".to_string());
+    };
 
     let mut results = Vec::new();
     let mut used_mappings = std::collections::HashSet::new();

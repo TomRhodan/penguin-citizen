@@ -309,9 +309,15 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
     if let Some(ref token) = config.github_token {
         dxvk_dl_request = dxvk_dl_request.header("Authorization", format!("Bearer {}", token));
     }
-    let dxvk_bytes = dxvk_dl_request
+    let dxvk_dl_resp = dxvk_dl_request
         .send().await
-        .map_err(|e| format!("Failed to download DXVK: {}", e))?
+        .map_err(|e| format!("Failed to download DXVK: {}", e))?;
+    // Without this an error page would be written out as dxvk.tar.gz and only
+    // fail later, during extraction, with an unrelated message.
+    if !dxvk_dl_resp.status().is_success() {
+        return Err(format!("DXVK download failed with status: {}", dxvk_dl_resp.status()));
+    }
+    let dxvk_bytes = dxvk_dl_resp
         .bytes().await
         .map_err(|e| format!("Failed to read DXVK download: {}", e))?;
 
@@ -387,7 +393,9 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         "Setting DLL overrides in registry..."
     );
     for name in &["d3d9", "d3d10core", "d3d11", "dxgi"] {
-        let _ = Command::new(wine.to_string_lossy().as_ref())
+        // The exit status was dropped entirely, so a DLL override that failed to
+        // register left DXVK silently inactive with nothing in the log.
+        let reg_status = Command::new(wine.to_string_lossy().as_ref())
             .args([
                 "reg",
                 "add",
@@ -404,6 +412,11 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
+        match reg_status {
+            Ok(st) if st.success() => {}
+            Ok(st) => log::warn!("DXVK DllOverride for {} returned {:?}", name, st.code()),
+            Err(e) => log::warn!("DXVK DllOverride for {} could not be set: {}", name, e),
+        }
     }
 
     // Write version marker so future installations can detect
@@ -502,35 +515,21 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             "Downloading latest.yml..."
         );
 
-        // Download latest.yml from RSI - contains the filename of the current installer version
-        let latest_yml = client
+        // Download latest.yml from RSI - names the current installer and its digest
+        let latest_resp = client
             .get("https://install.robertsspaceindustries.com/rel/2/latest.yml")
             .send().await
-            .map_err(|e| format!("Failed to fetch latest.yml: {}", e))?
+            .map_err(|e| format!("Failed to fetch latest.yml: {}", e))?;
+        // A 4xx/5xx body would otherwise be parsed as if it were the manifest.
+        if !latest_resp.status().is_success() {
+            return Err(format!("Fetching latest.yml failed with status: {}", latest_resp.status()));
+        }
+        let latest_yml = latest_resp
             .text().await
             .map_err(|e| format!("Failed to read latest.yml: {}", e))?;
 
-        // Extract installer filename from the "path:" line in latest.yml
-        let installer_filename = latest_yml
-            .lines()
-            .find_map(|line| {
-                let trimmed = line.trim();
-                // First look for "path: filename.exe" at the top level
-                if let Some(val) = trimmed.strip_prefix("path:") {
-                    return Some(val.trim().to_string());
-                }
-                // Fallback: nested format "- url: filename.exe"
-                let stripped = trimmed
-                    .strip_prefix('-')
-                    .map(|s| s.trim())
-                    .unwrap_or(trimmed);
-                if let Some(val) = stripped.strip_prefix("url:") {
-                    return Some(val.trim().to_string());
-                }
-                None
-            })
-            .filter(|s| s.ends_with(".exe"))
-            .ok_or("Could not find installer filename in latest.yml")?;
+        let manifest = parse_latest_yml(&latest_yml)?;
+        let installer_filename = manifest.filename.clone();
 
         let download_url =
             format!("https://install.robertsspaceindustries.com/rel/2/{}", installer_filename);
@@ -598,12 +597,29 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
             }
         }
 
+        // Supply-chain check: the installer is executed under Wine right after
+        // this, so it is verified against the digest RSI published for it before
+        // it ever runs. A mismatched file is removed, not kept for a retry.
+        emit_progress(
+            &app,
+            "download",
+            "Verifying download...",
+            84.0,
+            "Checking the installer against RSI's SHA-512"
+        );
+        if let Err(e) = verify_sha512_base64(&installer_path, &manifest.sha512_base64) {
+            let _ = tokio::fs::remove_file(&installer_path).await;
+            log::error!("RSI Launcher installer verification failed: {}", e);
+            return Err(e);
+        }
+        log::info!("RSI Launcher installer verified against latest.yml sha512");
+
         emit_progress(
             &app,
             "download",
             "Download complete",
             85.0,
-            "RSI Launcher downloaded successfully"
+            "RSI Launcher downloaded and verified"
         );
 
         if is_cancelled() {
@@ -620,7 +636,10 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         );
 
         // The NSIS installer with /S (Silent Mode) automatically launches the RSI Launcher
-        // as a child process. Stdio::null() prevents pipe handles from being inherited.
+        // as a child process. Its output goes to a *file*, not a pipe: a pipe handle
+        // would be inherited by the launcher the installer spawns and keep this
+        // process waiting on it. Discarding it entirely (as this did until 0.5.16)
+        // left a failed install with nothing at all in debug.log.
         // try_wait() with timeout is used because the NSIS process may not
         // exit until the RSI Launcher it spawned exits
         // (Wine keeps the parent process alive).
@@ -629,6 +648,33 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
         // sub-installers bundled inside the launcher setup. Disabling them
         // matches the LUG reference install (`lug-helper.sh`), which stops them
         // from running under Wine where they only stall the silent install.
+        let installer_log_path = tmp_dir.join("rsi-installer-output.log");
+        let (installer_out, installer_err) = match
+            std::fs::File
+                ::options()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&installer_log_path)
+        {
+            // One file for both streams keeps the output chronologically ordered.
+            Ok(file) => {
+                let dup = file.try_clone().ok();
+                match dup {
+                    Some(d) => (Stdio::from(file), Stdio::from(d)),
+                    None => (Stdio::from(file), Stdio::null()),
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Could not open {} for installer output ({}); falling back to /dev/null",
+                    installer_log_path.display(),
+                    e
+                );
+                (Stdio::null(), Stdio::null())
+            }
+        };
+
         let mut install_child = Command::new(wine.to_string_lossy().as_ref())
             .arg(installer_path.to_string_lossy().as_ref())
             .arg("/S")
@@ -638,8 +684,8 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
                 "dxwebsetup.exe,dotNetFx45_Full_setup.exe,winemenubuilder.exe=d;winedbg.exe=d"
             )
             .env("WINEDEBUG", "-all")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(installer_out)
+            .stderr(installer_err)
             .spawn()
             .map_err(|e| format!("Failed to run RSI Launcher installer: {}", e))?;
 
@@ -735,6 +781,8 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
                 }
             }
         }
+
+        log_installer_output(&installer_log_path);
 
         if timed_out {
             emit_progress(
@@ -847,4 +895,246 @@ pub async fn run_installation(app: AppHandle, config: AppConfig) -> Result<(), S
 pub fn cancel_installation() -> bool {
     INSTALL_CANCEL.store(true, Ordering::SeqCst);
     true
+}
+
+/// Copies whatever the RSI Launcher installer wrote on stdout/stderr into
+/// `debug.log`.
+///
+/// The silent NSIS install used to run with both streams on `/dev/null`, so a
+/// failed install left no trace at all - which is precisely the case that ends
+/// up in a bug report. The output is bounded: NSIS is terse, but a Wine build
+/// that decides to be chatty must not fill the log, so only the last
+/// `MAX_INSTALLER_LOG_LINES` lines are kept.
+fn log_installer_output(path: &Path) {
+    const MAX_INSTALLER_LOG_LINES: usize = 200;
+
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            // Missing file is the normal case when the redirect fell back to null.
+            log::debug!("No installer output at {}: {}", path.display(), e);
+            return;
+        }
+    };
+
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        log::info!("RSI Launcher installer produced no output");
+        return;
+    }
+
+    let skipped = lines.len().saturating_sub(MAX_INSTALLER_LOG_LINES);
+    if skipped > 0 {
+        log::info!("RSI Launcher installer output ({} earlier lines omitted):", skipped);
+    } else {
+        log::info!("RSI Launcher installer output ({} lines):", lines.len());
+    }
+    for line in lines.iter().skip(skipped) {
+        log::info!("  [installer] {}", line);
+    }
+}
+
+/// The installer entry RSI publishes in `latest.yml`: the file to download and
+/// the digest it must have.
+///
+/// RSI's `latest.yml` is an electron-builder manifest. It repeats the current
+/// installer twice - once as a `files:` list entry and once as the top-level
+/// `path:`/`sha512:` pair - and both carry the same digest:
+///
+/// ```text
+/// version: 2.18.1
+/// files:
+///   - url: RSI Launcher-Setup-2.18.1.exe
+///     sha512: bbZjaOiH0jVX...
+///     size: 345452992
+/// path: RSI Launcher-Setup-2.18.1.exe
+/// sha512: bbZjaOiH0jVX...
+/// ```
+///
+/// The digest is **base64**, not hex - electron-builder writes the raw 64 bytes
+/// of the SHA-512 encoded with the standard alphabet.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct InstallerManifest {
+    pub filename: String,
+    pub sha512_base64: String,
+}
+
+/// Parses the installer filename and its SHA-512 out of RSI's `latest.yml`.
+///
+/// The top-level `path:`/`sha512:` pair wins; the `files:` entry is the fallback
+/// for the day RSI drops the top-level keys. Both halves must be present - a
+/// manifest that names a file but no digest is rejected rather than silently
+/// installed unverified, because an unverifiable installer is exactly the case
+/// this check exists for.
+pub(crate) fn parse_latest_yml(yml: &str) -> Result<InstallerManifest, String> {
+    // Top-level keys sit at column 0; the `files:` entry's keys are indented.
+    let mut top_path: Option<String> = None;
+    let mut top_sha: Option<String> = None;
+    // First `files:` entry, used only if the top-level pair is incomplete.
+    let mut entry_url: Option<String> = None;
+    let mut entry_sha: Option<String> = None;
+
+    for line in yml.lines() {
+        let indented = line.starts_with(' ') || line.starts_with('\t') || line.trim_start().starts_with('-');
+        let trimmed = line.trim();
+        let bare = trimmed.strip_prefix('-').map(|s| s.trim()).unwrap_or(trimmed);
+
+        if let Some(val) = bare.strip_prefix("url:") {
+            if entry_url.is_none() {
+                entry_url = Some(val.trim().to_string());
+            }
+        } else if let Some(val) = bare.strip_prefix("path:") {
+            if !indented {
+                top_path = Some(val.trim().to_string());
+            }
+        } else if let Some(val) = bare.strip_prefix("sha512:") {
+            if indented {
+                if entry_sha.is_none() {
+                    entry_sha = Some(val.trim().to_string());
+                }
+            } else {
+                top_sha = Some(val.trim().to_string());
+            }
+        }
+    }
+
+    // The top-level pair wins; otherwise fall back to the `files:` entry. The
+    // two halves are resolved independently so a manifest that still names the
+    // installer but has lost its digest reports *that*, rather than claiming the
+    // filename is missing.
+    let filename = top_path
+        .or(entry_url)
+        .ok_or("Could not find installer filename in latest.yml")?;
+    let sha512_base64 = top_sha
+        .or(entry_sha)
+        .ok_or("latest.yml names an installer but carries no sha512 digest")?;
+
+    if !filename.ends_with(".exe") {
+        return Err(format!("latest.yml points at a non-executable installer: {}", filename));
+    }
+    if sha512_base64.is_empty() {
+        return Err("latest.yml carries an empty sha512 digest".into());
+    }
+
+    Ok(InstallerManifest { filename, sha512_base64 })
+}
+
+/// Hashes `path` with SHA-512 and compares the result against the base64 digest
+/// from `latest.yml`.
+///
+/// Reads in 1 MiB chunks - the installer is around 320 MB and must not be pulled
+/// into memory in one piece.
+fn verify_sha512_base64(path: &Path, expected_base64: &str) -> Result<(), String> {
+    use base64::{ engine::general_purpose, Engine as _ };
+    use sha2::{ Digest, Sha512 };
+    use std::io::Read;
+
+    let mut file = std::fs::File
+        ::open(path)
+        .map_err(|e| format!("Failed to open downloaded installer for verification: {}", e))?;
+    let mut hasher = Sha512::new();
+    let mut buf = vec![0u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buf)
+            .map_err(|e| format!("Failed to read downloaded installer: {}", e))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+
+    let actual = general_purpose::STANDARD.encode(hasher.finalize());
+    if actual != expected_base64 {
+        return Err(
+            format!(
+                "Checksum mismatch for the downloaded RSI Launcher installer. \
+                 Expected {} but got {}. The file was discarded - retry the installation.",
+                expected_base64,
+                actual
+            )
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Shape of the manifest RSI actually serves (fetched 2026-10-24).
+    const REAL_YML: &str =
+        "version: 2.18.1\n\
+         files:\n  \
+           - url: RSI Launcher-Setup-2.18.1.exe\n    \
+             sha512: bbZjaOiH0jVXoy9yQgRm6nxCJdBKexMPBT6O5ChP0t/vO46GKItc4Rav7JxmL6nPxZho9CLDIS0u20QaFriBuw==\n    \
+             size: 345452992\n\
+         path: RSI Launcher-Setup-2.18.1.exe\n\
+         sha512: bbZjaOiH0jVXoy9yQgRm6nxCJdBKexMPBT6O5ChP0t/vO46GKItc4Rav7JxmL6nPxZho9CLDIS0u20QaFriBuw==\n\
+         releaseDate: '2026-10-05T16:51:50.791Z'\n";
+
+    #[test]
+    fn parses_filename_and_digest_from_the_real_manifest() {
+        let m = parse_latest_yml(REAL_YML).unwrap();
+        assert_eq!(m.filename, "RSI Launcher-Setup-2.18.1.exe");
+        assert_eq!(
+            m.sha512_base64,
+            "bbZjaOiH0jVXoy9yQgRm6nxCJdBKexMPBT6O5ChP0t/vO46GKItc4Rav7JxmL6nPxZho9CLDIS0u20QaFriBuw=="
+        );
+    }
+
+    #[test]
+    fn falls_back_to_the_files_entry_when_the_top_level_pair_is_gone() {
+        let yml =
+            "version: 9.9.9\nfiles:\n  - url: RSI Launcher-Setup-9.9.9.exe\n    sha512: QUJD\n    size: 1\n";
+        let m = parse_latest_yml(yml).unwrap();
+        assert_eq!(m.filename, "RSI Launcher-Setup-9.9.9.exe");
+        assert_eq!(m.sha512_base64, "QUJD");
+    }
+
+    /// An installer we cannot verify must not be installed unverified.
+    #[test]
+    fn rejects_a_manifest_without_a_digest() {
+        let yml = "version: 9.9.9\npath: RSI Launcher-Setup-9.9.9.exe\n";
+        let err = parse_latest_yml(yml).unwrap_err();
+        assert!(err.contains("sha512"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn rejects_an_empty_digest() {
+        let yml = "path: RSI Launcher-Setup-9.9.9.exe\nsha512:\n";
+        assert!(parse_latest_yml(yml).is_err());
+    }
+
+    #[test]
+    fn rejects_a_non_exe_payload() {
+        let yml = "path: totally-not-an-installer.sh\nsha512: QUJD\n";
+        let err = parse_latest_yml(yml).unwrap_err();
+        assert!(err.contains("non-executable"), "unexpected error: {}", err);
+    }
+
+    /// A 404 body reaching the parser must fail here, not three steps later.
+    #[test]
+    fn rejects_an_error_page_instead_of_a_manifest() {
+        assert!(parse_latest_yml("404: Not Found").is_err());
+        assert!(parse_latest_yml("<html><body>Service Unavailable</body></html>").is_err());
+    }
+
+    #[test]
+    fn verifies_a_file_against_its_digest() {
+        use base64::{ engine::general_purpose, Engine as _ };
+        use sha2::{ Digest, Sha512 };
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("payload.bin");
+        // Larger than the 1 MiB read buffer, so the chunked loop is exercised.
+        let payload = vec![0x5au8; 1024 * 1024 + 4242];
+        std::fs::write(&path, &payload).unwrap();
+
+        let expected = general_purpose::STANDARD.encode(Sha512::digest(&payload));
+        assert!(verify_sha512_base64(&path, &expected).is_ok());
+
+        let err = verify_sha512_base64(&path, "QUJD").unwrap_err();
+        assert!(err.contains("Checksum mismatch"), "unexpected error: {}", err);
+    }
 }

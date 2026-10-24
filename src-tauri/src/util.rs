@@ -556,6 +556,80 @@ pub(crate) fn expand_tilde(p: &str) -> String {
 /// (e.g., a 1 KB archive that expands to 1 TB).
 const MAX_EXTRACT_SIZE: u64 = 50 * 1024 * 1024 * 1024;
 
+/// Decides whether a tar link entry would point outside the extraction root.
+///
+/// Resolved purely lexically - the target usually does not exist on disk yet
+/// while the archive is still being unpacked, so `canonicalize()` is no help.
+///
+/// Symlink targets are interpreted relative to the link's own directory, which
+/// is what the kernel does when the link is later followed. Hardlink targets in
+/// a tar are stored relative to the archive root instead. An absolute target
+/// always escapes: it ignores the extraction directory entirely.
+fn link_escapes_root(entry_path: &Path, link_target: &Path, is_hard_link: bool) -> bool {
+    use std::path::Component;
+
+    if link_target.is_absolute() {
+        return true;
+    }
+
+    // Start at the archive root, or at the link's own directory for a symlink.
+    let mut depth: i32 = 0;
+    if !is_hard_link {
+        for component in entry_path.components() {
+            match component {
+                Component::Normal(_) => {
+                    depth += 1;
+                }
+                Component::ParentDir => {
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+        // The last component is the link itself, not a directory it sits in.
+        depth -= 1;
+    }
+
+    if depth < 0 {
+        return true;
+    }
+
+    for component in link_target.components() {
+        match component {
+            Component::Normal(_) => {
+                depth += 1;
+            }
+            Component::ParentDir => {
+                depth -= 1;
+                if depth < 0 {
+                    return true;
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return true;
+            }
+            Component::CurDir => {}
+        }
+    }
+
+    false
+}
+
+/// Extracts `archive` into `dst`, refusing anything that could reach outside it.
+///
+/// Three guards, in the order they fire per entry:
+/// 1. **Archive bomb** - the summed entry sizes may not exceed [`MAX_EXTRACT_SIZE`].
+/// 2. **Link entries** - symlinks and hardlinks may only point *inside* `dst`.
+///    The traversal check below validates where an entry is written, not where
+///    a link points, so a link is the one entry type that can still reach
+///    outside `dst` after extraction: the next write through it lands wherever
+///    the link aims. Wine and Proton builds rely on relative links within the
+///    runner (`bin/wineboot -> wine`), so those must keep working - only
+///    absolute targets and ones escaping via `..` are refused.
+/// 3. **Path traversal** - the canonicalised target must stay below `dst`.
+///
+/// Runner, DXVK and translation archives are plain file/directory trees, so
+/// rejecting links costs nothing here.
 pub(crate) fn safe_unpack<R: io::Read>(archive: &mut tar::Archive<R>, dst: &Path) -> io::Result<()> {
     let canonical_dst = dst.canonicalize()?;
     let mut total_size: u64 = 0;
@@ -569,6 +643,32 @@ pub(crate) fn safe_unpack<R: io::Read>(archive: &mut tar::Archive<R>, dst: &Path
                 format!("Archive exceeds maximum extraction size ({} GB)", MAX_EXTRACT_SIZE / (1024 * 1024 * 1024)),
             ));
         }
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            let entry_path = entry.path()?.into_owned();
+            let link_target = entry
+                .link_name()?
+                .ok_or_else(||
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Link entry without a target: {}", entry_path.display())
+                    )
+                )?
+                .into_owned();
+            if link_escapes_root(&entry_path, &link_target, entry_type.is_hard_link()) {
+                return Err(
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "Archive contains a link pointing outside the extraction directory: {} -> {}",
+                            entry_path.display(),
+                            link_target.display()
+                        )
+                    )
+                );
+            }
+        }
+
         let path = entry.path()?;
         let target = canonical_dst.join(&path);
         let parent = target.parent().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No parent"))?;
@@ -760,6 +860,109 @@ mod tests {
 
         let extracted = std::fs::read_to_string(dst.join("test.txt")).unwrap();
         assert_eq!(extracted, "hello world");
+    }
+
+    /// Wine and Proton builds ship relative links inside the runner
+    /// (`bin/wineboot -> wine`); rejecting those would break every install.
+    #[test]
+    fn safe_unpack_keeps_relative_links_inside_the_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path();
+
+        let mut builder = tar::Builder::new(Vec::new());
+        let content = b"#!/bin/sh\n";
+        let mut file_header = tar::Header::new_gnu();
+        file_header.set_size(content.len() as u64);
+        file_header.set_mode(0o755);
+        file_header.set_cksum();
+        builder.append_data(&mut file_header, "runner/bin/wine", &content[..]).unwrap();
+
+        let mut link_header = tar::Header::new_gnu();
+        link_header.set_entry_type(tar::EntryType::Symlink);
+        link_header.set_size(0);
+        link_header.set_mode(0o777);
+        builder.append_link(&mut link_header, "runner/bin/wineboot", "wine").unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let mut archive = tar::Archive::new(&data[..]);
+        safe_unpack(&mut archive, dst).unwrap();
+
+        let link = dst.join("runner/bin/wineboot");
+        assert_eq!(std::fs::read_link(&link).unwrap(), std::path::Path::new("wine"));
+    }
+
+    #[test]
+    fn safe_unpack_rejects_absolute_symlink_targets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path();
+
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_size(0);
+        header.set_mode(0o777);
+        builder.append_link(&mut header, "escape", "/etc/passwd").unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let mut archive = tar::Archive::new(&data[..]);
+        let err = safe_unpack(&mut archive, dst).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("outside"), "unexpected error: {}", err);
+        assert!(!dst.join("escape").exists(), "the link must not be created");
+    }
+
+    #[test]
+    fn safe_unpack_rejects_symlink_targets_climbing_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path();
+
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_size(0);
+        header.set_mode(0o777);
+        // runner/bin/escape -> ../../../../etc/passwd leaves the extraction root.
+        builder.append_link(&mut header, "runner/bin/escape", "../../../../etc/passwd").unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let mut archive = tar::Archive::new(&data[..]);
+        let err = safe_unpack(&mut archive, dst).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(!dst.join("runner/bin/escape").exists());
+    }
+
+    #[test]
+    fn safe_unpack_rejects_hardlinks_outside_the_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path();
+
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Link);
+        header.set_size(0);
+        header.set_mode(0o644);
+        builder.append_link(&mut header, "hard", "/etc/shadow").unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let mut archive = tar::Archive::new(&data[..]);
+        let err = safe_unpack(&mut archive, dst).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(!dst.join("hard").exists());
+    }
+
+    #[test]
+    fn link_escapes_root_distinguishes_safe_links_from_escapes() {
+        use std::path::Path;
+        // Symlink targets resolve against the link's own directory.
+        assert!(!link_escapes_root(Path::new("runner/bin/wineboot"), Path::new("wine"), false));
+        assert!(!link_escapes_root(Path::new("runner/bin/x"), Path::new("../lib/libfoo.so"), false));
+        assert!(!link_escapes_root(Path::new("a/b/c/d"), Path::new("../../e"), false));
+        assert!(link_escapes_root(Path::new("runner/bin/x"), Path::new("../../../etc/passwd"), false));
+        assert!(link_escapes_root(Path::new("top"), Path::new("../outside"), false));
+        assert!(link_escapes_root(Path::new("runner/bin/x"), Path::new("/etc/passwd"), false));
+        // Hardlink targets resolve against the archive root instead.
+        assert!(!link_escapes_root(Path::new("runner/bin/x"), Path::new("runner/bin/wine"), true));
+        assert!(link_escapes_root(Path::new("runner/bin/x"), Path::new("../wine"), true));
     }
 
     #[test]
