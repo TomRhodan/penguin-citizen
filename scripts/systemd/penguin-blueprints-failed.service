@@ -1,0 +1,18 @@
+[Unit]
+Description=Report that the blueprint publish failed
+Documentation=https://github.com/TomRhodan/penguin-citizen-blueprints
+
+# Pulled in by penguin-blueprints.service via OnFailure=, and the only place a
+# failure is announced. Doing it here rather than in the script covers the
+# failures the script never gets to report - a timeout, an OOM kill, a missing
+# or unreadable script - and keeps it at one notification per failure instead
+# of two for the common case.
+
+[Service]
+Type=oneshot
+
+# The reason comes from the script's own output, not from systemd's framing:
+# the last lines of the unit's journal are "Failed with result 'exit-code'"
+# and friends, which say nothing useful. The script tags its messages, so the
+# ERROR line is what actually explains the run.
+ExecStart=/usr/bin/bash -c 'reason=$(journalctl --user -u penguin-blueprints.service -n 60 -o cat --no-pager | grep -F "[blueprints] ERROR:" | tail -2 | sed "s/^\\[blueprints\\] ERROR: //"); notify-send --urgency=critical --app-name="Penguin Citizen" "Blueprints: run failed" "${reason:-The job stopped without saying why. See: journalctl --user -u penguin-blueprints.service -n 50}"'

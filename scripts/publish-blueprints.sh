@@ -49,9 +49,12 @@ report() {
     local status="$1" body="$2"
     log "$status: $body"
 
-    if [ "$NO_NOTIFY" != "1" ] && command -v notify-send >/dev/null; then
+    # Failures are announced by penguin-blueprints-failed.service via
+    # OnFailure=, which also covers the ones this script never gets to report -
+    # a timeout, a kill, a script that will not start. Notifying here as well
+    # would mean two popups for the common case.
+    if [ "$status" != "failed" ] && [ "$NO_NOTIFY" != "1" ] && command -v notify-send >/dev/null; then
         local urgency=normal
-        [ "$status" = "failed" ] && urgency=critical
         [ "$status" = "published" ] && urgency=critical
         notify-send --urgency="$urgency" --app-name="Penguin Citizen" \
             --icon=penguin-citizen \

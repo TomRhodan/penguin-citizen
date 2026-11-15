@@ -4,6 +4,10 @@ Documentation=https://github.com/TomRhodan/penguin-citizen-blueprints
 # Needs the network for the push; the extraction itself is local.
 After=network-online.target
 
+# Covers the failures the script cannot report itself - a timeout, a kill, a
+# script that will not start. Its own errors already raise a notification.
+OnFailure=penguin-blueprints-failed.service
+
 [Service]
 Type=oneshot
 ExecStart=%h/Projekte/Privat/penguin-citizen/penguin-citizen-app/scripts/publish-blueprints.sh
