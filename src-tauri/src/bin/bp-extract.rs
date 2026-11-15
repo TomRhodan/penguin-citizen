@@ -179,6 +179,65 @@ fn main() {
     };
     eprintln!("Records:  {}", db.records().len());
 
+    // `--broker <title-key>` lists which descriptions mission boards hand out
+    // under one title - the pairing that decides what a player actually reads.
+    if let Some(title) = args.iter().position(|a| a == "--broker").and_then(|i| args.get(i + 1)) {
+        let want = title.to_ascii_lowercase();
+        let mut pairs: BTreeSet<String> = BTreeSet::new();
+        let mut count = 0usize;
+        for record in db.records() {
+            let sname = db.resolve_string2(db.struct_def(record.struct_index).name_offset);
+            if sname != "MissionBrokerEntry" {
+                continue;
+            }
+            let Ok(bytes) = export::to_json(&db, record) else { continue };
+            let Ok(v) = serde_json::from_slice::<Value>(&bytes) else { continue };
+            let body = v.get("_RecordValue_").unwrap_or(&v);
+            let Some(t) = loc_key(body.get("title")) else { continue };
+            if t.to_ascii_lowercase() != want {
+                continue;
+            }
+            count += 1;
+            if let Some(d) = loc_key(body.get("description")) {
+                pairs.insert(d);
+            }
+        }
+        eprintln!("broker entries for {title}: {count}");
+        eprintln!("distinct description keys: {}", pairs.len());
+        for d in &pairs {
+            eprintln!("  {d}");
+        }
+        return;
+    }
+
+    // `--desc-users <desc-key>` lists every title a mission board pairs with one
+    // description - a key shared across titles must not carry a blueprint block.
+    if let Some(key) = args.iter().position(|a| a == "--desc-users").and_then(|i| args.get(i + 1)) {
+        let want = key.to_ascii_lowercase();
+        let mut titles: BTreeSet<String> = BTreeSet::new();
+        for record in db.records() {
+            let sname = db.resolve_string2(db.struct_def(record.struct_index).name_offset);
+            if sname != "MissionBrokerEntry" {
+                continue;
+            }
+            let Ok(bytes) = export::to_json(&db, record) else { continue };
+            let Ok(v) = serde_json::from_slice::<Value>(&bytes) else { continue };
+            let body = v.get("_RecordValue_").unwrap_or(&v);
+            let Some(d) = loc_key(body.get("description")) else { continue };
+            if d.to_ascii_lowercase() != want {
+                continue;
+            }
+            if let Some(t) = loc_key(body.get("title")) {
+                titles.insert(t);
+            }
+        }
+        eprintln!("titles using {key}: {}", titles.len());
+        for t in &titles {
+            eprintln!("  {t}");
+        }
+        return;
+    }
+
     if let Some(frag) = &dump_path {
         let frag = frag.to_ascii_lowercase();
         for record in db.records() {
@@ -972,6 +1031,10 @@ fn run_injection(
     let mut desc_misses = 0usize;
     let mut variant_rows = 0usize;
     let mut broker_keys_used = 0usize;
+    // Two missions can declare the same description. Without this the line
+    // collects a block per mission and the player reads it twice.
+    let mut already_written: BTreeSet<usize> = BTreeSet::new();
+    let mut shared_lines = 0usize;
     let mut done: BTreeSet<&str> = BTreeSet::new();
 
     for entry in entries {
@@ -1001,35 +1064,63 @@ fn run_injection(
         let Some(desc_key) = &entry.description_loc_key else { continue };
         let block = render_block(&pools, lang, &resolve);
 
-        // The key the contract declares, plus every description a mission board
-        // hands out under this title. The broker keys are the ones most players
-        // actually see, and they do not follow the contract's naming at all.
+        // Which keys carry the block depends on how the mission is offered, and
+        // the two paths must not be mixed: a board mission's body is assembled
+        // from more than one string, so filling both the broker description and
+        // the contract's own would print the block twice.
         let mut keys: BTreeSet<String> = BTreeSet::new();
-        keys.insert(desc_key.to_ascii_lowercase());
-        if let Some(extra) = broker_descriptions.get(&entry.title_loc_key.to_ascii_lowercase()) {
-            broker_keys_used += extra.len();
-            keys.extend(extra.iter().map(|k| k.to_ascii_lowercase()));
-        }
+        let mut targets: Vec<usize> = Vec::new();
 
-        let mut targets: Vec<usize> = keys
-            .iter()
-            .filter_map(|k| index.get(k))
-            .flat_map(|rows| rows.iter().copied())
-            .collect();
-        if let Some(base) = desc_base(Some(desc_key)) {
-            if owners.get(&base).is_some_and(|m| m.len() == 1) {
-                if let Some(rows) = siblings.get(&base) {
-                    targets.extend(rows.iter().copied());
+        match broker_descriptions.get(&entry.title_loc_key.to_ascii_lowercase()) {
+            // Offered at a mission board: the broker entry is authoritative.
+            // The key the contract declares is not what gets rendered here -
+            // filling only it left the body empty.
+            Some(board_keys) => {
+                broker_keys_used += board_keys.len();
+                keys.extend(board_keys.iter().map(|k| k.to_ascii_lowercase()));
+            }
+            // Straight from the contract: the declared key, plus the
+            // `…_desc_01/02/03` variants the game picks among at runtime.
+            None => {
+                keys.insert(desc_key.to_ascii_lowercase());
+                if let Some(base) = desc_base(Some(desc_key)) {
+                    if owners.get(&base).is_some_and(|m| m.len() == 1) {
+                        if let Some(rows) = siblings.get(&base) {
+                            targets.extend(rows.iter().copied());
+                        }
+                    }
                 }
             }
         }
+
+        targets.extend(
+            keys.iter()
+                .filter_map(|k| index.get(k))
+                .flat_map(|rows| rows.iter().copied()),
+        );
         targets.sort_unstable();
         targets.dedup();
+        // Some description keys hold no text at all, only a redirect such as
+        // `~mission(Contractor|HaulCargo_SingleToMulti)`, which the game
+        // expands into the contractor's own description. Filling both ends
+        // shows the block twice.
+        //
+        // Dropped only while a real description remains: where a mission has
+        // nothing but redirects, the expansion is a key we never reach, so
+        // writing into the redirect is the only way the player sees anything -
+        // and nothing else carries the block to duplicate it.
+        if targets.iter().any(|&i| !is_redirect(&lines[i])) {
+            targets.retain(|&i| !is_redirect(&lines[i]));
+        }
+        let before = targets.len();
+        targets.retain(|i| !already_written.contains(i));
+        shared_lines += before - targets.len();
 
         if targets.is_empty() {
             desc_misses += 1;
         } else {
             for &i in &targets {
+                already_written.insert(i);
                 if block_at_top {
                     // Insert after the "key=" so the block leads the value.
                     // The block opens with two literal "\n" separators meant for
@@ -1069,6 +1160,7 @@ fn run_injection(
         .iter()
         .filter(|t| broker_descriptions.contains_key(*t))
         .count();
+    eprintln!("  lines shared with another   : {shared_lines} (block written once)");
     eprintln!(
         "  missions offered at a board : {board_missions} of {}",
         entries.iter().map(|e| &e.title_loc_key).collect::<BTreeSet<_>>().len()
@@ -1181,4 +1273,18 @@ fn desc_base(key: Option<&str>) -> Option<String> {
     let lower = key.to_ascii_lowercase();
     let at = lower.find("_desc")?;
     Some(lower[..at + "_desc".len()].to_string())
+}
+
+/// Whether an ini line's value is only a `~mission(...)` redirect.
+///
+/// These are indirection tokens, not content: the game replaces them with
+/// another description entirely. Appending to one means the block shows up
+/// twice - once from the redirect, once from what it expands into.
+fn is_redirect(line: &str) -> bool {
+    let Some((_, value)) = line.split_once('=') else { return false };
+    let value = value.replace("\\n", " ");
+    let value = value.trim();
+    let Some(rest) = value.strip_prefix("~mission(") else { return false };
+    // Nothing but the token itself.
+    rest.strip_suffix(')').is_some_and(|inner| !inner.contains('('))
 }
