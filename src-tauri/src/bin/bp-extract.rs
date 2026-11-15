@@ -1064,31 +1064,29 @@ fn run_injection(
         let Some(desc_key) = &entry.description_loc_key else { continue };
         let block = render_block(&pools, lang, &resolve);
 
-        // Which keys carry the block depends on how the mission is offered, and
-        // the two paths must not be mixed: a board mission's body is assembled
-        // from more than one string, so filling both the broker description and
-        // the contract's own would print the block twice.
+        // Every key that could end up on screen, from all three sources - they
+        // overlap rather than exclude each other, and a mission board's entry
+        // often points at a redirect that expands into the very variants the
+        // prefix matching finds:
+        //
+        //   HaulCargo_AtoB_desc  =  ~mission(Contractor|HaulCargo_AtoB)
+        //                           └─ becomes Covalex_HaulCargo_AToB_desc_01
+        //
+        // Duplication is handled below by dropping the redirects, not by
+        // picking one source over another - that only moved the gap around.
         let mut keys: BTreeSet<String> = BTreeSet::new();
         let mut targets: Vec<usize> = Vec::new();
 
-        match broker_descriptions.get(&entry.title_loc_key.to_ascii_lowercase()) {
-            // Offered at a mission board: the broker entry is authoritative.
-            // The key the contract declares is not what gets rendered here -
-            // filling only it left the body empty.
-            Some(board_keys) => {
-                broker_keys_used += board_keys.len();
-                keys.extend(board_keys.iter().map(|k| k.to_ascii_lowercase()));
-            }
-            // Straight from the contract: the declared key, plus the
-            // `…_desc_01/02/03` variants the game picks among at runtime.
-            None => {
-                keys.insert(desc_key.to_ascii_lowercase());
-                if let Some(base) = desc_base(Some(desc_key)) {
-                    if owners.get(&base).is_some_and(|m| m.len() == 1) {
-                        if let Some(rows) = siblings.get(&base) {
-                            targets.extend(rows.iter().copied());
-                        }
-                    }
+        keys.insert(desc_key.to_ascii_lowercase());
+        if let Some(board_keys) = broker_descriptions.get(&entry.title_loc_key.to_ascii_lowercase())
+        {
+            broker_keys_used += board_keys.len();
+            keys.extend(board_keys.iter().map(|k| k.to_ascii_lowercase()));
+        }
+        if let Some(base) = desc_base(Some(desc_key)) {
+            if owners.get(&base).is_some_and(|m| m.len() == 1) {
+                if let Some(rows) = siblings.get(&base) {
+                    targets.extend(rows.iter().copied());
                 }
             }
         }
