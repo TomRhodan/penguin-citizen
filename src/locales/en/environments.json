@@ -244,6 +244,12 @@
   "localization.installModalSubtitle": "Variant: {{variant}}",
   "localization.installBtnConfirm": "Install",
   "localization.installBtnCancel": "Cancel",
+  "localization.injectBlueprintsLabel": "Add blueprint markers",
+  "localization.blueprintsChecking": "Checking blueprint data…",
+  "localization.blueprintsMatch": "{{count}} missions will be marked. The data matches your game version ({{build}}).",
+  "localization.blueprintsMismatch": "The blueprint data was built for game version <strong>{{build}}</strong> but <strong>{{installed}}</strong> is installed. Markers may be incomplete.",
+  "localization.blueprintsNoneForChannel": "No blueprint data has been published for {{channel}} yet.",
+  "localization.blueprintsUnavailable": "Blueprint data could not be reached: {{error}}",
 
   "storage.title": "Version Storage Management",
   "storage.environment": "Environment",

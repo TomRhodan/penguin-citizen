@@ -35,7 +35,7 @@
 use penguin_citizen_lib::sc_config::read_p4k_file;
 use serde_json::Value;
 use starbreaker_datacore::{export, Database};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Paths inside Data.p4k. The archive stores Windows-style separators.
 const DCB_PATH: &str = "Data\\Game2.dcb";
@@ -498,39 +498,28 @@ fn main() {
         eprintln!("      missing: {k}");
     }
 
-    if let Some(path) = &publish {
+    if let Some(dir) = &publish {
         let ini_map = index_ini(&String::from_utf8_lossy(&ini));
+        let build = read_build_id(install_path, version);
         let publication = build_publication(
             &entries,
             &broker_descriptions,
             &ini_map,
-            read_build_id(install_path, version),
+            version,
+            build.clone(),
+            read_build_field(install_path, version, "Branch"),
         );
-        eprintln!("\n=== publication ===");
-        eprintln!("  schema                      : {}", publication.schema);
-        eprintln!("  game build                  : {:?}", publication.game_build);
-        eprintln!("  missions                    : {}", publication.mission_count);
-        eprintln!(
-            "  description keys            : {}",
-            publication.missions.iter().map(|m| m.description_keys.len()).sum::<usize>()
-        );
-        eprintln!(
-            "  guaranteed / chance         : {} / {}",
-            publication.missions.iter().filter(|m| m.guaranteed).count(),
-            publication.missions.iter().filter(|m| !m.guaranteed).count()
-        );
-        match serde_json::to_vec_pretty(&publication) {
-            Ok(json) => match std::fs::write(path, &json) {
-                Ok(()) => eprintln!("  wrote                       : {path} ({:.2} MiB)", mib(json.len())),
-                Err(e) => {
-                    eprintln!("Could not write {path}: {e}");
-                    std::process::exit(1);
-                }
-            },
-            Err(e) => {
-                eprintln!("Could not serialize the publication: {e}");
-                std::process::exit(1);
-            }
+        let Some(build) = build else {
+            eprintln!(
+                "Refusing to publish: {}/build_manifest.id has no Version, so the data \
+                 could not be tied to a game build.",
+                version
+            );
+            std::process::exit(1);
+        };
+        if let Err(e) = write_publication(dir, version, &build, &publication) {
+            eprintln!("{e}");
+            std::process::exit(1);
         }
     }
 
@@ -921,12 +910,17 @@ fn read_or_die(install_path: &str, version: &str, path: &str, what: &str) -> Vec
 /// Build string from `build_manifest.id`, so the output says which patch it
 /// belongs to.
 fn read_build_id(install_path: &str, version: &str) -> Option<String> {
+    read_build_field(install_path, version, "Version")
+}
+
+/// One field out of `build_manifest.id`.
+fn read_build_field(install_path: &str, version: &str, field: &str) -> Option<String> {
     let path = penguin_citizen_lib::sc_config::sc_base_dir(install_path, version)
         .ok()?
         .join("build_manifest.id");
     let text = std::fs::read_to_string(path).ok()?;
     let value: Value = serde_json::from_str(&text).ok()?;
-    value.get("Data")?.get("Version")?.as_str().map(str::to_string)
+    value.get("Data")?.get(field)?.as_str().map(str::to_string)
 }
 
 fn mib(bytes: usize) -> f64 {
@@ -1434,8 +1428,14 @@ fn description_owners(entries: &[MissionEntry]) -> HashMap<String, BTreeSet<Stri
 struct Publication {
     /// Bumped when the shape changes, so an older app can refuse politely.
     schema: u32,
+    /// Game environment the data belongs to: LIVE, PTU, EPTU, TECH-PREVIEW.
+    /// PTU data must never be applied to a LIVE install - the loc keys drift
+    /// between them and a mismatch marks the wrong missions.
+    channel: String,
     /// The Star Citizen build this was extracted from.
     game_build: Option<String>,
+    /// Branch from `build_manifest.id`, e.g. `sc-alpha-4.10.0`.
+    game_branch: Option<String>,
     generated: String,
     mission_count: usize,
     missions: Vec<PublishedMission>,
@@ -1486,7 +1486,9 @@ fn build_publication(
     entries: &[MissionEntry],
     broker_descriptions: &HashMap<String, BTreeSet<String>>,
     ini: &HashMap<String, String>,
+    channel: &str,
     game_build: Option<String>,
+    game_branch: Option<String>,
 ) -> Publication {
     let owners = description_owners(entries);
     let mut missions: Vec<PublishedMission> = Vec::new();
@@ -1556,9 +1558,136 @@ fn build_publication(
     missions.sort_by(|a, b| a.title_key.cmp(&b.title_key));
     Publication {
         schema: 1,
+        channel: channel.to_string(),
         game_build,
+        game_branch,
         generated: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         mission_count: missions.len(),
         missions,
     }
+}
+
+/// Writes the publication into the data repository, one file per game build.
+///
+/// `<dir>/<CHANNEL>/<build>.json` plus an `index.json` listing what is there.
+/// A single `blueprints.json` would silently serve the wrong data after a
+/// patch: loc keys drift between builds, and PTU keys applied to a LIVE
+/// install mark the wrong missions. Addressing the file by channel and build
+/// lets the app notice a mismatch instead of guessing.
+fn write_publication(
+    dir: &str,
+    channel: &str,
+    build: &str,
+    publication: &Publication,
+) -> Result<(), String> {
+    let root = std::path::Path::new(dir);
+    let channel_dir = root.join(channel);
+    std::fs::create_dir_all(&channel_dir)
+        .map_err(|e| format!("Could not create {}: {e}", channel_dir.display()))?;
+
+    let file = channel_dir.join(format!("{build}.json"));
+    let json = serde_json::to_vec_pretty(publication)
+        .map_err(|e| format!("Could not serialize the publication: {e}"))?;
+    std::fs::write(&file, &json)
+        .map_err(|e| format!("Could not write {}: {e}", file.display()))?;
+
+    let index = build_index(root)?;
+    let index_json = serde_json::to_vec_pretty(&index)
+        .map_err(|e| format!("Could not serialize the index: {e}"))?;
+    std::fs::write(root.join("index.json"), &index_json)
+        .map_err(|e| format!("Could not write index.json: {e}"))?;
+
+    eprintln!("\n=== publication ===");
+    eprintln!("  channel / build             : {channel} / {build}");
+    eprintln!("  missions                    : {}", publication.mission_count);
+    eprintln!(
+        "  description keys            : {}",
+        publication.missions.iter().map(|m| m.description_keys.len()).sum::<usize>()
+    );
+    eprintln!(
+        "  guaranteed / chance         : {} / {}",
+        publication.missions.iter().filter(|m| m.guaranteed).count(),
+        publication.missions.iter().filter(|m| !m.guaranteed).count()
+    );
+    eprintln!("  wrote                       : {} ({:.2} MiB)", file.display(), mib(json.len()));
+    eprintln!("  index                       : {} channels", index.channels.len());
+    Ok(())
+}
+
+/// What the app reads first to find out which builds have data.
+#[derive(serde::Serialize)]
+struct Index {
+    schema: u32,
+    generated: String,
+    /// Channel name → the builds published for it.
+    channels: BTreeMap<String, ChannelIndex>,
+}
+
+#[derive(serde::Serialize)]
+struct ChannelIndex {
+    /// Newest build, by the order builds were published rather than by parsing
+    /// version numbers - CIG's scheme is not reliably sortable.
+    latest: String,
+    builds: Vec<BuildIndex>,
+}
+
+#[derive(serde::Serialize)]
+struct BuildIndex {
+    build: String,
+    path: String,
+    mission_count: usize,
+    generated: String,
+}
+
+/// Rebuilds `index.json` by reading what is actually on disk, so a file added
+/// or removed by hand cannot drift away from the index.
+fn build_index(root: &std::path::Path) -> Result<Index, String> {
+    let mut channels: BTreeMap<String, ChannelIndex> = BTreeMap::new();
+
+    let entries = std::fs::read_dir(root)
+        .map_err(|e| format!("Could not read {}: {e}", root.display()))?;
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() || entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let channel = entry.file_name().to_string_lossy().to_string();
+        let mut builds: Vec<BuildIndex> = Vec::new();
+
+        let files = std::fs::read_dir(entry.path())
+            .map_err(|e| format!("Could not read {}: {e}", entry.path().display()))?;
+        for file in files.flatten() {
+            let name = file.file_name().to_string_lossy().to_string();
+            let Some(build) = name.strip_suffix(".json") else { continue };
+            let text = std::fs::read_to_string(file.path()).unwrap_or_default();
+            let parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            builds.push(BuildIndex {
+                build: build.to_string(),
+                path: format!("{channel}/{name}"),
+                mission_count: parsed
+                    .get("mission_count")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0) as usize,
+                generated: parsed
+                    .get("generated")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            });
+        }
+        if builds.is_empty() {
+            continue;
+        }
+        // Newest first by generation time, which is monotonic here.
+        builds.sort_by(|a, b| b.generated.cmp(&a.generated));
+        channels.insert(
+            channel,
+            ChannelIndex { latest: builds[0].build.clone(), builds },
+        );
+    }
+
+    Ok(Index {
+        schema: 1,
+        generated: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        channels,
+    })
 }

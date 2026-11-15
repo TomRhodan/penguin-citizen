@@ -244,6 +244,12 @@
   "localization.installModalSubtitle": "Variante: {{variant}}",
   "localization.installBtnConfirm": "Installieren",
   "localization.installBtnCancel": "Abbrechen",
+  "localization.injectBlueprintsLabel": "Bauplan-Markierungen einfügen",
+  "localization.blueprintsChecking": "Bauplandaten werden geprüft…",
+  "localization.blueprintsMatch": "{{count}} Missionen werden markiert. Daten passen zu deiner Spielversion ({{build}}).",
+  "localization.blueprintsMismatch": "Die Bauplandaten stammen aus Spielversion <strong>{{build}}</strong>, installiert ist <strong>{{installed}}</strong>. Die Markierungen können unvollständig sein.",
+  "localization.blueprintsNoneForChannel": "Für {{channel}} gibt es noch keine Bauplandaten.",
+  "localization.blueprintsUnavailable": "Bauplandaten nicht erreichbar: {{error}}",
 
   "storage.title": "Versionsspeicher-Verwaltung",
   "storage.environment": "Umgebung",

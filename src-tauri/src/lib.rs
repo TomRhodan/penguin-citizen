@@ -57,6 +57,7 @@ mod config;
 mod dashboard;
 mod dxvk;
 mod installer;
+mod blueprints;
 mod localization;
 mod prefix_tools;
 mod binding_capture;
@@ -731,6 +732,7 @@ pub fn run() {
                 localization::install_localization,
                 localization::remove_localization,
                 localization::fetch_remote_language_info,
+                blueprints::check_blueprints_source,
 
                 // Shader cache management (detection, deletion)
                 shader_cache::get_shader_cache_info,

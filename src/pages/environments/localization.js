@@ -348,7 +348,7 @@ export function renderLanguageSelector() {
  * @param {string} displayName - Human-readable language name
  * @param {string} sourceLabel - Source label for the translation
  * @param {Object} callbacks - { renderEnvironments, loadUserCfgSettings }
- * @param {Object} [extra] - Optional extra args: { variant }
+ * @param {Object} [extra] - Optional extra args: { variant, injectBlueprints }
  */
 export async function installLocalization(langCode, sourceRepo, displayName, sourceLabel, callbacks = {}, extra = {}) {
   const { config, activeScVersion } = getState();
@@ -365,8 +365,14 @@ export async function installLocalization(langCode, sourceRepo, displayName, sou
       languageName: displayName,
       sourceLabel: sourceLabel,
       variant: extra.variant || null,
+      injectBlueprints: extra.injectBlueprints || false,
+      uiLanguage: (typeof navigator !== 'undefined' && navigator.language) || 'en',
     });
     showNotification(t('environments:notification.translationInstalled', { language: displayName }), 'success');
+    // Blueprints are optional: a problem there is reported, never fatal.
+    if (result?.blueprint_warning) {
+      showNotification(result.blueprint_warning, 'warning');
+    }
     const reloads = [loadLocalizationData()];
     if (callbacks.loadUserCfgSettings) reloads.push(callbacks.loadUserCfgSettings());
     await Promise.all(reloads);
@@ -443,6 +449,18 @@ export async function openInstallModal({ languageCode, languageName, sourceRepo,
         <p style="color: var(--text-secondary); margin-bottom: 1rem;">
           ${t('environments:localization.installModalSubtitle', { variant: escapeHtml(variantLabel) })}
         </p>
+        <label class="filter-toggle" style="margin-bottom: 0.5rem;">
+          <span class="toggle-switch">
+            <input type="checkbox" id="inject-blueprints-cb">
+            <span class="toggle-slider"></span>
+          </span>
+          <span>${t('environments:localization.injectBlueprintsLabel')}</span>
+        </label>
+        <div id="bp-detail-block" style="display: none; padding: 0.75rem; margin-top: 0.5rem; background: rgba(90, 160, 255, 0.06); border-left: 3px solid rgba(90, 160, 255, 0.5); border-radius: 4px;">
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin: 0;" id="bp-source-info">
+            ${t('environments:localization.blueprintsChecking')}
+          </p>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" data-action="close-install-modal">${t('environments:localization.installBtnCancel')}</button>
@@ -460,9 +478,49 @@ export async function openInstallModal({ languageCode, languageName, sourceRepo,
     btn.addEventListener('click', closeModal)
   );
 
+  // The blueprint source is only queried once the user asks for it - it is a
+  // network call and most installs do not need it.
+  const cb = modal.querySelector('#inject-blueprints-cb');
+  const detail = modal.querySelector('#bp-detail-block');
+  const info = modal.querySelector('#bp-source-info');
+  let sourceChecked = false;
+  cb.addEventListener('change', async () => {
+    detail.style.display = cb.checked ? 'block' : 'none';
+    if (!cb.checked || sourceChecked) return;
+    sourceChecked = true;
+    const { config, activeScVersion } = getState();
+    try {
+      const source = await invoke('check_blueprints_source', {
+        gamePath: config.install_path,
+        version: activeScVersion,
+      });
+      if (!source.available_build) {
+        info.textContent = t('environments:localization.blueprintsNoneForChannel', {
+          channel: source.channel,
+        });
+      } else if (source.matches) {
+        info.textContent = t('environments:localization.blueprintsMatch', {
+          count: source.mission_count,
+          build: source.available_build,
+        });
+      } else {
+        info.innerHTML = t('environments:localization.blueprintsMismatch', {
+          build: escapeHtml(source.available_build),
+          installed: escapeHtml(source.installed_build || '?'),
+        });
+      }
+    } catch (e) {
+      info.textContent = t('environments:localization.blueprintsUnavailable', { error: e });
+    }
+  });
+
   modal.querySelector('#btn-install-confirm').addEventListener('click', () => {
+    const injectBlueprints = cb.checked;
     closeModal();
-    installLocalization(languageCode, sourceRepo, languageName, sourceLabel, callbacks, { variant });
+    installLocalization(languageCode, sourceRepo, languageName, sourceLabel, callbacks, {
+      variant,
+      injectBlueprints,
+    });
   });
 
   document.body.appendChild(modal);

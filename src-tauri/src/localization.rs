@@ -107,6 +107,10 @@ pub struct LocalizationInstallResult {
     pub message: String,
     /// Size of the downloaded file in bytes
     pub bytes: u64,
+    /// Non-fatal note about the blueprint step: skipped, or applied from a
+    /// different game build than the one installed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blueprint_warning: Option<String>,
 }
 
 /// Metadata of an installed localization (stored locally on disk).
@@ -869,6 +873,8 @@ pub async fn install_localization(
     language_name: String,
     source_label: String,
     variant: Option<String>,
+    inject_blueprints: bool,
+    ui_language: Option<String>,
 ) -> Result<LocalizationInstallResult, String> {
     let expanded = expand_tilde(&game_path);
 
@@ -904,6 +910,37 @@ pub async fn install_localization(
     let file_size = bytes.len() as u64;
 
     let global_ini_text = String::from_utf8_lossy(&bytes).into_owned();
+
+    // Blueprint markers are an optional extra and must stay one. The previous
+    // implementation let a failure here abort the whole install - a deleted
+    // upstream file turned into "Failed to parse blueprint JSON" and no
+    // translation at all (#9). Every error below is reported and stepped over.
+    let mut blueprint_warning: Option<String> = None;
+    let global_ini_text = if inject_blueprints {
+        let _ = app.emit("localization-progress", LocalizationProgress {
+            phase: "download".to_string(),
+            percent: 70.0,
+            message: "Fetching blueprint data...".to_string(),
+        });
+        match apply_blueprints(
+            &global_ini_text,
+            &expanded,
+            &version,
+            ui_language.as_deref().unwrap_or("en"),
+        ).await {
+            Ok((text, note)) => {
+                blueprint_warning = note;
+                text
+            }
+            Err(e) => {
+                log::warn!("Blueprint markers skipped: {}", e);
+                blueprint_warning = Some(e);
+                global_ini_text
+            }
+        }
+    } else {
+        global_ini_text
+    };
 
     let _ = app.emit("localization-progress", LocalizationProgress {
         phase: "install".to_string(),
@@ -962,6 +999,7 @@ pub async fn install_localization(
         success: true,
         message: format!("{} translation installed successfully", language_name),
         bytes: file_size,
+        blueprint_warning,
     })
 }
 
@@ -1085,4 +1123,45 @@ pub async fn remove_localization(game_path: String, version: String) -> Result<(
     delete_meta(&version)?;
 
     Ok(())
+}
+
+/// Adds blueprint markers to a downloaded `global.ini`.
+///
+/// Returns the patched text and, when relevant, a note for the user. A note is
+/// not an error: data built from a different patch still marks most missions
+/// correctly, and saying so beats silently doing nothing.
+async fn apply_blueprints(
+    ini_text: &str,
+    game_path: &str,
+    version: &str,
+    ui_language: &str,
+) -> Result<(String, Option<String>), String> {
+    use crate::blueprints;
+
+    let installed = blueprints::installed_build(game_path, version);
+    let index = blueprints::fetch_index().await?;
+    let (entry, exact) = blueprints::resolve_build(&index, version, installed.as_deref()).ok_or_else(
+        || format!("No blueprint data has been published for {} yet.", version)
+    )?;
+
+    let publication = blueprints::fetch_publication(&entry.path).await?;
+    let (patched, stats) = blueprints::inject(ini_text, &publication, ui_language);
+
+    log::info!(
+        "Blueprint markers: {} titles, {} description lines, {} missions not in this build ({} / {})",
+        stats.titles,
+        stats.descriptions,
+        stats.unknown_missions,
+        version,
+        entry.build
+    );
+
+    let note = (!exact).then(|| {
+        format!(
+            "Blueprint data was built for game version {} but {} is installed. Markers may be incomplete.",
+            entry.build,
+            installed.as_deref().unwrap_or("an unknown build")
+        )
+    });
+    Ok((patched, note))
 }
