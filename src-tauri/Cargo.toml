@@ -46,11 +46,21 @@ base64 = "0.22"
 notify = "6"
 clap = { version = "4", features = ["derive"] }
 
+# Only pulled in for the `bp-extract` dev tool, never for the app itself:
+# it sits behind the `bp-extract` feature, which the binary requires.
+# Pinned to a commit - StarBreaker is not on crates.io and the DataCore
+# format tracks Star Citizen builds, so a moving target is the last thing
+# this wants.
+starbreaker-datacore = { git = "https://github.com/diogotr7/StarBreaker.git", rev = "041e559215e18e1b13b124cab0e3ecb0f3aa50d4", optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 
 [features]
 devtools = ["tauri/devtools"]
+# Enables the bp-extract dev tool and its DataCore dependency. Off by default
+# so neither `cargo build` nor the release bundle ever compiles StarBreaker.
+bp-extract = ["dep:starbreaker-datacore"]
 default = []
 
 [[bin]]
@@ -60,3 +70,8 @@ path = "src/main.rs"
 [[bin]]
 name = "sc-watch"
 path = "src/bin/sc-watch.rs"
+
+[[bin]]
+name = "bp-extract"
+path = "src/bin/bp-extract.rs"
+required-features = ["bp-extract"]
