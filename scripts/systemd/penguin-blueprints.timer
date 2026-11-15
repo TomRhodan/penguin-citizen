@@ -1,0 +1,20 @@
+[Unit]
+Description=Check every 10 minutes whether Star Citizen was updated
+Documentation=https://github.com/TomRhodan/penguin-citizen-blueprints
+
+[Timer]
+# The check itself is local and cheap: read build_manifest.id, compare it
+# against the data repository's index.json. Only a game patch causes work.
+OnBootSec=5min
+OnUnitActiveSec=10min
+
+# Without this a machine that was off during a patch would wait a full
+# interval before noticing.
+Persistent=true
+
+# Keeps several machines, or a resumed suspend, from starting at the same
+# instant.
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

@@ -517,7 +517,12 @@ fn main() {
             );
             std::process::exit(1);
         };
-        if let Err(e) = write_publication(dir, version, &build, &publication) {
+        let extracted = entries
+            .iter()
+            .map(|e| e.title_loc_key.as_str())
+            .collect::<BTreeSet<_>>()
+            .len();
+        if let Err(e) = write_publication(dir, version, &build, &publication, extracted) {
             eprintln!("{e}");
             std::process::exit(1);
         }
@@ -1579,8 +1584,10 @@ fn write_publication(
     channel: &str,
     build: &str,
     publication: &Publication,
+    extracted_missions: usize,
 ) -> Result<(), String> {
     let root = std::path::Path::new(dir);
+    sanity_check(root, channel, publication, extracted_missions)?;
     let channel_dir = root.join(channel);
     std::fs::create_dir_all(&channel_dir)
         .map_err(|e| format!("Could not create {}: {e}", channel_dir.display()))?;
@@ -1690,4 +1697,89 @@ fn build_index(root: &std::path::Path) -> Result<Index, String> {
         generated: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         channels,
     })
+}
+
+/// Refuses to publish output that does not look like a working extraction.
+///
+/// This runs unattended after a game patch, and bad data reaches every user
+/// who ticks the option. CIG changes the DataCore between builds; the failure
+/// mode to guard against is not a crash - that is obvious - but an extraction
+/// that silently finds almost nothing and publishes it.
+fn sanity_check(
+    root: &std::path::Path,
+    channel: &str,
+    publication: &Publication,
+    extracted: usize,
+) -> Result<(), String> {
+    /// Below this something is structurally wrong, whatever the patch changed.
+    const MIN_MISSIONS: usize = 100;
+    /// How far the count may move against the previous build, in either
+    /// direction. A patch adds and removes missions; it does not halve them.
+    const MAX_DRIFT: f64 = 0.4;
+
+    if publication.missions.is_empty() {
+        return Err("Refusing to publish: no missions were extracted.".into());
+    }
+    if publication.mission_count < MIN_MISSIONS {
+        return Err(
+            format!(
+                "Refusing to publish: only {} missions, expected at least {}. \
+                 The DataCore layout has probably changed.",
+                publication.mission_count,
+                MIN_MISSIONS
+            )
+        );
+    }
+    // Missions are dropped when their title key is absent from the game's ini.
+    // Losing most of them means the ini was not read, not that the game lacks
+    // the missions.
+    if extracted > 0 && (publication.mission_count as f64) < (extracted as f64) * 0.5 {
+        return Err(
+            format!(
+                "Refusing to publish: {} of {} extracted missions survived the \
+                 global.ini check. That points at the ini, not the game.",
+                publication.mission_count,
+                extracted
+            )
+        );
+    }
+    if publication.missions.iter().all(|m| m.pools.iter().all(|p| p.blueprints.is_empty())) {
+        return Err("Refusing to publish: no mission resolved a single blueprint.".into());
+    }
+
+    // Compare against the newest build already published for this channel.
+    let previous = std::fs
+        ::read_dir(root.join(channel))
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+        .filter_map(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .filter_map(|v| {
+            Some((
+                v.get("generated")?.as_str()?.to_string(),
+                v.get("mission_count")?.as_u64()? as usize,
+            ))
+        })
+        .max();
+
+    if let Some((when, count)) = previous {
+        let drift = ((publication.mission_count as f64) - (count as f64)).abs() / (count as f64);
+        if drift > MAX_DRIFT {
+            return Err(
+                format!(
+                    "Refusing to publish: {} missions now against {} in the previous build \
+                     ({}), a change of {:.0}%. Run with --publish again once you have \
+                     checked why.",
+                    publication.mission_count,
+                    count,
+                    when,
+                    drift * 100.0
+                )
+            );
+        }
+    }
+
+    Ok(())
 }

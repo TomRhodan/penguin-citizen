@@ -1,0 +1,30 @@
+[Unit]
+Description=Publish Penguin Citizen blueprint data when Star Citizen updates
+Documentation=https://github.com/TomRhodan/penguin-citizen-blueprints
+# Needs the network for the push; the extraction itself is local.
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/Projekte/Privat/penguin-citizen/penguin-citizen-app/scripts/publish-blueprints.sh
+
+# The script exits 0 and does nothing while the installed build already has
+# data, which is almost every run. A non-zero exit means the extraction was
+# refused or the push failed - worth seeing in `systemctl --user --failed`.
+
+# Set MAILTO here to also get the report by mail. Needs a working `mail`,
+# which this machine does not have configured: s-nail is installed but has no
+# SMTP server and there is no local MTA. The desktop notification works
+# without any of that.
+#Environment=MAILTO=you@example.com
+
+# A full extraction reads a 325 MiB DataCore and can take a minute or two on
+# a cold cargo cache.
+TimeoutStartSec=30min
+
+# Nothing here needs more than the user's own files.
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
