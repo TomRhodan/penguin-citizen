@@ -60,6 +60,44 @@ struct MissionEntry {
     source: String,
     /// Flagged notForRelease / workInProgress in the game data.
     unreleased: bool,
+    /// Reputation granted on success, in XP.
+    reputation_reward: Option<i64>,
+    /// Faction the reputation belongs to.
+    faction: Option<Faction>,
+    /// Reputation rank the mission starts being offered at.
+    min_standing: Option<Standing>,
+    /// Reputation rank it stops being offered at.
+    max_standing: Option<Standing>,
+    /// Cooldown before the same player can take it again.
+    cooldown: Option<Cooldown>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct Faction {
+    record: String,
+    /// `global.ini` key of the faction's display name.
+    display_loc_key: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct Standing {
+    record: String,
+    /// Internal rank name, e.g. `FactionRep_Neutral_Rank0`.
+    name: Option<String>,
+    /// `global.ini` key of the rank's display name.
+    display_loc_key: Option<String>,
+    /// Reputation points needed to reach this rank.
+    min_reputation: Option<i64>,
+}
+
+/// Cooldown comes from the handler's `defaultAvailability`, so every contract
+/// under that mission line inherits the same values. Minutes.
+#[derive(serde::Serialize, Clone)]
+struct Cooldown {
+    has_personal: bool,
+    personal_minutes: Option<f64>,
+    personal_variation: Option<f64>,
+    abandoned_minutes: Option<f64>,
 }
 
 #[derive(serde::Serialize)]
@@ -90,6 +128,9 @@ fn main() {
     // string. Used to track down where a mission that the extractor misses is
     // actually defined.
     let find_needle = args.iter().position(|a| a == "--find").and_then(|i| args.get(i + 1)).cloned();
+    // `--dump-path <substring>` prints the first record whose path matches, so
+    // the shape of a referenced record can be inspected without guessing.
+    let dump_path = args.iter().position(|a| a == "--dump-path").and_then(|i| args.get(i + 1)).cloned();
 
     let dcb = read_or_die(install_path, version, DCB_PATH, "DataCore");
     eprintln!("DataCore: {:.1} MiB", mib(dcb.len()));
@@ -102,6 +143,23 @@ fn main() {
         }
     };
     eprintln!("Records:  {}", db.records().len());
+
+    if let Some(frag) = &dump_path {
+        let frag = frag.to_ascii_lowercase();
+        for record in db.records() {
+            let path = db.resolve_string(record.file_name_offset);
+            if !path.to_ascii_lowercase().contains(&frag) {
+                continue;
+            }
+            eprintln!("=== {path} ===");
+            if let Ok(bytes) = export::to_json(&db, record) {
+                eprintln!("{}", String::from_utf8_lossy(&bytes));
+            }
+            return;
+        }
+        eprintln!("no record path contains {frag:?}");
+        return;
+    }
 
     if let Some(needle) = &find_needle {
         eprintln!("\n=== records containing {needle:?} ===");
@@ -171,6 +229,28 @@ fn main() {
                 continue;
             }
             contracts_with_rewards += 1;
+
+            // Resolve the reputation / faction / standing references once per
+            // contract rather than per pool.
+            // Sum every reputation award that fires on success.
+            let mut reputation_reward: Option<i64> = None;
+            for r in &contract.rep_reward_refs {
+                if let Some(amount) = record_value(&db, r, &by_path, &mut json_cache)
+                    .and_then(|v| v.get("reputationAmount")?.as_i64())
+                {
+                    reputation_reward = Some(reputation_reward.unwrap_or(0) + amount);
+                }
+            }
+            let faction = contract.faction_ref.as_deref().and_then(|r| {
+                let v = record_value(&db, r, &by_path, &mut json_cache)?;
+                Some(Faction {
+                    record: short_ref(r),
+                    display_loc_key: loc_key(v.get("displayName")),
+                })
+            });
+            let min_standing = standing(&db, contract.min_standing_ref.as_deref(), &by_path, &mut json_cache);
+            let max_standing = standing(&db, contract.max_standing_ref.as_deref(), &by_path, &mut json_cache);
+
             for (chance, pool_ref) in &contract.rewards {
                 let Some(pool_idx) = resolve_ref(pool_ref, &by_path) else {
                     unresolved_pools.insert(pool_ref.clone());
@@ -188,6 +268,11 @@ fn main() {
                     blueprints,
                     source: source.clone(),
                     unreleased: contract.unreleased,
+                    reputation_reward,
+                    faction: faction.clone(),
+                    min_standing: min_standing.clone(),
+                    max_standing: max_standing.clone(),
+                    cooldown: contract.cooldown.clone(),
                 });
             }
         }
@@ -234,6 +319,23 @@ fn main() {
 
     let unreleased = entries.iter().filter(|e| e.unreleased).count();
     eprintln!("  flagged unreleased/WIP        : {unreleased}");
+    eprintln!(
+        "  with reputation reward        : {}",
+        entries.iter().filter(|e| e.reputation_reward.is_some()).count()
+    );
+    eprintln!(
+        "  with faction                  : {}",
+        entries.iter().filter(|e| e.faction.is_some()).count()
+    );
+    eprintln!(
+        "  with min/max standing         : {} / {}",
+        entries.iter().filter(|e| e.min_standing.is_some()).count(),
+        entries.iter().filter(|e| e.max_standing.is_some()).count()
+    );
+    eprintln!(
+        "  with cooldown                 : {}",
+        entries.iter().filter(|e| e.cooldown.is_some()).count()
+    );
 
     let titles: BTreeSet<&String> = entries.iter().map(|e| &e.title_loc_key).collect();
     // Unreleased contracts have no localized strings yet, so they are the
@@ -303,6 +405,17 @@ struct ContractInfo {
     rewards: Vec<(f64, String)>,
     /// CIG's own flags for content that is not live yet.
     unreleased: bool,
+    /// Unresolved `file://` references, turned into values in `main`.
+    ///
+    /// A contract can grant reputation more than once for the same outcome -
+    /// one record carries +100 and +60, which the game adds up to 160. Taking
+    /// only the first would under-report every such mission.
+    rep_reward_refs: Vec<String>,
+    faction_ref: Option<String>,
+    min_standing_ref: Option<String>,
+    max_standing_ref: Option<String>,
+    /// Inherited from the enclosing handler.
+    cooldown: Option<Cooldown>,
 }
 
 /// Every contract in the tree, with its own loc keys and blueprint rewards.
@@ -317,62 +430,200 @@ struct ContractInfo {
 /// sub-contracts nested beneath it.
 fn collect_contracts(root: &Value) -> Vec<ContractInfo> {
     let mut out = Vec::new();
-    walk(root, &mut |n| {
-        let (Some(params), Some(results)) = (n.get("paramOverrides"), n.get("contractResults"))
-        else {
-            return;
-        };
-
-        let mut title: Option<String> = None;
-        let mut description: Option<String> = None;
-        if let Some(overrides) = params.get("stringParamOverrides").and_then(Value::as_array) {
-            for p in overrides {
-                let (Some(param), Some(value)) = (
-                    p.get("param").and_then(Value::as_str),
-                    p.get("value").and_then(Value::as_str),
-                ) else {
-                    continue;
-                };
-                // Loc keys are written as "@<key>" here.
-                let Some(key) = value.strip_prefix('@') else { continue };
-                match param {
-                    "Title" if title.is_none() => title = Some(key.to_string()),
-                    "Description" if description.is_none() => {
-                        description = Some(key.to_string())
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let Some(title) = title else { return };
-
-        let mut rewards = Vec::new();
-        if let Some(list) = results.get("contractResults").and_then(Value::as_array) {
-            for r in list {
-                if type_of(r) != Some("BlueprintRewards") {
-                    continue;
-                }
-                let chance = r.get("chance").and_then(Value::as_f64).unwrap_or(1.0);
-                if let Some(pool) = r.get("blueprintPool").and_then(Value::as_str) {
-                    rewards.push((chance, pool.to_string()));
-                }
-            }
-        }
-
-        out.push(ContractInfo {
-            title,
-            description,
-            debug_name: n
-                .get("debugName")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string),
-            rewards,
-            unreleased: n.get("notForRelease").and_then(Value::as_bool).unwrap_or(false)
-                || n.get("workInProgress").and_then(Value::as_bool).unwrap_or(false),
-        });
-    });
+    descend(root, None, &mut out);
     out
+}
+
+/// Walks the tree carrying the cooldown down from the enclosing handler.
+///
+/// Cooldown is defined once per mission line, on the handler's
+/// `defaultAvailability`, and every contract beneath inherits it. Passing it
+/// down during the walk is what keeps that association correct - reading it
+/// from the contract alone would always come up empty.
+fn descend(node: &Value, inherited: Option<Cooldown>, out: &mut Vec<ContractInfo>) {
+    match node {
+        Value::Object(map) => {
+            let cooldown = node
+                .get("defaultAvailability")
+                .and_then(read_cooldown)
+                .or(inherited);
+
+            if let Some(info) = contract_from(node, cooldown.clone()) {
+                out.push(info);
+            }
+            for v in map.values() {
+                descend(v, cooldown.clone(), out);
+            }
+        }
+        Value::Array(items) => {
+            for v in items {
+                descend(v, inherited.clone(), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Applies a contract's own cooldown overrides on top of what it inherited.
+///
+/// The handler's `defaultAvailability` is only the baseline: a single contract
+/// can override it through `paramOverrides`, which is how two missions from the
+/// same generator end up 30 minutes and 7 days apart. Reading the handler alone
+/// reports the same value for every contract in the line.
+fn apply_cooldown_overrides(params: &Value, inherited: Option<Cooldown>) -> Option<Cooldown> {
+    let mut cooldown = inherited;
+
+    if let Some(ints) = params.get("intParamOverrides").and_then(Value::as_array) {
+        for p in ints {
+            let (Some(name), Some(value)) = (
+                p.get("param").and_then(Value::as_str),
+                p.get("value").and_then(Value::as_f64),
+            ) else {
+                continue;
+            };
+            if !name.contains("Cooldown") {
+                continue;
+            }
+            let c = cooldown.get_or_insert(Cooldown {
+                has_personal: true,
+                personal_minutes: None,
+                personal_variation: None,
+                abandoned_minutes: None,
+            });
+            match name {
+                "PersonalCooldownTime" => c.personal_minutes = Some(value),
+                "PersonalCooldownTimeVariation" => c.personal_variation = Some(value),
+                "AbandonedCooldownTime" => c.abandoned_minutes = Some(value),
+                _ => {}
+            }
+        }
+    }
+
+    if let Some(bools) = params.get("boolParamOverrides").and_then(Value::as_array) {
+        for p in bools {
+            let (Some(name), Some(value)) = (
+                p.get("param").and_then(Value::as_str),
+                p.get("value").and_then(Value::as_bool),
+            ) else {
+                continue;
+            };
+            if name == "HasPersonalCooldown" {
+                if let Some(c) = cooldown.as_mut() {
+                    c.has_personal = value;
+                }
+            }
+        }
+    }
+
+    cooldown
+}
+
+fn read_cooldown(availability: &Value) -> Option<Cooldown> {
+    let has_personal = availability.get("hasPersonalCooldown").and_then(Value::as_bool)?;
+    Some(Cooldown {
+        has_personal,
+        personal_minutes: availability.get("personalCooldownTime").and_then(Value::as_f64),
+        personal_variation: availability
+            .get("personalCooldownTimeVariation")
+            .and_then(Value::as_f64),
+        abandoned_minutes: availability.get("abandonedCooldownTime").and_then(Value::as_f64),
+    })
+}
+
+/// Builds a [`ContractInfo`] if `n` is shaped like a contract.
+///
+/// Contracts are recognised by shape, not by type name: the DataCore uses
+/// `Contract`, `CareerContract` and others, and keying on the names means
+/// silently dropping whichever variant gets added next. A contract is any node
+/// carrying both `paramOverrides` and `contractResults`.
+///
+/// Everything is read from the node directly rather than by descending into
+/// it, so a contract never picks up the rewards of sub-contracts nested
+/// beneath it.
+fn contract_from(n: &Value, cooldown: Option<Cooldown>) -> Option<ContractInfo> {
+    let params = n.get("paramOverrides")?;
+    let results = n.get("contractResults")?;
+
+    let mut title: Option<String> = None;
+    let mut description: Option<String> = None;
+    if let Some(overrides) = params.get("stringParamOverrides").and_then(Value::as_array) {
+        for p in overrides {
+            let (Some(param), Some(value)) = (
+                p.get("param").and_then(Value::as_str),
+                p.get("value").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            // Loc keys are written as "@<key>" here.
+            let Some(key) = value.strip_prefix('@') else { continue };
+            match param {
+                "Title" if title.is_none() => title = Some(key.to_string()),
+                "Description" if description.is_none() => description = Some(key.to_string()),
+                _ => {}
+            }
+        }
+    }
+    let title = title?;
+
+    let mut rewards = Vec::new();
+    let mut rep_reward_refs: Vec<String> = Vec::new();
+    let mut faction_ref = None;
+    if let Some(list) = results.get("contractResults").and_then(Value::as_array) {
+        for r in list {
+            match type_of(r) {
+                Some("BlueprintRewards") => {
+                    let chance = r.get("chance").and_then(Value::as_f64).unwrap_or(1.0);
+                    if let Some(pool) = r.get("blueprintPool").and_then(Value::as_str) {
+                        rewards.push((chance, pool.to_string()));
+                    }
+                }
+                Some("ContractResult_LegacyReputation") => {
+                    // missionResults[0] is the success outcome; the other slots
+                    // are failure/abandon, which must not be added to the
+                    // reputation a player can expect for completing it.
+                    let on_success = r
+                        .get("missionResults")
+                        .and_then(Value::as_array)
+                        .and_then(|a| a.first())
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true);
+                    if !on_success {
+                        continue;
+                    }
+                    if let Some(amounts) = r.get("contractResultReputationAmounts") {
+                        if let Some(reward) = amounts.get("reward").and_then(Value::as_str) {
+                            rep_reward_refs.push(reward.to_string());
+                        }
+                        if faction_ref.is_none() {
+                            faction_ref = amounts
+                                .get("factionReputation")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(ContractInfo {
+        title,
+        description,
+        debug_name: n
+            .get("debugName")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        rewards,
+        unreleased: n.get("notForRelease").and_then(Value::as_bool).unwrap_or(false)
+            || n.get("workInProgress").and_then(Value::as_bool).unwrap_or(false),
+        rep_reward_refs,
+        faction_ref,
+        min_standing_ref: n.get("minStanding").and_then(Value::as_str).map(str::to_string),
+        max_standing_ref: n.get("maxStanding").and_then(Value::as_str).map(str::to_string),
+        cooldown: apply_cooldown_overrides(params, cooldown),
+    })
 }
 
 /// Blueprint record names a reward pool can hand out.
@@ -474,4 +725,52 @@ fn read_build_id(install_path: &str, version: &str) -> Option<String> {
 
 fn mib(bytes: usize) -> f64 {
     bytes as f64 / 1024.0 / 1024.0
+}
+
+/// Resolves a `file://` reference and returns the record's `_RecordValue_`.
+fn record_value(
+    db: &Database,
+    reference: &str,
+    by_path: &HashMap<String, usize>,
+    cache: &mut HashMap<usize, Value>,
+) -> Option<Value> {
+    let idx = resolve_ref(reference, by_path)?;
+    record_json(db, idx, cache)?.get("_RecordValue_").cloned()
+}
+
+/// Resolves a standing reference into its rank name, display key and threshold.
+fn standing(
+    db: &Database,
+    reference: Option<&str>,
+    by_path: &HashMap<String, usize>,
+    cache: &mut HashMap<usize, Value>,
+) -> Option<Standing> {
+    let reference = reference?;
+    let v = record_value(db, reference, by_path, cache)?;
+    Some(Standing {
+        record: short_ref(reference),
+        name: v.get("name").and_then(Value::as_str).map(str::to_string),
+        display_loc_key: loc_key(v.get("displayName")),
+        min_reputation: v.get("minReputation").and_then(Value::as_i64),
+    })
+}
+
+/// `"@Adagio_RepUI_DisplayName"` → `"Adagio_RepUI_DisplayName"`.
+///
+/// Display names are themselves `global.ini` keys, so they are kept as keys:
+/// that way the app can show them in whatever language the user runs.
+fn loc_key(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .and_then(|s| s.strip_prefix('@'))
+        .filter(|s| !s.is_empty() && *s != "blank_space")
+        .map(str::to_string)
+}
+
+/// Trims a `file://…` reference down to the record path, for readable output.
+fn short_ref(reference: &str) -> String {
+    reference
+        .find("libs/foundry/records/")
+        .map(|i| strip_ext(&reference[i..]))
+        .unwrap_or_else(|| reference.to_string())
 }
