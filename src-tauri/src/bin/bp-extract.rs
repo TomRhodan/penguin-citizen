@@ -1074,42 +1074,42 @@ fn run_injection(
         //
         // Duplication is handled below by dropping the redirects, not by
         // picking one source over another - that only moved the gap around.
-        let mut keys: BTreeSet<String> = BTreeSet::new();
-        let mut targets: Vec<usize> = Vec::new();
+        // The key the contract itself declares always gets the block, even when
+        // it is a redirect: that is the path the game takes for this mission,
+        // and the title proves appending to a redirect survives the expansion -
+        // the [BP] marker renders on exactly such a title.
+        let mut targets: Vec<usize> = index
+            .get(&desc_key.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_default();
 
-        keys.insert(desc_key.to_ascii_lowercase());
+        // Everything else is a guess at what else might be rendered: the
+        // descriptions mission boards hand out, and the `…_desc_01/02/03`
+        // variants of an unambiguous prefix.
+        let mut extra: BTreeSet<String> = BTreeSet::new();
         if let Some(board_keys) = broker_descriptions.get(&entry.title_loc_key.to_ascii_lowercase())
         {
             broker_keys_used += board_keys.len();
-            keys.extend(board_keys.iter().map(|k| k.to_ascii_lowercase()));
+            extra.extend(board_keys.iter().map(|k| k.to_ascii_lowercase()));
         }
+        let mut extra_targets: Vec<usize> = extra
+            .iter()
+            .filter_map(|k| index.get(k))
+            .flat_map(|rows| rows.iter().copied())
+            .collect();
         if let Some(base) = desc_base(Some(desc_key)) {
             if owners.get(&base).is_some_and(|m| m.len() == 1) {
                 if let Some(rows) = siblings.get(&base) {
-                    targets.extend(rows.iter().copied());
+                    extra_targets.extend(rows.iter().copied());
                 }
             }
         }
-
-        targets.extend(
-            keys.iter()
-                .filter_map(|k| index.get(k))
-                .flat_map(|rows| rows.iter().copied()),
-        );
+        // Among those extras a redirect is dropped, because the key it expands
+        // into is often one of the others - filling both shows the block twice.
+        extra_targets.retain(|&i| !is_redirect(&lines[i]));
+        targets.extend(extra_targets);
         targets.sort_unstable();
         targets.dedup();
-        // Some description keys hold no text at all, only a redirect such as
-        // `~mission(Contractor|HaulCargo_SingleToMulti)`, which the game
-        // expands into the contractor's own description. Filling both ends
-        // shows the block twice.
-        //
-        // Dropped only while a real description remains: where a mission has
-        // nothing but redirects, the expansion is a key we never reach, so
-        // writing into the redirect is the only way the player sees anything -
-        // and nothing else carries the block to duplicate it.
-        if targets.iter().any(|&i| !is_redirect(&lines[i])) {
-            targets.retain(|&i| !is_redirect(&lines[i]));
-        }
         let before = targets.len();
         targets.retain(|i| !already_written.contains(i));
         shared_lines += before - targets.len();
