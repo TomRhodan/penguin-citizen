@@ -154,6 +154,12 @@ fn main() {
     // after it. Appending works for short descriptions but some long ones never
     // show it, and the cause - truncation, scrolling, or the game assembling the
     // body from a different string - is not visible from the file alone.
+    // `--publish <out.json>` writes the file the app downloads.
+    let publish = args
+        .iter()
+        .position(|a| a == "--publish")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
     let block_at_top = args
         .iter()
         .position(|a| a == "--block")
@@ -490,6 +496,42 @@ fn main() {
     );
     for k in missing.iter().take(5) {
         eprintln!("      missing: {k}");
+    }
+
+    if let Some(path) = &publish {
+        let ini_map = index_ini(&String::from_utf8_lossy(&ini));
+        let publication = build_publication(
+            &entries,
+            &broker_descriptions,
+            &ini_map,
+            read_build_id(install_path, version),
+        );
+        eprintln!("\n=== publication ===");
+        eprintln!("  schema                      : {}", publication.schema);
+        eprintln!("  game build                  : {:?}", publication.game_build);
+        eprintln!("  missions                    : {}", publication.mission_count);
+        eprintln!(
+            "  description keys            : {}",
+            publication.missions.iter().map(|m| m.description_keys.len()).sum::<usize>()
+        );
+        eprintln!(
+            "  guaranteed / chance         : {} / {}",
+            publication.missions.iter().filter(|m| m.guaranteed).count(),
+            publication.missions.iter().filter(|m| !m.guaranteed).count()
+        );
+        match serde_json::to_vec_pretty(&publication) {
+            Ok(json) => match std::fs::write(path, &json) {
+                Ok(()) => eprintln!("  wrote                       : {path} ({:.2} MiB)", mib(json.len())),
+                Err(e) => {
+                    eprintln!("Could not write {path}: {e}");
+                    std::process::exit(1);
+                }
+            },
+            Err(e) => {
+                eprintln!("Could not serialize the publication: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 
     if let Some((in_ini, out_ini)) = &inject {
@@ -1285,4 +1327,238 @@ fn is_redirect(line: &str) -> bool {
     let Some(rest) = value.strip_prefix("~mission(") else { return false };
     // Nothing but the token itself.
     rest.strip_suffix(')').is_some_and(|inner| !inner.contains('('))
+}
+
+// ─── which keys carry the block ─────────────────────────────────────────────
+
+/// An ini reduced to what the key resolution needs: base key → value.
+///
+/// Keys are folded to lower case and their CryEngine variant suffix dropped,
+/// so `Foo_Title_001` and `Foo_Title_001,P` share one entry.
+fn index_ini(text: &str) -> HashMap<String, String> {
+    text.split('\n')
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| {
+            let k = k.trim();
+            let base = k.split_once(',').map(|(b, _)| b).unwrap_or(k);
+            (base.to_ascii_lowercase(), v.to_string())
+        })
+        .collect()
+}
+
+/// Every `global.ini` key that should carry a mission's blueprint block.
+///
+/// Three sources, because a mission reaches the player on more than one path
+/// and they overlap rather than exclude each other:
+///
+/// - the key the contract declares, which is always kept, redirect or not;
+/// - the descriptions mission boards hand out for this title;
+/// - the `…_desc_01/02/03` variants the game picks among at runtime, matched
+///   by prefix and only where that prefix belongs to a single mission.
+///
+/// Among the last two a redirect is dropped: `~mission(Contractor|X)` holds no
+/// text, the game replaces it with the key it names, and filling both ends
+/// prints the block twice.
+fn resolve_description_keys(
+    title_key: &str,
+    declared_key: &str,
+    broker_descriptions: &HashMap<String, BTreeSet<String>>,
+    owners: &HashMap<String, BTreeSet<String>>,
+    ini: &HashMap<String, String>,
+) -> Vec<String> {
+    let mut keys: Vec<String> = Vec::new();
+    let declared = declared_key.to_ascii_lowercase();
+    if ini.contains_key(&declared) {
+        keys.push(declared.clone());
+    }
+
+    let mut extra: BTreeSet<String> = BTreeSet::new();
+    if let Some(board) = broker_descriptions.get(&title_key.to_ascii_lowercase()) {
+        extra.extend(board.iter().map(|k| k.to_ascii_lowercase()));
+    }
+    if let Some(base) = desc_base(Some(declared_key)) {
+        if owners.get(&base).is_some_and(|m| m.len() == 1) {
+            extra.extend(
+                ini.keys()
+                    .filter(|k| desc_base(Some(k)).as_deref() == Some(base.as_str()))
+                    .cloned(),
+            );
+        }
+    }
+
+    for key in extra {
+        if key == declared {
+            continue;
+        }
+        let Some(value) = ini.get(&key) else { continue };
+        if is_redirect_value(value) {
+            continue;
+        }
+        keys.push(key);
+    }
+
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
+/// Whether a value is only a `~mission(...)` redirect rather than text.
+fn is_redirect_value(value: &str) -> bool {
+    let value = value.replace("\\n", " ");
+    let value = value.trim();
+    let Some(rest) = value.strip_prefix("~mission(") else { return false };
+    rest.strip_suffix(')').is_some_and(|inner| !inner.contains('('))
+}
+
+/// `title key (lower-cased) → the missions declaring a description with that prefix`.
+fn description_owners(entries: &[MissionEntry]) -> HashMap<String, BTreeSet<String>> {
+    let mut owners: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for entry in entries {
+        if let Some(base) = desc_base(entry.description_loc_key.as_deref()) {
+            owners.entry(base).or_default().insert(entry.title_loc_key.clone());
+        }
+    }
+    owners
+}
+
+// ─── the file the app downloads ─────────────────────────────────────────────
+
+/// What Penguin Citizen fetches and injects.
+///
+/// Deliberately structured rather than pre-rendered text: ranks, faction and
+/// item names are `global.ini` keys, so the app resolves them against whichever
+/// translation the player has installed and the same file serves German and
+/// English. Baking sentences in here is what tied rjcncpt's data to one
+/// language.
+#[derive(serde::Serialize)]
+struct Publication {
+    /// Bumped when the shape changes, so an older app can refuse politely.
+    schema: u32,
+    /// The Star Citizen build this was extracted from.
+    game_build: Option<String>,
+    generated: String,
+    mission_count: usize,
+    missions: Vec<PublishedMission>,
+}
+
+#[derive(serde::Serialize)]
+struct PublishedMission {
+    /// Key whose value gets the `[BP]` marker prepended.
+    title_key: String,
+    /// Keys whose values get the block appended. Already resolved against the
+    /// game's own ini, so the app only has to look them up and skip misses.
+    description_keys: Vec<String>,
+    /// False when any pool is a chance rather than a certainty.
+    guaranteed: bool,
+    reputation_reward: Option<i64>,
+    /// `global.ini` key of the faction's display name.
+    faction_key: Option<String>,
+    min_standing: Option<PublishedStanding>,
+    max_standing: Option<PublishedStanding>,
+    cooldown_minutes: Option<f64>,
+    pools: Vec<PublishedPool>,
+}
+
+#[derive(serde::Serialize)]
+struct PublishedStanding {
+    /// `global.ini` key of the rank's display name.
+    name_key: Option<String>,
+    reputation: Option<i64>,
+}
+
+#[derive(serde::Serialize)]
+struct PublishedPool {
+    chance: f64,
+    blueprints: Vec<PublishedBlueprint>,
+}
+
+#[derive(serde::Serialize)]
+struct PublishedBlueprint {
+    /// `global.ini` key of the item name.
+    name_key: Option<String>,
+    /// Record name, shown when the key is missing from the player's file.
+    record: String,
+}
+
+/// Groups the per-pool entries into one record per mission and resolves the
+/// keys the app has to touch.
+fn build_publication(
+    entries: &[MissionEntry],
+    broker_descriptions: &HashMap<String, BTreeSet<String>>,
+    ini: &HashMap<String, String>,
+    game_build: Option<String>,
+) -> Publication {
+    let owners = description_owners(entries);
+    let mut missions: Vec<PublishedMission> = Vec::new();
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+
+    for entry in entries {
+        if !seen.insert(entry.title_loc_key.as_str()) {
+            continue;
+        }
+        // A mission that is not in the player's game has nothing to mark.
+        if !ini.contains_key(&entry.title_loc_key.to_ascii_lowercase()) {
+            continue;
+        }
+        let pools: Vec<&MissionEntry> = entries
+            .iter()
+            .filter(|e| e.title_loc_key == entry.title_loc_key)
+            .collect();
+
+        let declared = entry.description_loc_key.clone().unwrap_or_default();
+        let description_keys = resolve_description_keys(
+            &entry.title_loc_key,
+            &declared,
+            broker_descriptions,
+            &owners,
+            ini,
+        );
+        if description_keys.is_empty() {
+            continue;
+        }
+
+        missions.push(PublishedMission {
+            title_key: entry.title_loc_key.clone(),
+            description_keys,
+            guaranteed: pools.iter().all(|p| p.chance >= 1.0),
+            reputation_reward: entry.reputation_reward,
+            faction_key: entry.faction.as_ref().and_then(|f| f.display_loc_key.clone()),
+            min_standing: entry.min_standing.as_ref().map(|s| PublishedStanding {
+                name_key: s.display_loc_key.clone(),
+                reputation: s.min_reputation,
+            }),
+            max_standing: entry.max_standing.as_ref().map(|s| PublishedStanding {
+                name_key: s.display_loc_key.clone(),
+                reputation: s.min_reputation,
+            }),
+            cooldown_minutes: entry
+                .cooldown
+                .as_ref()
+                .filter(|c| c.has_personal)
+                .and_then(|c| c.personal_minutes),
+            pools: pools
+                .iter()
+                .map(|p| PublishedPool {
+                    chance: p.chance,
+                    blueprints: p
+                        .blueprints
+                        .iter()
+                        .map(|b| PublishedBlueprint {
+                            name_key: b.name_loc_key.clone(),
+                            record: b.record.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        });
+    }
+
+    missions.sort_by(|a, b| a.title_key.cmp(&b.title_key));
+    Publication {
+        schema: 1,
+        game_build,
+        generated: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        mission_count: missions.len(),
+        missions,
+    }
 }
