@@ -529,10 +529,5 @@ pub async fn check_shader_cache_exists(
 
     // Check DXVK cache for the specific version
     let version_path = sc_game_version_path(&expanded, &sc_version);
-    let dxvk_caches = find_dxvk_caches(&version_path);
-    if !dxvk_caches.is_empty() {
-        return Ok(true);
-    }
-
-    Ok(false)
+    Ok(!find_dxvk_caches(&version_path).is_empty())
 }
