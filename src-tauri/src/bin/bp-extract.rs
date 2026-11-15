@@ -150,6 +150,15 @@ fn main() {
         .iter()
         .position(|a| a == "--inject")
         .and_then(|i| Some((args.get(i + 1)?.clone(), args.get(i + 2)?.clone())));
+    // `--block top` puts the blueprint block before the mission text instead of
+    // after it. Appending works for short descriptions but some long ones never
+    // show it, and the cause - truncation, scrolling, or the game assembling the
+    // body from a different string - is not visible from the file alone.
+    let block_at_top = args
+        .iter()
+        .position(|a| a == "--block")
+        .and_then(|i| args.get(i + 1))
+        .is_some_and(|v| v == "top");
     let lang = args
         .iter()
         .position(|a| a == "--lang")
@@ -400,7 +409,7 @@ fn main() {
     }
 
     if let Some((in_ini, out_ini)) = &inject {
-        run_injection(&entries, in_ini, out_ini, &lang);
+        run_injection(&entries, in_ini, out_ini, &lang, block_at_top);
     }
 
     let output = Output {
@@ -855,7 +864,13 @@ fn short_ref(reference: &str) -> String {
 /// description, everything else stays byte-identical. Newlines inside a value
 /// are the literal two characters `\` and `n` - Star Citizen's own parser turns
 /// those into line breaks, a real newline would end the entry.
-fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: &str) {
+fn run_injection(
+    entries: &[MissionEntry],
+    in_path: &str,
+    out_path: &str,
+    lang: &str,
+    block_at_top: bool,
+) {
     let raw = match std::fs::read(in_path) {
         Ok(b) => b,
         Err(e) => {
@@ -975,7 +990,17 @@ fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: 
             desc_misses += 1;
         } else {
             for &i in &targets {
-                lines[i].push_str(&block);
+                if block_at_top {
+                    // Insert after the "key=" so the block leads the value.
+                    // The block opens with two literal "\n" separators meant for
+                    // appending; at the top they belong after it instead.
+                    let body = block.trim_start_matches("\\n");
+                    if let Some((key, value)) = lines[i].clone().split_once('=') {
+                        lines[i] = format!("{key}={body}\\n\\n{value}");
+                    }
+                } else {
+                    lines[i].push_str(&block);
+                }
             }
             desc_hits += 1;
             variant_rows += targets.len();
@@ -988,7 +1013,10 @@ fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: 
         std::process::exit(1);
     }
 
-    eprintln!("\n=== injection ({lang}) ===");
+    eprintln!(
+        "\n=== injection ({lang}, block {}) ===",
+        if block_at_top { "at top" } else { "appended" }
+    );
     eprintln!("  source                      : {in_path}");
     eprintln!("  titles marked / not found   : {title_hits} / {title_misses}");
     eprintln!("  descriptions filled / missed: {desc_hits} / {desc_misses}");
