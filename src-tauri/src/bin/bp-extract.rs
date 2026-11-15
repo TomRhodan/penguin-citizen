@@ -899,10 +899,35 @@ fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: 
         Some(flattened.split_whitespace().collect::<Vec<_>>().join(" "))
     };
 
+    // A mission line usually has several description strings and the game picks
+    // one at runtime - the contract declares `…_desc_ToRuinStation` while the
+    // player is shown `…_desc_01`. Injecting only the declared key leaves those
+    // missions marked in the title with nothing in the body, which is exactly
+    // what rjcncpt's file did too.
+    //
+    // Siblings are keys sharing everything up to and including `_desc`. They
+    // are only safe to fill when that prefix belongs to a single mission: for
+    // difficulty tiers of one line (`…_Title_E_001` / `_H_` / `_M_`) the
+    // siblings are shared, and filling them would show one tier's blueprints
+    // on another's.
+    let mut owners: HashMap<String, BTreeSet<&str>> = HashMap::new();
+    for entry in entries {
+        if let Some(base) = desc_base(entry.description_loc_key.as_deref()) {
+            owners.entry(base).or_default().insert(entry.title_loc_key.as_str());
+        }
+    }
+    let mut siblings: HashMap<String, Vec<usize>> = HashMap::new();
+    for (key, rows) in &index {
+        if let Some(base) = desc_base(Some(key)) {
+            siblings.entry(base).or_default().extend(rows.iter().copied());
+        }
+    }
+
     let mut title_hits = 0usize;
     let mut title_misses = 0usize;
     let mut desc_hits = 0usize;
     let mut desc_misses = 0usize;
+    let mut variant_rows = 0usize;
     let mut done: BTreeSet<&str> = BTreeSet::new();
 
     for entry in entries {
@@ -931,14 +956,29 @@ fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: 
 
         let Some(desc_key) = &entry.description_loc_key else { continue };
         let block = render_block(&pools, lang, &resolve);
-        match index.get(&desc_key.to_ascii_lowercase()) {
-            Some(targets) => {
-                for &i in targets {
-                    lines[i].push_str(&block);
+
+        let mut targets: Vec<usize> = index
+            .get(&desc_key.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_default();
+        if let Some(base) = desc_base(Some(desc_key)) {
+            if owners.get(&base).is_some_and(|m| m.len() == 1) {
+                if let Some(rows) = siblings.get(&base) {
+                    targets.extend(rows.iter().copied());
                 }
-                desc_hits += 1;
             }
-            None => desc_misses += 1,
+        }
+        targets.sort_unstable();
+        targets.dedup();
+
+        if targets.is_empty() {
+            desc_misses += 1;
+        } else {
+            for &i in &targets {
+                lines[i].push_str(&block);
+            }
+            desc_hits += 1;
+            variant_rows += targets.len();
         }
     }
 
@@ -952,6 +992,7 @@ fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: 
     eprintln!("  source                      : {in_path}");
     eprintln!("  titles marked / not found   : {title_hits} / {title_misses}");
     eprintln!("  descriptions filled / missed: {desc_hits} / {desc_misses}");
+    eprintln!("  description lines written   : {variant_rows} (text variants included)");
     eprintln!(
         "  size                        : {:.1} MiB → {:.1} MiB",
         mib(raw.len()),
@@ -1050,4 +1091,13 @@ fn render_block(
         }
     }
     b
+}
+
+/// Everything up to and including `_desc`, lower-cased - the key a mission's
+/// description variants share. `None` when the key has no `_desc` part.
+fn desc_base(key: Option<&str>) -> Option<String> {
+    let key = key?;
+    let lower = key.to_ascii_lowercase();
+    let at = lower.find("_desc")?;
+    Some(lower[..at + "_desc".len()].to_string())
 }
