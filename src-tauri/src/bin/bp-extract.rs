@@ -249,8 +249,33 @@ fn main() {
     let mut contracts_with_rewards = 0usize;
     let mut unresolved_pools: BTreeSet<String> = BTreeSet::new();
 
+    // A mission is offered on two paths, and only one of them renders the
+    // description the contract declares. Missions handed out at a mission board
+    // come from MissionBrokerEntry records, which carry the same title key but
+    // their own description key - that is the text a player actually reads.
+    // Without this, those missions get a marked title and an empty body.
+    let mut broker_descriptions: HashMap<String, BTreeSet<String>> = HashMap::new();
+
     for record in db.records() {
         let sname = db.resolve_string2(db.struct_def(record.struct_index).name_offset);
+
+        if sname == "MissionBrokerEntry" {
+            if let Ok(bytes) = export::to_json(&db, record) {
+                if let Ok(v) = serde_json::from_slice::<Value>(&bytes) {
+                    let body = v.get("_RecordValue_").unwrap_or(&v);
+                    if let (Some(title), Some(desc)) =
+                        (loc_key(body.get("title")), loc_key(body.get("description")))
+                    {
+                        broker_descriptions
+                            .entry(title.to_ascii_lowercase())
+                            .or_default()
+                            .insert(desc);
+                    }
+                }
+            }
+            continue;
+        }
+
         if sname != "ContractGenerator" {
             continue;
         }
@@ -409,7 +434,7 @@ fn main() {
     }
 
     if let Some((in_ini, out_ini)) = &inject {
-        run_injection(&entries, in_ini, out_ini, &lang, block_at_top);
+        run_injection(&entries, &broker_descriptions, in_ini, out_ini, &lang, block_at_top);
     }
 
     let output = Output {
@@ -866,6 +891,7 @@ fn short_ref(reference: &str) -> String {
 /// those into line breaks, a real newline would end the entry.
 fn run_injection(
     entries: &[MissionEntry],
+    broker_descriptions: &HashMap<String, BTreeSet<String>>,
     in_path: &str,
     out_path: &str,
     lang: &str,
@@ -914,17 +940,19 @@ fn run_injection(
         Some(flattened.split_whitespace().collect::<Vec<_>>().join(" "))
     };
 
-    // A mission line usually has several description strings and the game picks
-    // one at runtime - the contract declares `…_desc_ToRuinStation` while the
-    // player is shown `…_desc_01`. Injecting only the declared key leaves those
-    // missions marked in the title with nothing in the body, which is exactly
-    // what rjcncpt's file did too.
+    // Two sources, and they cover different offering paths:
     //
-    // Siblings are keys sharing everything up to and including `_desc`. They
-    // are only safe to fill when that prefix belongs to a single mission: for
-    // difficulty tiers of one line (`…_Title_E_001` / `_H_` / `_M_`) the
-    // siblings are shared, and filling them would show one tier's blueprints
-    // on another's.
+    // - Mission boards hand out MissionBrokerEntry descriptions. Authoritative,
+    //   and the keys do not follow the contract's naming at all.
+    // - Missions coming straight from the contract pick among `…_desc_01/02/03`
+    //   style variants at runtime. Those are not referenced by any broker entry,
+    //   so they are matched by prefix.
+    //
+    // Prefix matching only applies where the prefix belongs to exactly one
+    // mission: the difficulty tiers of a line (`…_Title_E_001` / `_H_` / `_M_`)
+    // share theirs, and filling those would print one tier's blueprints on
+    // another's. Filling a key the game never renders costs nothing; missing one
+    // leaves a marked title with an empty body, which is the bug being fixed.
     let mut owners: HashMap<String, BTreeSet<&str>> = HashMap::new();
     for entry in entries {
         if let Some(base) = desc_base(entry.description_loc_key.as_deref()) {
@@ -943,6 +971,7 @@ fn run_injection(
     let mut desc_hits = 0usize;
     let mut desc_misses = 0usize;
     let mut variant_rows = 0usize;
+    let mut broker_keys_used = 0usize;
     let mut done: BTreeSet<&str> = BTreeSet::new();
 
     for entry in entries {
@@ -972,10 +1001,21 @@ fn run_injection(
         let Some(desc_key) = &entry.description_loc_key else { continue };
         let block = render_block(&pools, lang, &resolve);
 
-        let mut targets: Vec<usize> = index
-            .get(&desc_key.to_ascii_lowercase())
-            .cloned()
-            .unwrap_or_default();
+        // The key the contract declares, plus every description a mission board
+        // hands out under this title. The broker keys are the ones most players
+        // actually see, and they do not follow the contract's naming at all.
+        let mut keys: BTreeSet<String> = BTreeSet::new();
+        keys.insert(desc_key.to_ascii_lowercase());
+        if let Some(extra) = broker_descriptions.get(&entry.title_loc_key.to_ascii_lowercase()) {
+            broker_keys_used += extra.len();
+            keys.extend(extra.iter().map(|k| k.to_ascii_lowercase()));
+        }
+
+        let mut targets: Vec<usize> = keys
+            .iter()
+            .filter_map(|k| index.get(k))
+            .flat_map(|rows| rows.iter().copied())
+            .collect();
         if let Some(base) = desc_base(Some(desc_key)) {
             if owners.get(&base).is_some_and(|m| m.len() == 1) {
                 if let Some(rows) = siblings.get(&base) {
@@ -1020,7 +1060,19 @@ fn run_injection(
     eprintln!("  source                      : {in_path}");
     eprintln!("  titles marked / not found   : {title_hits} / {title_misses}");
     eprintln!("  descriptions filled / missed: {desc_hits} / {desc_misses}");
-    eprintln!("  description lines written   : {variant_rows} (text variants included)");
+    eprintln!("  description lines written   : {variant_rows}");
+    eprintln!("  of those from mission boards: {broker_keys_used} keys");
+    let board_missions = entries
+        .iter()
+        .map(|e| e.title_loc_key.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>()
+        .iter()
+        .filter(|t| broker_descriptions.contains_key(*t))
+        .count();
+    eprintln!(
+        "  missions offered at a board : {board_missions} of {}",
+        entries.iter().map(|e| &e.title_loc_key).collect::<BTreeSet<_>>().len()
+    );
     eprintln!(
         "  size                        : {:.1} MiB → {:.1} MiB",
         mib(raw.len()),
@@ -1121,8 +1173,9 @@ fn render_block(
     b
 }
 
-/// Everything up to and including `_desc`, lower-cased - the key a mission's
-/// description variants share. `None` when the key has no `_desc` part.
+/// Everything up to and including `_desc`, lower-cased - the prefix a mission's
+/// runtime description variants share. `None` when the key has no `_desc` part,
+/// which is the case for every key a mission board supplies.
 fn desc_base(key: Option<&str>) -> Option<String> {
     let key = key?;
     let lower = key.to_ascii_lowercase();
