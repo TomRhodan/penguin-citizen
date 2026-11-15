@@ -79,6 +79,29 @@
           </ul>
           <p>Der Fortschritt wird waehrend Installation und Aktualisierung angezeigt.</p>
 
+          <h2>Bauplan-Markierungen</h2>
+          <p>Star Citizen vergibt bei bestimmten Missionen Bauplaene als Belohnung, verraet im Missionstext aber nicht, bei welchen. Penguin Citizen kann diese Information beim Installieren einer Uebersetzung mit einbauen: Im Installationsdialog gibt es dafuer die Option <strong>Bauplan-Markierungen einfuegen</strong>.</p>
+          <p>Ist sie aktiv, erhalten betroffene Missionen</p>
+          <ul>
+            <li>eine Markierung im Titel - <code>[BP]</code> oder <code>[BP?]</code></li>
+            <li>einen Block am Ende der Beschreibung mit den moeglichen Bauplaenen, der benoetigten Reputation, der Fraktion und dem Cooldown</li>
+          </ul>
+
+          <h3>Was die Markierungen bedeuten</h3>
+          <p><code>[BP]</code> heisst: Die Mission zieht <em>sicher</em> aus einem Bauplan-Pool. Das ist nicht dasselbe wie „du bekommst garantiert diesen einen Bauplan" - welcher Bauplan faellt, haengt vom Pool, deiner Reputationsstufe und der Region ab. <code>[BP?]</code> steht fuer Missionen, bei denen schon die Ausschuettung selbst eine Chance ist; der angegebene Prozentwert im Block nennt sie.</p>
+
+          <h3>Woher die Daten kommen</h3>
+          <p>Die Zuordnung Mission zu Bauplan wird aus den Spieldateien selbst gewonnen und liegt in einem eigenen Repository: <a href="https://github.com/TomRhodan/penguin-citizen-blueprints" target="_blank" rel="noopener">penguin-citizen-blueprints</a>. Namen von Raengen, Fraktionen und Gegenstaenden werden gegen die von dir installierte Uebersetzung aufgeloest - der Block erscheint also in der Sprache deines Sprachpakets.</p>
+
+          <h3>Wenn eine Versionsmeldung erscheint</h3>
+          <p>Die Daten gehoeren immer zu einem bestimmten Spiel-Build. Hakst du die Option an, prueft Penguin Citizen, ob fuer deine installierte Version Daten vorliegen, und meldet eine Abweichung:</p>
+          <p><em>„Die Bauplandaten stammen aus Spielversion X, installiert ist Y. Die Markierungen koennen unvollstaendig sein."</em></p>
+          <p>Das ist <strong>kein Fehler</strong>, sondern ein Hinweis: Nach einem Star-Citizen-Patch dauert es, bis die Daten nachgezogen sind. Die Installation laeuft trotzdem durch, und Missionen, die es in beiden Versionen gibt, werden korrekt markiert. Nur neue oder umbenannte Missionen fehlen dann.</p>
+
+          <div class="handbook-note">
+            Die Markierungen stehen in der Uebersetzungsdatei, nicht im Spiel selbst. Entfernst du das Sprachpaket oder installierst es ohne die Option neu, sind sie wieder weg. Scheitert der Abruf der Bauplandaten, wird die Uebersetzung trotzdem installiert - du erhaeltst lediglich einen Hinweis.
+          </div>
+
           <div class="handbook-tip">
             Penguin Citizen prueft automatisch auf Uebersetzungs-Updates, wenn du das Dashboard oeffnest. Wenn ein Update verfuegbar ist, erscheint ein gelber Indikator auf der Installationsstatuskarte, und du kannst mit einem Klick aktualisieren.
           </div>

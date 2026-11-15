@@ -79,6 +79,29 @@
           </ul>
           <p>Progress is shown during installation and updates.</p>
 
+          <h2>Blueprint markers</h2>
+          <p>Star Citizen hands out blueprints as rewards on certain missions but does not say which ones in the mission text. Penguin Citizen can add that information while installing a translation: the install dialog has an <strong>Add blueprint markers</strong> option.</p>
+          <p>With it enabled, affected missions get</p>
+          <ul>
+            <li>a marker in the title - <code>[BP]</code> or <code>[BP?]</code></li>
+            <li>a block at the end of the description listing the possible blueprints, the reputation required, the faction and the cooldown</li>
+          </ul>
+
+          <h3>What the markers mean</h3>
+          <p><code>[BP]</code> means the mission draws from a blueprint pool for <em>certain</em>. That is not the same as "you are guaranteed this particular blueprint" - which one drops depends on the pool, your reputation rank and the region. <code>[BP?]</code> marks missions where the payout itself is a chance; the percentage in the block states it.</p>
+
+          <h3>Where the data comes from</h3>
+          <p>The mission-to-blueprint mapping is extracted from the game's own files and lives in a separate repository: <a href="https://github.com/TomRhodan/penguin-citizen-blueprints" target="_blank" rel="noopener">penguin-citizen-blueprints</a>. Rank, faction and item names are resolved against the translation you installed, so the block appears in the language of your language pack.</p>
+
+          <h3>If you see a version notice</h3>
+          <p>The data always belongs to one specific game build. When you tick the option, Penguin Citizen checks whether data exists for your installed version and reports a mismatch:</p>
+          <p><em>"Blueprint data was built for game version X but Y is installed. Markers may be incomplete."</em></p>
+          <p>That is <strong>not an error</strong>, it is a heads-up: after a Star Citizen patch it takes a while for the data to catch up. The install still goes through, and missions present in both versions are marked correctly. Only new or renamed missions are missing.</p>
+
+          <div class="handbook-note">
+            The markers live in the translation file, not in the game itself. Remove the language pack, or reinstall it without the option, and they are gone. If the blueprint data cannot be reached the translation is still installed - you simply get a notice.
+          </div>
+
           <div class="handbook-tip">
             Penguin Citizen automatically checks for translation updates when you open the Dashboard. If an update is available, a yellow indicator appears on the installation status card, and you can update with a single click.
           </div>
