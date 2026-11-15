@@ -54,8 +54,8 @@ struct MissionEntry {
     chance: f64,
     /// Record path of the reward pool this mission rolls from.
     pool: String,
-    /// Blueprint record names in that pool.
-    blueprints: Vec<String>,
+    /// Blueprints in that pool.
+    blueprints: Vec<BlueprintItem>,
     /// Record path of the generator this came from.
     source: String,
     /// Flagged notForRelease / workInProgress in the game data.
@@ -70,6 +70,16 @@ struct MissionEntry {
     max_standing: Option<Standing>,
     /// Cooldown before the same player can take it again.
     cooldown: Option<Cooldown>,
+}
+
+/// One blueprint a pool can hand out.
+#[derive(serde::Serialize, Clone)]
+struct BlueprintItem {
+    /// Record name, e.g. `BP_CRAFT_qrt_combat_medium_arms_01_01_15`.
+    record: String,
+    /// `global.ini` key of the item's name. The blueprint record itself only
+    /// carries `@LOC_PLACEHOLDER`, so this comes from the entity it crafts.
+    name_loc_key: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -121,8 +131,12 @@ fn main() {
         std::process::exit(2);
     }
     let install_path = &args[1];
-    let version = args.get(2).map(String::as_str).unwrap_or("LIVE");
-    let out_path = args.get(3).map(String::as_str);
+    // Positional arguments only - a flag in slot 2 or 3 is not a version or an
+    // output path, and treating it as one silently writes a file called
+    // "--inject".
+    let positional = |i: usize| args.get(i).filter(|a| !a.starts_with("--")).map(String::as_str);
+    let version = positional(2).unwrap_or("LIVE");
+    let out_path = positional(3);
 
     // Discovery helper: `--find <needle>` reports which records contain a given
     // string. Used to track down where a mission that the extractor misses is
@@ -131,6 +145,18 @@ fn main() {
     // `--dump-path <substring>` prints the first record whose path matches, so
     // the shape of a referenced record can be inspected without guessing.
     let dump_path = args.iter().position(|a| a == "--dump-path").and_then(|i| args.get(i + 1)).cloned();
+    // `--inject <in.ini> <out.ini>` writes a global.ini with the markers applied.
+    let inject = args
+        .iter()
+        .position(|a| a == "--inject")
+        .and_then(|i| Some((args.get(i + 1)?.clone(), args.get(i + 2)?.clone())));
+    let lang = args
+        .iter()
+        .position(|a| a == "--lang")
+        .and_then(|i| args.get(i + 1))
+        .map(String::as_str)
+        .unwrap_or("de")
+        .to_string();
 
     let dcb = read_or_die(install_path, version, DCB_PATH, "DataCore");
     eprintln!("DataCore: {:.1} MiB", mib(dcb.len()));
@@ -256,7 +282,7 @@ fn main() {
                     unresolved_pools.insert(pool_ref.clone());
                     continue;
                 };
-                let blueprints = pool_item_names(&db, pool_idx, &by_path, &mut json_cache);
+                let blueprints = pool_items(&db, pool_idx, &by_path, &mut json_cache);
                 let pool_path =
                     strip_ext(db.resolve_string(db.records()[pool_idx].file_name_offset));
                 entries.push(MissionEntry {
@@ -371,6 +397,10 @@ fn main() {
     );
     for k in missing.iter().take(5) {
         eprintln!("      missing: {k}");
+    }
+
+    if let Some((in_ini, out_ini)) = &inject {
+        run_injection(&entries, in_ini, out_ini, &lang);
     }
 
     let output = Output {
@@ -626,13 +656,17 @@ fn contract_from(n: &Value, cooldown: Option<Cooldown>) -> Option<ContractInfo> 
     })
 }
 
-/// Blueprint record names a reward pool can hand out.
-fn pool_item_names(
+/// Blueprints a reward pool can hand out, with the loc key of each item name.
+///
+/// The name is two hops away: a `CraftingBlueprintRecord` only carries
+/// `@LOC_PLACEHOLDER`, and the real name sits on the entity it crafts
+/// (`processSpecificData.entityClass` → `Localization.Name`).
+fn pool_items(
     db: &Database,
     pool_idx: usize,
     by_path: &HashMap<String, usize>,
     cache: &mut HashMap<usize, Value>,
-) -> Vec<String> {
+) -> Vec<BlueprintItem> {
     let Some(pool_json) = record_json(db, pool_idx, cache) else { return Vec::new() };
     let mut refs = Vec::new();
     walk(&pool_json, &mut |n| {
@@ -643,14 +677,51 @@ fn pool_item_names(
         }
     });
 
-    let mut names = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    let mut items = Vec::new();
     for r in refs {
         let Some(idx) = resolve_ref(&r, by_path) else { continue };
         let name = db.resolve_string2(db.records()[idx].name_offset);
-        let label = name.strip_prefix("CraftingBlueprintRecord.").unwrap_or(name);
-        names.insert(label.to_string());
+        let record = name
+            .strip_prefix("CraftingBlueprintRecord.")
+            .unwrap_or(name)
+            .to_string();
+        if !seen.insert(record.clone()) {
+            continue;
+        }
+        let name_loc_key = record_json(db, idx, cache)
+            .as_ref()
+            .and_then(find_entity_class)
+            .and_then(|entity_ref| record_value(db, &entity_ref, by_path, cache))
+            .and_then(|entity| find_item_name_key(&entity));
+        items.push(BlueprintItem { record, name_loc_key });
     }
-    names.into_iter().collect()
+    items.sort_by(|a, b| a.record.cmp(&b.record));
+    items
+}
+
+/// `processSpecificData.entityClass` of a crafting blueprint, if it has one.
+fn find_entity_class(blueprint: &Value) -> Option<String> {
+    let mut found = None;
+    walk(blueprint, &mut |n| {
+        if found.is_none() {
+            if let Some(e) = n.get("entityClass").and_then(Value::as_str) {
+                found = Some(e.to_string());
+            }
+        }
+    });
+    found
+}
+
+/// `Localization.Name` on an item entity - the "@item_Name_…" key.
+fn find_item_name_key(entity: &Value) -> Option<String> {
+    let mut found = None;
+    walk(entity, &mut |n| {
+        if found.is_none() && type_of(n) == Some("SCItemLocalization") {
+            found = loc_key(n.get("Name"));
+        }
+    });
+    found
 }
 
 fn record_json(db: &Database, idx: usize, cache: &mut HashMap<usize, Value>) -> Option<Value> {
@@ -773,4 +844,210 @@ fn short_ref(reference: &str) -> String {
         .find("libs/foundry/records/")
         .map(|i| strip_ext(&reference[i..]))
         .unwrap_or_else(|| reference.to_string())
+}
+
+// ─── injection ──────────────────────────────────────────────────────────────
+
+/// Writes a `global.ini` with blueprint markers applied.
+///
+/// Mirrors what the removed `inject_blueprints_with_stats` did: the marker is
+/// *prepended* to the mission title and the blueprint block *appended* to the
+/// description, everything else stays byte-identical. Newlines inside a value
+/// are the literal two characters `\` and `n` - Star Citizen's own parser turns
+/// those into line breaks, a real newline would end the entry.
+fn run_injection(entries: &[MissionEntry], in_path: &str, out_path: &str, lang: &str) {
+    let raw = match std::fs::read(in_path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Could not read {in_path}: {e}");
+            std::process::exit(1);
+        }
+    };
+    let text = String::from_utf8_lossy(&raw).into_owned();
+
+    // Keep every line as it was; only the values of matched keys change.
+    let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+
+    // key (lower-cased, variant suffix stripped) → every line holding it.
+    // A key can appear as both `Foo_Title_001` and `Foo_Title_001,P`, and the
+    // player may be shown either, so both get the marker.
+    let mut index: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, line) in lines.iter().enumerate() {
+        let Some((key, _)) = line.split_once('=') else { continue };
+        let key = key.trim();
+        let base = key.split_once(',').map(|(b, _)| b).unwrap_or(key);
+        index.entry(base.to_ascii_lowercase()).or_default().push(i);
+    }
+
+    // Values are needed to render rank and item names in the target language.
+    let lookup: HashMap<String, String> = lines
+        .iter()
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| {
+            let k = k.trim();
+            let base = k.split_once(',').map(|(b, _)| b).unwrap_or(k);
+            (base.to_ascii_lowercase(), v.to_string())
+        })
+        .collect();
+    // A resolved value can itself contain the literal "\\n" - the rank name
+    // `RepScope_Contractor_Rank6` is "AUFTRAGNEHMER\\nELITE". Embedding that
+    // verbatim would break the single line we are building, so it collapses
+    // to a space.
+    let resolve = |key: &Option<String>| -> Option<String> {
+        let value = lookup.get(&key.as_ref()?.to_ascii_lowercase())?;
+        let flattened = value.replace("\\n", " ");
+        Some(flattened.split_whitespace().collect::<Vec<_>>().join(" "))
+    };
+
+    let mut title_hits = 0usize;
+    let mut title_misses = 0usize;
+    let mut desc_hits = 0usize;
+    let mut desc_misses = 0usize;
+    let mut done: BTreeSet<&str> = BTreeSet::new();
+
+    for entry in entries {
+        // One entry per pool, but a mission's title is marked once.
+        if !done.insert(entry.title_loc_key.as_str()) {
+            continue;
+        }
+        // Collect every pool belonging to this mission.
+        let pools: Vec<&MissionEntry> = entries
+            .iter()
+            .filter(|e| e.title_loc_key == entry.title_loc_key)
+            .collect();
+
+        let marker = marker_for(&pools);
+        match index.get(&entry.title_loc_key.to_ascii_lowercase()) {
+            Some(targets) => {
+                for &i in targets {
+                    if let Some((key, value)) = lines[i].clone().split_once('=') {
+                        lines[i] = format!("{key}={marker}{value}");
+                    }
+                }
+                title_hits += 1;
+            }
+            None => title_misses += 1,
+        }
+
+        let Some(desc_key) = &entry.description_loc_key else { continue };
+        let block = render_block(&pools, lang, &resolve);
+        match index.get(&desc_key.to_ascii_lowercase()) {
+            Some(targets) => {
+                for &i in targets {
+                    lines[i].push_str(&block);
+                }
+                desc_hits += 1;
+            }
+            None => desc_misses += 1,
+        }
+    }
+
+    let out = lines.join("\n");
+    if let Err(e) = std::fs::write(out_path, out.as_bytes()) {
+        eprintln!("Could not write {out_path}: {e}");
+        std::process::exit(1);
+    }
+
+    eprintln!("\n=== injection ({lang}) ===");
+    eprintln!("  source                      : {in_path}");
+    eprintln!("  titles marked / not found   : {title_hits} / {title_misses}");
+    eprintln!("  descriptions filled / missed: {desc_hits} / {desc_misses}");
+    eprintln!(
+        "  size                        : {:.1} MiB → {:.1} MiB",
+        mib(raw.len()),
+        mib(out.len())
+    );
+    eprintln!("  wrote                       : {out_path}");
+}
+
+/// `[BP]` when every pool is guaranteed, `[BP?]` when any is a chance.
+///
+/// Worth being careful with: a guaranteed pool means the mission always rolls
+/// *from that pool*, not that a specific blueprint drops. Pools are rank- and
+/// region-gated, so the marker promises a category, not an item.
+fn marker_for(pools: &[&MissionEntry]) -> String {
+    let certain = pools.iter().all(|p| p.chance >= 1.0);
+    let tag = if certain { "[BP]" } else { "[BP?]" };
+    format!(" <EM4>{tag}</EM4>")
+}
+
+/// The block appended to a mission description, in `lang`.
+fn render_block(
+    pools: &[&MissionEntry],
+    lang: &str,
+    resolve: &impl Fn(&Option<String>) -> Option<String>,
+) -> String {
+    let de = lang == "de";
+    let mut b = String::new();
+    // Literal "\n" - see run_injection.
+    let nl = "\\n";
+    b.push_str(nl);
+    b.push_str(nl);
+    b.push_str("---------------------------------------------------------");
+    b.push_str(nl);
+    b.push_str(nl);
+    b.push_str(if de {
+        "MÖGLICHE BAUPLÄNE FÜR DIESEN MISSIONSTYP"
+    } else {
+        "POSSIBLE BLUEPRINTS FOR THIS MISSION TYPE"
+    });
+    b.push_str(nl);
+
+    let first = pools[0];
+    if let Some(faction) = first.faction.as_ref().and_then(|f| resolve(&f.display_loc_key)) {
+        b.push_str(nl);
+        b.push_str(&format!("# {}: {faction}", if de { "Fraktion" } else { "Faction" }));
+    }
+    for (standing, label_de, label_en) in [
+        (&first.min_standing, "Min. Reputation", "Min. reputation"),
+        (&first.max_standing, "Max. Reputation", "Max. reputation"),
+    ] {
+        if let Some(st) = standing {
+            let name = resolve(&st.display_loc_key)
+                .or_else(|| st.name.clone())
+                .unwrap_or_default();
+            let xp = st.min_reputation.unwrap_or(0);
+            b.push_str(nl);
+            b.push_str(&format!(
+                "# {}: {name} ({xp} XP)",
+                if de { label_de } else { label_en }
+            ));
+        }
+    }
+    if let Some(rep) = first.reputation_reward {
+        b.push_str(nl);
+        b.push_str(&format!(
+            "# {}: {rep} XP",
+            if de { "Rufpunkte" } else { "Reputation" }
+        ));
+    }
+    if let Some(cd) = first.cooldown.as_ref().filter(|c| c.has_personal) {
+        if let Some(min) = cd.personal_minutes {
+            b.push_str(nl);
+            b.push_str(&format!(
+                "# Cooldown: {min:.0} {}",
+                if de { "Minuten" } else { "minutes" }
+            ));
+        }
+    }
+
+    for pool in pools {
+        if pool.blueprints.is_empty() {
+            continue;
+        }
+        b.push_str(nl);
+        b.push_str(nl);
+        let chance = (pool.chance * 100.0).round();
+        b.push_str(&format!(
+            "# {} ({}: {chance:.0}%):",
+            if de { "Baupläne" } else { "Blueprints" },
+            if de { "Chance" } else { "chance" }
+        ));
+        for item in &pool.blueprints {
+            let name = resolve(&item.name_loc_key).unwrap_or_else(|| item.record.clone());
+            b.push_str(nl);
+            b.push_str(&format!("    - {name}"));
+        }
+    }
+    b
 }
